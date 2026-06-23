@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.py[cod]
+.venv/
+edicoes/
+alertas/
+logs/
+jornal_monitor.db
+.pytest_cache/
+.mypy_cache/

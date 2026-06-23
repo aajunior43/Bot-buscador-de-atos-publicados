@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Monitor Inajá{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">Monitor automático</p>
+    <h1>Publicações sobre Inajá em edições do O Regional.</h1>
+    <p class="hero-copy">OCR por blocos, filtro de patrocinadores e classificação de publicações oficiais.</p>
+  </div>
+  <form class="search-card" method="get" action="/">
+    <label for="q">Buscar</label>
+    <div class="search-row">
+      <input id="q" name="q" value="{{ q }}" placeholder="Ex: decreto, Inajá, crédito, 2026-01">
+      <button type="submit">Filtrar</button>
+    </div>
+  </form>
+</section>
+
+<section class="stats-grid">
+  <article><strong>{{ stats.total_edicoes or 0 }}</strong><span>Edições no banco</span></article>
+  <article><strong>{{ stats.edicoes_inaja or 0 }}</strong><span>Com Inajá</span></article>
+  <article><strong>{{ stats.total_publicacoes or 0 }}</strong><span>Publicações</span></article>
+  <article><strong>{{ stats.total_mencoes or 0 }}</strong><span>Menções</span></article>
+</section>
+
+<section class="split">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Publicações Recentes</h2>
+      <span>{{ publicacoes|length }} itens</span>
+    </div>
+    <div class="cards">
+      {% for item in publicacoes %}
+      <a class="publication-card" href="/edicoes/{{ item.edicao_id }}">
+        <img class="thumb" src="/paginas/{{ item.edicao_id }}/{{ item.pagina }}.png" alt="Página {{ item.pagina }}">
+        <span class="badge">{{ item.categoria or "publicação" }}</span>
+        <h3>{{ item.orgao or "Órgão não identificado" }}</h3>
+        <p>{{ item.tipo or "Ato" }}{% if item.numero %} {{ item.numero }}{% endif %}</p>
+        <p class="muted">{{ item.assunto or "Sem assunto extraído" }}</p>
+        <div class="meta">
+          <span>Pág. {{ item.pagina }}</span>
+          <span>{{ item.data_publicacao or "sem data" }}</span>
+          {% if item.valor %}<span>{{ item.valor }}</span>{% endif %}
+        </div>
+      </a>
+      {% else %}
+      <p class="empty">Nenhuma publicação estruturada ainda.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Edições</h2>
+      <span>últimas 100</span>
+    </div>
+    <div class="edition-list">
+      {% for edicao in edicoes %}
+      <a class="edition-row" href="/edicoes/{{ edicao.id }}">
+        <span>
+          <strong>{{ edicao.titulo or ("Edição " ~ edicao.id) }}</strong>
+          <small>{{ edicao.data_publicacao or "data não informada" }}</small>
+        </span>
+        <span class="chips">
+          {% if edicao.tem_inaja %}<em>Inajá</em>{% endif %}
+          <em>{{ edicao.publicacoes_count }} pub.</em>
+          <em>{{ edicao.mencoes_count }} men.</em>
+        </span>
+      </a>
+      {% else %}
+      <p class="empty">Nenhuma edição registrada.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,31 @@
+services:
+  app:
+    build: .
+    container_name: novo-projeto-dev
+    working_dir: /workspace
+    command: uvicorn webapp:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./:/workspace
+    ports:
+      - "3001:3000"
+      - "5174:5173"
+      - "8001:8000"
+    environment:
+      PYTHONUNBUFFERED: "1"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+      - traefik.http.routers.jornal-monitor.rule=Host(`jornal.srv1767486.hstgr.cloud`)
+      - traefik.http.routers.jornal-monitor.entrypoints=websecure
+      - traefik.http.routers.jornal-monitor.tls=true
+      - traefik.http.routers.jornal-monitor.tls.certresolver=letsencrypt
+      - traefik.http.services.jornal-monitor.loadbalancer.server.port=8000
+    networks:
+      - default
+      - traefik-public
+    tty: true
+    stdin_open: true
+
+networks:
+  traefik-public:
+    external: true

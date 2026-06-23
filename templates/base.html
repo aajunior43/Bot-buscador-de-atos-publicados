@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Monitor O Regional{% endblock %}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="/">
+          <span class="brand-mark">OR</span>
+          <span>
+            <strong>Monitor Inajá</strong>
+            <small>O Regional Jornal</small>
+          </span>
+        </a>
+        <nav>
+          <a href="/">Dashboard</a>
+          <a href="/status">Status</a>
+          <a href="/api/publicacoes">API</a>
+        </nav>
+      </header>
+      <main>
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ edicao.titulo }} - Monitor Inajá{% endblock %}
+{% block content %}
+<section class="detail-hero">
+  <a class="backlink" href="/">← Voltar</a>
+  <h1>{{ edicao.titulo or ("Edição " ~ edicao.id) }}</h1>
+  <p>{{ edicao.data_publicacao or "Data não informada" }}</p>
+  <div class="actions">
+    {% if edicao.caminho_local %}<a href="/edicoes/{{ edicao.id }}/pdf" target="_blank">Abrir PDF</a>{% endif %}
+    {% if edicao.texto_extraido_path %}<a href="/edicoes/{{ edicao.id }}/texto" target="_blank">Ver texto OCR</a>{% endif %}
+    <a href="{{ edicao.url }}" target="_blank">Original</a>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Publicações Classificadas</h2>
+    <span>{{ publicacoes|length }} itens</span>
+  </div>
+  <div class="cards">
+    {% for item in publicacoes %}
+    <article class="publication-card full">
+      <span class="badge">{{ item.categoria }}</span>
+      <h3>{{ item.orgao or "Órgão não identificado" }}</h3>
+      <dl class="facts">
+        <div><dt>Página</dt><dd>{{ item.pagina }}</dd></div>
+        <div><dt>Bloco</dt><dd>{{ item.bloco }}</dd></div>
+        <div><dt>Tipo</dt><dd>{{ item.tipo or "-" }}</dd></div>
+        <div><dt>Número</dt><dd>{{ item.numero or "-" }}</dd></div>
+        <div><dt>Data</dt><dd>{{ item.data_documento or "-" }}</dd></div>
+        <div><dt>Valor</dt><dd>{{ item.valor or "-" }}</dd></div>
+      </dl>
+      <a class="page-preview-link" href="/paginas/{{ edicao.id }}/{{ item.pagina }}.png" target="_blank">
+        <img class="page-preview" src="/paginas/{{ edicao.id }}/{{ item.pagina }}.png" alt="Página {{ item.pagina }} da edição">
+        <span>Abrir página {{ item.pagina }} em tamanho maior</span>
+      </a>
+      <div class="actions inline-actions">
+        <a href="/edicoes/{{ edicao.id }}/pdf#page={{ item.pagina }}" target="_blank">Abrir PDF na página {{ item.pagina }}</a>
+        <a href="/edicoes/{{ edicao.id }}/pdf" target="_blank">Abrir PDF completo</a>
+      </div>
+      <p class="subject">{{ item.assunto or "Sem assunto extraído" }}</p>
+      <details>
+        <summary>Ver trecho OCR</summary>
+        <pre>{{ item.trecho }}</pre>
+      </details>
+    </article>
+    {% else %}
+    <p class="empty">Nenhuma publicação classificada para esta edição.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Menções Brutas</h2>
+    <span>{{ mencoes|length }} itens</span>
+  </div>
+  <div class="mention-list">
+    {% for item in mencoes %}
+    <article>
+      <strong>Página {{ item.pagina }} · {{ item.termo_encontrado }}</strong>
+      <p>{{ item.trecho }}</p>
+    </article>
+    {% else %}
+    <p class="empty">Nenhuma menção bruta registrada.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

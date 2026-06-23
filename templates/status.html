@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Status - Monitor Inajá{% endblock %}
+{% block content %}
+<section class="detail-hero status-hero">
+  <a class="backlink" href="/">← Voltar</a>
+  <h1>Fila e Status</h1>
+  <p>Acompanhe cada etapa: download, OCR, detecção, notificação e erros.</p>
+  <div class="live-strip">
+    <span class="live-dot"></span>
+    <span>Atualização automática a cada 5 segundos</span>
+    <span id="last-refresh">carregado agora</span>
+  </div>
+</section>
+
+<section class="stats-grid">
+  <article><strong>{{ resumo.rodando or 0 }}</strong><span>Rodando</span></article>
+  <article><strong>{{ resumo.avisos or 0 }}</strong><span>Avisos</span></article>
+  <article><strong>{{ resumo.erros or 0 }}</strong><span>Erros</span></article>
+  <article><strong>{{ resumo.concluidos or 0 }}</strong><span>Concluídos</span></article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Histórico Operacional</h2>
+    <span>agrupado por edição</span>
+  </div>
+  <div class="status-groups">
+    {% for grupo in grupos %}
+    <article class="status-group status-{{ grupo.status }}">
+      <header class="status-group-head">
+        <div class="status-main">
+          <span class="status-dot"></span>
+          <div>
+            <strong>{{ grupo.titulo }}</strong>
+            <small>
+              {% if grupo.data_publicacao %}{{ grupo.data_publicacao }}{% else %}sem data{% endif %}
+              · {{ grupo.jobs|length }} etapa(s)
+              · atualizado em {{ grupo.atualizado_em }}
+            </small>
+          </div>
+        </div>
+        <div>
+          <span class="status-pill">
+            {% if grupo.status == "aviso" %}concluído com avisos{% else %}{{ grupo.status }}{% endif %}
+          </span>
+          {% if grupo.edicao_id %}
+          <a class="status-link" href="/edicoes/{{ grupo.edicao_id }}">
+            Abrir edição de {{ grupo.data_publicacao or grupo.titulo }}
+          </a>
+          {% endif %}
+        </div>
+      </header>
+      <ol class="timeline">
+        {% for job in grupo.jobs|reverse %}
+        <li class="timeline-item status-{{ job.status }}">
+          <span class="timeline-marker"></span>
+          <div>
+            <strong>{{ job.etapa }}</strong>
+            <small>
+              {% if job.status == "aviso" %}concluído com avisos{% else %}{{ job.status }}{% endif %}
+              · {{ job.atualizado_em }}
+            </small>
+            {% if job.mensagem %}<p>{{ job.mensagem }}</p>{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </article>
+    {% else %}
+    <p class="empty">Nenhum evento registrado ainda. Execute um processamento para popular esta tela.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  const refreshEl = document.getElementById("last-refresh");
+  if (refreshEl) {
+    refreshEl.textContent = "última atualização: " + new Date().toLocaleTimeString("pt-BR");
+  }
+  setTimeout(() => window.location.reload(), 5000);
+</script>
+{% endblock %}
