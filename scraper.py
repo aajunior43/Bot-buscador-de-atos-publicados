@@ -84,7 +84,7 @@ def _extrair_com_playwright(url: str) -> list[Edicao]:
         return []
 
 
-def listar_edicoes(force_rescan: bool = False) -> list[Edicao]:
+def coletar_edicoes() -> list[Edicao]:
     logger.info("Coletando edições em %s", SETTINGS.site_url)
     resp = requests.get(SETTINGS.site_url, headers=_headers(), timeout=SETTINGS.request_timeout)
     resp.raise_for_status()
@@ -92,7 +92,12 @@ def listar_edicoes(force_rescan: bool = False) -> list[Edicao]:
     edicoes = _extrair_com_bs4(resp.text, SETTINGS.site_url)
     if not edicoes:
         edicoes = _extrair_com_playwright(SETTINGS.site_url)
+    logger.info("Edições encontradas: %s", len(edicoes))
+    return edicoes
 
+
+def listar_edicoes(force_rescan: bool = False) -> list[Edicao]:
+    edicoes = coletar_edicoes()
     novas = [
         edicao
         for edicao in edicoes

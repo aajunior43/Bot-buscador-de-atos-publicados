@@ -16,4 +16,8 @@ WORKDIR /workspace
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
 
-CMD ["tail", "-f", "/dev/null"]
+COPY . /workspace
+
+EXPOSE 8000
+
+CMD ["uvicorn", "webapp:app", "--host", "0.0.0.0", "--port", "8000"]

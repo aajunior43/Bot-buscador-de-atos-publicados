@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Edições Detectadas - Monitor Inajá{% endblock %}
+{% block content %}
+<section class="detail-hero">
+  <p class="eyebrow">Varredura automática</p>
+  <h1>Edições detectadas</h1>
+  <p>O sistema registra edições automaticamente 4 vezes ao dia. A análise OCR é iniciada manualmente por edição.</p>
+  <div class="actions">
+    <form method="post" action="/edicoes-detectadas/detectar">
+      <button type="submit">Detectar agora</button>
+    </form>
+    <a href="/status">Ver status</a>
+  </div>
+</section>
+
+<section class="stats-grid">
+  <article><strong>{{ stats.total or 0 }}</strong><span>Edições detectadas</span></article>
+  <article><strong>{{ stats.pendentes or 0 }}</strong><span>Pendentes</span></article>
+  <article><strong>{{ stats.analisadas or 0 }}</strong><span>Analisadas</span></article>
+  <article><strong>{{ stats.com_inaja or 0 }}</strong><span>Com Inajá</span></article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Lista de edições</h2>
+    <span>
+      {% if ultimo_detector %}
+      Última varredura: {{ ultimo_detector.atualizado_em }}
+      {% else %}
+      Nenhuma varredura registrada
+      {% endif %}
+    </span>
+  </div>
+  <div class="edition-list">
+    {% for edicao in edicoes %}
+    <article class="edition-row detected-edition">
+      <a href="{% if edicao.ocr_processado %}/edicoes/{{ edicao.id }}{% else %}{{ edicao.url }}{% endif %}" target="{% if not edicao.ocr_processado %}_blank{% endif %}">
+        <span>
+          <strong>{{ edicao.titulo or ("Edição " ~ edicao.id) }}</strong>
+          <small>{{ edicao.data_publicacao or "data não informada" }}</small>
+        </span>
+      </a>
+      <span class="chips">
+        {% if edicao.ocr_processado %}
+          {% if edicao.tem_inaja %}<em>Inajá</em>{% endif %}
+          <em>analisada</em>
+          <em>{{ edicao.publicacoes_count }} pub.</em>
+          <em>{{ edicao.mencoes_count }} men.</em>
+        {% else %}
+          <em>pendente</em>
+        {% endif %}
+        {% if edicao.ultimo_status %}
+          <em>{{ edicao.ultima_etapa }}: {{ edicao.ultimo_status }}</em>
+        {% endif %}
+      </span>
+      <form method="post" action="/edicoes/{{ edicao.id }}/analisar">
+        <button type="submit">
+          {% if edicao.ocr_processado %}Reanalisar{% else %}Analisar{% endif %}
+        </button>
+      </form>
+    </article>
+    {% else %}
+    <p class="empty">Nenhuma edição detectada ainda.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

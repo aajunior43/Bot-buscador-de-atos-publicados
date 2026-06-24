@@ -101,6 +101,15 @@ def insert_or_get_edicao(url: str, titulo: str, data_publicacao: str | None) -> 
             """,
             (url, titulo, data_publicacao),
         )
+        conn.execute(
+            """
+            UPDATE edicoes
+            SET titulo = COALESCE(NULLIF(?, ''), titulo),
+                data_publicacao = COALESCE(?, data_publicacao)
+            WHERE url = ?
+            """,
+            (titulo, data_publicacao, url),
+        )
         row = conn.execute("SELECT id FROM edicoes WHERE url = ?", (url,)).fetchone()
         if row is None:
             raise RuntimeError(f"Falha ao recuperar edição cadastrada: {url}")

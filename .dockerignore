@@ -1,0 +1,12 @@
+.git
+__pycache__/
+*.pyc
+.env
+.env.*
+jornal_monitor.db
+edicoes/
+alertas/
+logs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

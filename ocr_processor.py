@@ -108,22 +108,81 @@ def _extrair_blocos_tesseract(
     pagina: int,
     avisos: list[str] | None = None,
 ) -> list[TextBlock]:
+    colunas = max(1, SETTINGS.ocr_layout_columns)
+    if colunas > 1:
+        return _extrair_blocos_tesseract_por_coluna(imagem, pagina, colunas, avisos)
+
+    return _extrair_blocos_tesseract_imagem(
+        imagem,
+        pagina=pagina,
+        coluna=0,
+        x_offset=0,
+        timeout=SETTINGS.ocr_timeout_seconds,
+        avisos=avisos,
+    )
+
+
+def _extrair_blocos_tesseract_por_coluna(
+    imagem: Image.Image,
+    pagina: int,
+    colunas: int,
+    avisos: list[str] | None = None,
+) -> list[TextBlock]:
+    blocos: list[TextBlock] = []
+    largura = imagem.width
+    for coluna in range(colunas):
+        x0 = round((largura * coluna) / colunas)
+        x1 = round((largura * (coluna + 1)) / colunas)
+        if x1 <= x0:
+            continue
+        recorte = imagem.crop((x0, 0, x1, imagem.height))
+        blocos.extend(
+            _extrair_blocos_tesseract_imagem(
+                recorte,
+                pagina=pagina,
+                coluna=coluna,
+                x_offset=x0,
+                timeout=SETTINGS.ocr_timeout_seconds,
+                avisos=avisos,
+            )
+        )
+    return sorted(
+        blocos,
+        key=lambda bloco: (
+            (bloco.bloco // 1000) if bloco.bloco >= 1000 else 0,
+            bloco.bbox[1] if bloco.bbox else 0,
+            bloco.bbox[0] if bloco.bbox else 0,
+            bloco.bloco,
+        ),
+    )
+
+
+def _extrair_blocos_tesseract_imagem(
+    imagem: Image.Image,
+    pagina: int,
+    coluna: int,
+    x_offset: int,
+    timeout: int,
+    avisos: list[str] | None = None,
+) -> list[TextBlock]:
     try:
         data = pytesseract.image_to_data(
             imagem,
             lang=SETTINGS.ocr_language,
-            config="--psm 3",
+            config="--psm 4",
             output_type=pytesseract.Output.DICT,
-            timeout=SETTINGS.ocr_timeout_seconds,
+            timeout=timeout,
         )
     except RuntimeError:
-        logger.exception("Timeout/falha de OCR estruturado na página %s", pagina)
+        logger.exception(
+            "Timeout/falha de OCR estruturado na página %s coluna %s",
+            pagina,
+            coluna + 1,
+        )
         if avisos is not None:
-            avisos.append(f"Timeout/falha de OCR na página {pagina}")
+            avisos.append(f"Timeout/falha de OCR na página {pagina}, coluna {coluna + 1}")
         return []
 
-    colunas = max(1, SETTINGS.ocr_layout_columns)
-    largura_coluna = max(1, imagem.width / colunas)
     agrupado: dict[tuple[int, int, int, int], dict[str, object]] = {}
     total = len(data.get("text", []))
     for idx in range(total):
@@ -144,17 +203,15 @@ def _extrair_blocos_tesseract(
         top = int(data["top"][idx])
         width = int(data["width"][idx])
         height = int(data["height"][idx])
-        centro_x = left + (width / 2)
-        coluna = min(colunas - 1, max(0, int(centro_x // largura_coluna)))
         chave = (coluna, block_num, par_num, line_num)
         item = agrupado.setdefault(
             chave,
             {"words": [], "left": [], "top": [], "right": [], "bottom": []},
         )
         item["words"].append(palavra)  # type: ignore[index, union-attr]
-        item["left"].append(left)  # type: ignore[index, union-attr]
+        item["left"].append(left + x_offset)  # type: ignore[index, union-attr]
         item["top"].append(top)  # type: ignore[index, union-attr]
-        item["right"].append(left + width)  # type: ignore[index, union-attr]
+        item["right"].append(left + x_offset + width)  # type: ignore[index, union-attr]
         item["bottom"].append(top + height)  # type: ignore[index, union-attr]
 
     blocos_por_numero: dict[
