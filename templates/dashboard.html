@@ -23,6 +23,73 @@
   <article><strong>{{ stats.total_mencoes or 0 }}</strong><span>Menções</span></article>
 </section>
 
+<section class="panel activity-panel" id="activity-panel">
+  <div class="panel-head">
+    <h2>Atividade agora</h2>
+    <span id="activity-refresh">atualizando automaticamente</span>
+  </div>
+  <div class="activity-state {% if atividade.tem_atividade %}is-running{% else %}is-idle{% endif %}" id="activity-state">
+    <div class="activity-orb">
+      <span></span>
+    </div>
+    <div>
+      <strong id="activity-title">
+        {% if atividade.tem_atividade %}
+        Executando {{ atividade.rodando|length }} etapa(s)
+        {% else %}
+        Nenhuma etapa em execução
+        {% endif %}
+      </strong>
+      <p id="activity-message">
+        {% if atividade.tem_atividade %}
+        Acompanhe abaixo o processamento em andamento.
+        {% else %}
+        O sistema está aguardando a próxima varredura automática ou uma análise manual.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+  <div class="activity-grid">
+    <div>
+      <h3>Rodando</h3>
+      <div class="activity-list" id="running-list">
+        {% for job in atividade.rodando %}
+        <article class="activity-item status-{{ job.status }}">
+          <span class="status-dot"></span>
+          <div>
+            <strong>{{ job.etapa }}</strong>
+            <small>{{ job.edicao_titulo or job.titulo or "Processo geral" }} · {{ job.atualizado_em }}</small>
+            {% if job.mensagem %}<p>{{ job.mensagem }}</p>{% endif %}
+          </div>
+        </article>
+        {% else %}
+        <p class="empty">Nada rodando neste momento.</p>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <h3>Últimos eventos</h3>
+      <div class="activity-list" id="recent-list">
+        {% for job in atividade.recentes %}
+        <article class="activity-item status-{{ job.status }}">
+          <span class="status-dot"></span>
+          <div>
+            <strong>{{ job.etapa }}</strong>
+            <small>
+              {% if job.status == "aviso" %}concluído com avisos{% else %}{{ job.status }}{% endif %}
+              · {{ job.atualizado_em }}
+            </small>
+            {% if job.mensagem %}<p>{{ job.mensagem }}</p>{% endif %}
+          </div>
+        </article>
+        {% else %}
+        <p class="empty">Nenhum evento registrado ainda.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="split">
   <div class="panel">
     <div class="panel-head">
@@ -73,4 +140,67 @@
     </div>
   </div>
 </section>
+{% endblock %}
+{% block scripts %}
+<script>
+  const statusLabel = {
+    aviso: "concluído com avisos"
+  };
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function renderJob(job, includeTitle) {
+    const title = includeTitle ? (job.edicao_titulo || job.titulo || "Processo geral") : (statusLabel[job.status] || job.status);
+    return `
+      <article class="activity-item status-${escapeHtml(job.status)}">
+        <span class="status-dot"></span>
+        <div>
+          <strong>${escapeHtml(job.etapa)}</strong>
+          <small>${escapeHtml(title)} · ${escapeHtml(job.atualizado_em)}</small>
+          ${job.mensagem ? `<p>${escapeHtml(job.mensagem)}</p>` : ""}
+        </div>
+      </article>
+    `;
+  }
+
+  async function refreshActivity() {
+    try {
+      const response = await fetch("/api/atividade", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json();
+      const state = document.getElementById("activity-state");
+      const title = document.getElementById("activity-title");
+      const message = document.getElementById("activity-message");
+      const running = document.getElementById("running-list");
+      const recent = document.getElementById("recent-list");
+      const refresh = document.getElementById("activity-refresh");
+
+      state.className = `activity-state ${data.tem_atividade ? "is-running" : "is-idle"}`;
+      title.textContent = data.tem_atividade ? `Executando ${data.rodando.length} etapa(s)` : "Nenhuma etapa em execução";
+      message.textContent = data.tem_atividade
+        ? "Acompanhe abaixo o processamento em andamento."
+        : "O sistema está aguardando a próxima varredura automática ou uma análise manual.";
+      running.innerHTML = data.rodando.length
+        ? data.rodando.map((job) => renderJob(job, true)).join("")
+        : '<p class="empty">Nada rodando neste momento.</p>';
+      recent.innerHTML = data.recentes.length
+        ? data.recentes.map((job) => renderJob(job, false)).join("")
+        : '<p class="empty">Nenhum evento registrado ainda.</p>';
+      refresh.textContent = "última atualização: " + new Date().toLocaleTimeString("pt-BR");
+    } catch (_error) {
+      const refresh = document.getElementById("activity-refresh");
+      if (refresh) refresh.textContent = "falha ao atualizar";
+    }
+  }
+
+  refreshActivity();
+  setInterval(refreshActivity, 4000);
+</script>
 {% endblock %}

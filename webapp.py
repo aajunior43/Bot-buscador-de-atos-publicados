@@ -44,6 +44,33 @@ def _row_or_404(conn: sqlite3.Connection, sql: str, params: tuple) -> sqlite3.Ro
     return row
 
 
+def _atividade_atual(conn: sqlite3.Connection) -> dict:
+    rodando = conn.execute(
+        """
+        SELECT j.*, e.titulo AS edicao_titulo, e.data_publicacao
+        FROM jobs j
+        LEFT JOIN edicoes e ON e.id = j.edicao_id
+        WHERE j.status = 'rodando'
+        ORDER BY j.id DESC
+        LIMIT 5
+        """
+    ).fetchall()
+    recentes = conn.execute(
+        """
+        SELECT j.*, e.titulo AS edicao_titulo, e.data_publicacao
+        FROM jobs j
+        LEFT JOIN edicoes e ON e.id = j.edicao_id
+        ORDER BY j.id DESC
+        LIMIT 8
+        """
+    ).fetchall()
+    return {
+        "rodando": [dict(item) for item in rodando],
+        "recentes": [dict(item) for item in recentes],
+        "tem_atividade": bool(rodando),
+    }
+
+
 @app.on_event("startup")
 def startup() -> None:
     database.init_db()
@@ -242,6 +269,7 @@ def dashboard(
             LIMIT 30
             """
         ).fetchall()
+        atividade = _atividade_atual(conn)
 
     return templates.TemplateResponse(
         "dashboard.html",
@@ -250,6 +278,7 @@ def dashboard(
             "stats": stats,
             "edicoes": edicoes,
             "publicacoes": publicacoes,
+            "atividade": atividade,
             "q": q,
         },
     )
@@ -513,6 +542,12 @@ def api_publicacoes() -> list[dict]:
             """
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+@app.get("/api/atividade")
+def api_atividade() -> dict:
+    with _conn() as conn:
+        return _atividade_atual(conn)
 
 
 @app.get("/api/status")
