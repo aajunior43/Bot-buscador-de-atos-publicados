@@ -13,8 +13,11 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from config import SETTINGS
 
 
+import os
+os.environ["OMP_THREAD_LIMIT"] = "1"
+
 logger = logging.getLogger(__name__)
-_WORKERS = min(4, max(2, (SETTINGS.ocr_layout_columns or 1)))
+_WORKERS = min(8, max(2, os.cpu_count() or 2))
 
 # Configura caminho do Tesseract (necessário no Windows quando não está no PATH)
 if SETTINGS.tesseract_path:
@@ -54,10 +57,13 @@ def _preprocessar(imagem: Image.Image) -> Image.Image:
     return equalizada
 
 
-def _texto_pdfplumber(pdf_path: Path) -> list[PageText]:
+def _texto_pdfplumber(pdf_path: Path, on_progress=None) -> list[PageText]:
     paginas: list[PageText] = []
     with pdfplumber.open(str(pdf_path)) as pdf:
+        total = len(pdf.pages)
         for idx, page in enumerate(pdf.pages, start=1):
+            if on_progress:
+                on_progress(f"Extraindo texto nativo: Página {idx}/{total}")
             texto = page.extract_text() or ""
             texto = texto.strip()
             paginas.append(
@@ -81,6 +87,7 @@ def _texto_ocr_paginas(
     pdf_path: Path,
     paginas: list[int],
     avisos: list[str] | None = None,
+    on_progress=None,
 ) -> dict[int, PageText]:
     if not paginas:
         return {}
@@ -93,6 +100,7 @@ def _texto_ocr_paginas(
         first_page=primeira,
         last_page=ultima,
         poppler_path=SETTINGS.poppler_path or None,
+        thread_count=min(4, os.cpu_count() or 1),
     )
     paginas_set = set(paginas)
     imagens_filtradas: list[tuple[int, Image.Image]] = []
@@ -103,6 +111,11 @@ def _texto_ocr_paginas(
         numero_pagina += 1
 
     textos: dict[int, PageText] = {}
+    total = len(imagens_filtradas)
+    processadas = 0
+    import threading
+    lock = threading.Lock()
+
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
         future_to_pagina = {
             pool.submit(_ocr_completo_pagina, num, img, avisos or []): num
@@ -111,6 +124,10 @@ def _texto_ocr_paginas(
         for future in as_completed(future_to_pagina):
             num = future_to_pagina[future]
             textos[num] = future.result()
+            with lock:
+                processadas += 1
+                if on_progress:
+                    on_progress(f"OCR estruturado (candidatas): Página {processadas}/{total} processada")
     return textos
 
 
@@ -289,10 +306,20 @@ def _ocr_completo_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Pa
     return PageText(pagina=idx, texto=texto.strip(), metodo="ocr", blocks=blocks)
 
 
-def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None) -> list[PageText]:
-    imagens = convert_from_path(str(pdf_path), dpi=SETTINGS.ocr_dpi, poppler_path=SETTINGS.poppler_path or None)
+def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None, on_progress=None) -> list[PageText]:
+    imagens = convert_from_path(
+        str(pdf_path),
+        dpi=SETTINGS.ocr_dpi,
+        poppler_path=SETTINGS.poppler_path or None,
+        thread_count=min(4, os.cpu_count() or 1),
+    )
     avisos = avisos if avisos is not None else []
     paginas: list[PageText | None] = [None] * len(imagens)
+    total = len(imagens)
+    processadas = 0
+    import threading
+    lock = threading.Lock()
+
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
         futures = {
             pool.submit(_ocr_completo_pagina, idx, imagem, avisos): idx
@@ -301,6 +328,10 @@ def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None) -> list
         for future in as_completed(futures):
             idx = futures[future]
             paginas[idx - 1] = future.result()
+            with lock:
+                processadas += 1
+                if on_progress:
+                    on_progress(f"OCR estruturado completo: Página {processadas}/{total} processada")
     return [p for p in paginas if p is not None]
 
 
@@ -345,9 +376,19 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
     )
 
 
-def _texto_ocr_rapido_pdf(pdf_path: Path, avisos: list[str]) -> list[PageText]:
-    imagens = convert_from_path(str(pdf_path), dpi=SETTINGS.ocr_fast_dpi, poppler_path=SETTINGS.poppler_path or None)
+def _texto_ocr_rapido_pdf(pdf_path: Path, avisos: list[str], on_progress=None) -> list[PageText]:
+    imagens = convert_from_path(
+        str(pdf_path),
+        dpi=SETTINGS.ocr_fast_dpi,
+        poppler_path=SETTINGS.poppler_path or None,
+        thread_count=min(4, os.cpu_count() or 1),
+    )
     paginas: list[PageText | None] = [None] * len(imagens)
+    total = len(imagens)
+    processadas = 0
+    import threading
+    lock = threading.Lock()
+
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
         futures = {
             pool.submit(_ocr_rapido_pagina, idx, imagem, avisos): idx
@@ -356,6 +397,10 @@ def _texto_ocr_rapido_pdf(pdf_path: Path, avisos: list[str]) -> list[PageText]:
         for future in as_completed(futures):
             idx = futures[future]
             paginas[idx - 1] = future.result()
+            with lock:
+                processadas += 1
+                if on_progress:
+                    on_progress(f"OCR rápido: Página {processadas}/{total} processada")
     return [p for p in paginas if p is not None]
 
 
@@ -448,7 +493,7 @@ def _carregar_cache_ocr(pdf_path: Path) -> OCRResult | None:
         return None
 
 
-def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path) -> OCRResult:
+def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path, on_progress=None) -> OCRResult:
     if not SETTINGS.force_ocr:
         cache = _carregar_cache_ocr(pdf_path)
         if cache:
@@ -457,13 +502,15 @@ def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path) -> OCRResult:
 
     logger.info("Executando OCR rápido com estruturação só em páginas candidatas: %s", pdf_path)
     avisos: list[str] = []
-    paginas = _texto_ocr_rapido_pdf(pdf_path, avisos)
+    paginas = _texto_ocr_rapido_pdf(pdf_path, avisos, on_progress=on_progress)
     paginas_candidatas = [
         pagina.pagina for pagina in paginas if _texto_tem_candidato_inaja(pagina.texto)
     ]
     if paginas_candidatas:
         logger.info("Páginas candidatas para OCR estruturado: %s", paginas_candidatas)
-        estruturadas = _texto_ocr_paginas(pdf_path, paginas_candidatas, avisos)
+        if on_progress:
+            on_progress(f"Encontradas {len(paginas_candidatas)} páginas candidatas a OCR estruturado")
+        estruturadas = _texto_ocr_paginas(pdf_path, paginas_candidatas, avisos, on_progress=on_progress)
         paginas = [estruturadas.get(pagina.pagina, pagina) for pagina in paginas]
 
     texto_completo = "\n\n".join(
@@ -482,7 +529,7 @@ def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path) -> OCRResult:
     return result
 
 
-def extrair_texto(pdf_path: Path, force_ocr: bool | None = None) -> OCRResult:
+def extrair_texto(pdf_path: Path, force_ocr: bool | None = None, on_progress=None) -> OCRResult:
     usar_force_ocr = SETTINGS.force_ocr if force_ocr is None else force_ocr
     if not usar_force_ocr:
         cache = _carregar_cache_ocr(pdf_path)
@@ -495,21 +542,23 @@ def extrair_texto(pdf_path: Path, force_ocr: bool | None = None) -> OCRResult:
 
     if usar_force_ocr:
         logger.info("OCR forçado ativado; aplicando Tesseract em todas as páginas.")
-        paginas = _texto_ocr_completo(pdf_path, avisos)
+        paginas = _texto_ocr_completo(pdf_path, avisos, on_progress=on_progress)
     else:
-        paginas = _texto_pdfplumber(pdf_path)
+        paginas = _texto_pdfplumber(pdf_path, on_progress=on_progress)
         paginas_fracas = [
             pagina.pagina for pagina in paginas if _pagina_precisa_ocr(pagina, False)
         ]
         if not paginas:
             logger.info("PDF sem páginas extraídas por pdfplumber; aplicando OCR completo.")
-            paginas = _texto_ocr_completo(pdf_path, avisos)
+            paginas = _texto_ocr_completo(pdf_path, avisos, on_progress=on_progress)
         elif paginas_fracas:
             logger.info(
                 "Aplicando OCR híbrido nas páginas com pouco texto: %s",
                 paginas_fracas,
             )
-            ocr_por_pagina = _texto_ocr_paginas(pdf_path, paginas_fracas, avisos)
+            if on_progress:
+                on_progress(f"Aplicando OCR híbrido em {len(paginas_fracas)} páginas com pouco texto nativo")
+            ocr_por_pagina = _texto_ocr_paginas(pdf_path, paginas_fracas, avisos, on_progress=on_progress)
             paginas = [
                 ocr_por_pagina.get(pagina.pagina, pagina)
                 for pagina in paginas
