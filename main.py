@@ -99,6 +99,7 @@ def _processar_edicao(
         resultado = detectar(download.edicao_id, edicao.titulo, ocr.paginas)
         database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
         database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
+        database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
         database.update_ocr(download.edicao_id, ocr.texto_path, resultado.encontrado)
         database.update_job(
             detectar_job,

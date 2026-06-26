@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Alertas Enviados - Monitor Inajá{% endblock %}
+{% block content %}
+<section class="detail-hero fade-in">
+  <a class="backlink" href="/">← Voltar</a>
+  <h1>Histórico de Alertas</h1>
+  <p>Todas as notificações enviadas pelo sistema — Telegram, e-mail, arquivo e webhook.</p>
+</section>
+
+<section class="panel fade-in">
+  <div class="panel-head">
+    <h2>Notificações</h2>
+    <span>{{ notificacoes|length }} registro(s)</span>
+  </div>
+
+  {% if notificacoes %}
+  <div>
+    {% for notif in notificacoes %}
+    <div class="notification-item">
+      <span class="notif-canal canal-{{ notif.canal.split('_')[0] }}">
+        {% if 'telegram' in notif.canal %}📱 Telegram
+        {% elif 'email' in notif.canal %}📧 E-mail
+        {% elif 'arquivo' in notif.canal %}📁 Arquivo
+        {% elif 'webhook' in notif.canal %}🔗 Webhook
+        {% else %}{{ notif.canal }}{% endif %}
+      </span>
+      <div class="notif-meta">
+        <strong>
+          {% if notif.edicao_titulo %}{{ notif.edicao_titulo }}{% elif notif.edicao_id %}Edição {{ notif.edicao_id }}{% else %}Alerta de sistema{% endif %}
+          {% if not notif.sucesso %}<span style="color:var(--red); font-size:.75rem;"> · Falhou</span>{% endif %}
+        </strong>
+        <small>
+          {{ notif.data_publicacao or "" }}
+          {% if notif.data_publicacao %} · {% endif %}
+          {{ notif.criado_em }}
+          {% if notif.erro %} · Erro: {{ notif.erro[:80] }}{% endif %}
+        </small>
+        {% if notif.conteudo %}
+        <details style="margin-top:.4rem;">
+          <summary>Ver conteúdo da mensagem</summary>
+          <pre style="margin-top:.5rem; font-size:.75rem; max-height:200px; overflow-y:auto;">{{ notif.conteudo }}</pre>
+        </details>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty" style="padding:3rem 1rem;">
+    Nenhuma notificação enviada ainda.<br>
+    <small>Os alertas aparecem aqui após a primeira detecção de publicações de Inajá.</small>
+  </p>
+  {% endif %}
+</section>
+{% endblock %}

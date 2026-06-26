@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Detecções - Monitor Inajá{% endblock %}
+{% block content %}
+
+<section class="detail-hero">
+  <div>
+    <a class="backlink" href="/">← Dashboard</a>
+    <h1>Detecções</h1>
+    <p class="hero-copy">Publicações classificadas agrupadas por edição do jornal.</p>
+  </div>
+</section>
+
+<section class="detecoes-filtros">
+  <a href="/detecoes" class="filter-tab {{ 'active' if not categoria else '' }}">Todas ({{ stats.total | default(0) }})</a>
+  <a href="/detecoes?categoria=publicacao_oficial" class="filter-tab {{ 'active' if categoria == 'publicacao_oficial' else '' }}">Publicação Oficial ({{ stats.oficiais | default(0) }})</a>
+  <a href="/detecoes?categoria=materia_jornalistica" class="filter-tab {{ 'active' if categoria == 'materia_jornalistica' else '' }}">Matéria Jornalística ({{ stats.jornalisticas | default(0) }})</a>
+</section>
+
+<section class="detecoes-stats">
+  <article>
+    <strong>{{ stats.total | default(0) }}</strong>
+    <span>Total de detecções</span>
+  </article>
+  <article>
+    <strong>{{ stats.oficiais | default(0) }}</strong>
+    <span>Publicações oficiais</span>
+  </article>
+  <article>
+    <strong>{{ stats.jornalisticas | default(0) }}</strong>
+    <span>Matérias jornalísticas</span>
+  </article>
+  <article>
+    <strong>{{ stats.com_ia | default(0) }}</strong>
+    <span>Processadas por IA</span>
+  </article>
+</section>
+
+{% if edicoes %}
+
+{% for edicao in edicoes %}
+<section class="detecao-edicao">
+  <div class="detecao-edicao-head">
+    <a href="/edicoes/{{ edicao.id }}">
+      <h2>{{ edicao.titulo }}</h2>
+    </a>
+    <div class="detecao-edicao-meta">
+      <span class="chips-item">{{ edicao.data_publicacao or "Sem data" }}</span>
+      <span class="chips-item">{{ edicao.publicacoes|length }} detecção(ões)</span>
+    </div>
+  </div>
+
+  <div class="detecao-cards">
+    {% for item in edicao.publicacoes %}
+    <article class="detecao-card">
+      <div class="detecao-card-badges">
+        <span class="badge {{ 'badge-ia' if item.ia_processado else '' }}">{{ item.categoria_ia or item.categoria }}</span>
+        {% if item.ia_processado %}<span class="badge badge-ia-tag">IA</span>{% endif %}
+      </div>
+
+      <h3>{{ item.orgao or "Órgão não identificado" }}</h3>
+
+      {% if item.resumo_ia %}
+      <blockquote class="ia-resumo">{{ item.resumo_ia }}</blockquote>
+      {% endif %}
+
+      <dl class="facts">
+        <div><dt>Página</dt><dd>{{ item.pagina }}</dd></div>
+        <div><dt>Bloco</dt><dd>{{ item.bloco }}</dd></div>
+        <div><dt>Tipo</dt><dd>{{ item.tipo or "-" }}</dd></div>
+        <div><dt>Número</dt><dd>{{ item.numero or "-" }}</dd></div>
+        <div><dt>Data</dt><dd>{{ item.data_documento or "-" }}</dd></div>
+        <div><dt>Valor</dt><dd>{{ item.valor or "-" }}</dd></div>
+      </dl>
+
+      {% if item.assunto %}
+      <p class="subject">{{ item.assunto }}</p>
+      {% endif %}
+
+      <div class="detecao-card-actions">
+        <a href="/edicoes/{{ edicao.id }}#pub-{{ item.id }}">Ver na edição</a>
+        <a href="/edicoes/{{ edicao.id }}/pdf#page={{ item.pagina }}" target="_blank">PDF página {{ item.pagina }}</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+{% else %}
+<section class="panel">
+  <p class="empty">Nenhuma detecção encontrada{% if categoria %} para este filtro{% endif %}. Processe uma edição para gerar detecções.</p>
+</section>
+{% endif %}
+
+{% endblock %}

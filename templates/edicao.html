@@ -1,48 +1,114 @@
 {% extends "base.html" %}
 {% block title %}{{ edicao.titulo }} - Monitor Inajá{% endblock %}
 {% block content %}
-<section class="detail-hero">
-  <a class="backlink" href="/">← Voltar</a>
+<section class="detail-hero fade-in">
+  <a class="backlink" href="/">← Voltar ao Dashboard</a>
   <h1>{{ edicao.titulo or ("Edição " ~ edicao.id) }}</h1>
   <p>{{ edicao.data_publicacao or "Data não informada" }}</p>
   <div class="actions">
-    {% if edicao.caminho_local %}<a href="/edicoes/{{ edicao.id }}/pdf" target="_blank">Abrir PDF</a>{% endif %}
-    {% if edicao.texto_extraido_path %}<a href="/edicoes/{{ edicao.id }}/texto" target="_blank">Ver texto OCR</a>{% endif %}
-    <a href="{{ edicao.url }}" target="_blank">Original</a>
+    {% if edicao.caminho_local %}<a href="/edicoes/{{ edicao.id }}/pdf" target="_blank" class="btn btn-secondary">📄 Abrir PDF</a>{% endif %}
+    {% if edicao.texto_extraido_path %}<a href="/edicoes/{{ edicao.id }}/texto" target="_blank" class="btn btn-secondary">📝 Ver texto OCR</a>{% endif %}
+    <a href="{{ edicao.url }}" target="_blank" class="btn btn-secondary">🔗 Original</a>
+    <form method="post" action="/edicoes/{{ edicao.id }}/ia" style="display:inline;">
+      <button type="submit" class="btn">✨ Refinar com IA</button>
+    </form>
+    <form method="post" action="/edicoes/{{ edicao.id }}/analisar" style="display:inline;">
+      <button type="submit" class="btn btn-secondary">🔄 Reanalisar</button>
+    </form>
   </div>
 </section>
 
-<section class="panel">
+<!-- Debug OCR: navegação por página -->
+{% if num_paginas > 0 %}
+<section class="panel fade-in" id="debug-ocr-section">
+  <div class="panel-head">
+    <h2>🔍 Inspeção de Página (Debug OCR)</h2>
+    <span>{{ num_paginas }} página(s)</span>
+  </div>
+  <div style="padding:1rem 1.5rem;">
+    <div style="display:flex; align-items:center; gap:.75rem; margin-bottom:1rem; flex-wrap:wrap;">
+      <label for="pg-select" style="font-size:.8rem; color:var(--text-3); font-weight:600;">Página:</label>
+      <button id="pg-prev-btn" class="pg-nav-btn" title="Página Anterior">◀</button>
+      <select id="pg-select" style="width:100px;">
+        {% for n in range(1, num_paginas + 1) %}
+        <option value="{{ n }}">{{ n }}</option>
+        {% endfor %}
+      </select>
+      <button id="pg-next-btn" class="pg-nav-btn" title="Próxima Página">▶</button>
+      <button id="pg-load-btn" class="btn btn-secondary" style="padding:.45rem .9rem;">Ver página</button>
+    </div>
+    <div class="ocr-debug" id="ocr-debug-container" style="display:none;">
+      <div>
+        <p style="font-size:.72rem; color:var(--text-3); margin-bottom:.4rem; text-transform:uppercase; letter-spacing:.08em;">Imagem da página</p>
+        <img id="pg-img" src="" alt="Imagem da página" style="width:100%;">
+      </div>
+      <div>
+        <p style="font-size:.72rem; color:var(--text-3); margin-bottom:.4rem; text-transform:uppercase; letter-spacing:.08em;">Texto OCR extraído</p>
+        <div class="ocr-text" id="pg-text">Carregando texto...</div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<!-- Publicações Classificadas -->
+<section class="panel fade-in">
   <div class="panel-head">
     <h2>Publicações Classificadas</h2>
     <span>{{ publicacoes|length }} itens</span>
   </div>
-  <div class="cards">
+  <div class="cards" style="grid-template-columns:1fr;">
     {% for item in publicacoes %}
     <article class="publication-card full">
-      <span class="badge">{{ item.categoria }}</span>
+      <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
+        <span class="badge {{ 'badge-ia' if item.ia_processado else '' }}">{{ item.categoria_ia or item.categoria }}</span>
+        {% if item.ia_processado %}<span class="badge badge-ia-tag">✨ IA</span>{% endif %}
+        {% if item.valor %}<span class="badge" style="background:rgba(251,191,36,.12);color:#fbbf24;border-color:rgba(251,191,36,.25);">{{ item.valor }}</span>{% endif %}
+      </div>
+
       <h3>{{ item.orgao or "Órgão não identificado" }}</h3>
+
+      {% if item.resumo_ia %}
+      <blockquote class="ia-resumo">{{ item.resumo_ia }}</blockquote>
+      {% endif %}
+
       <dl class="facts">
         <div><dt>Página</dt><dd>{{ item.pagina }}</dd></div>
+        <div><dt>Tipo</dt><dd>{{ item.tipo or "—" }}</dd></div>
+        <div><dt>Número</dt><dd>{{ item.numero or "—" }}</dd></div>
+        <div><dt>Data</dt><dd>{{ item.data_documento or "—" }}</dd></div>
+        <div><dt>Valor</dt><dd>{{ item.valor or "—" }}</dd></div>
         <div><dt>Bloco</dt><dd>{{ item.bloco }}</dd></div>
-        <div><dt>Tipo</dt><dd>{{ item.tipo or "-" }}</dd></div>
-        <div><dt>Número</dt><dd>{{ item.numero or "-" }}</dd></div>
-        <div><dt>Data</dt><dd>{{ item.data_documento or "-" }}</dd></div>
-        <div><dt>Valor</dt><dd>{{ item.valor or "-" }}</dd></div>
       </dl>
+
+      {% if item.assunto %}
+      <p class="subject">{{ item.assunto }}</p>
+      {% endif %}
+
       <a class="page-preview-link" href="/paginas/{{ edicao.id }}/{{ item.pagina }}.png" target="_blank">
-        <img class="page-preview" src="/paginas/{{ edicao.id }}/{{ item.pagina }}.png" alt="Página {{ item.pagina }} da edição">
-        <span>Abrir página {{ item.pagina }} em tamanho maior</span>
+        <img class="page-preview" src="/paginas/{{ edicao.id }}/{{ item.pagina }}.png" alt="Página {{ item.pagina }}" loading="lazy">
+        <span>Abrir página {{ item.pagina }} em tamanho maior ↗</span>
       </a>
-      <div class="actions inline-actions">
-        <a href="/edicoes/{{ edicao.id }}/pdf#page={{ item.pagina }}" target="_blank">Abrir PDF na página {{ item.pagina }}</a>
-        <a href="/edicoes/{{ edicao.id }}/pdf" target="_blank">Abrir PDF completo</a>
+
+      <div class="inline-actions">
+        <a href="/edicoes/{{ edicao.id }}/pdf#page={{ item.pagina }}" target="_blank" class="btn btn-secondary">📄 PDF pág. {{ item.pagina }}</a>
+        <a href="/edicoes/{{ edicao.id }}/pdf" target="_blank" class="btn btn-secondary">📄 PDF completo</a>
+        <button class="btn btn-copy" onclick="copiarPublicacao(this)">📋 Copiar</button>
       </div>
-      <p class="subject">{{ item.assunto or "Sem assunto extraído" }}</p>
+
+      {% if item.trecho %}
       <details>
-        <summary>Ver trecho OCR</summary>
+        <summary>Ver trecho OCR bruto</summary>
         <pre>{{ item.trecho }}</pre>
       </details>
+      {% endif %}
+
+      {% if item.texto_corrigido and item.ia_processado %}
+      <details>
+        <summary>Ver texto corrigido pela IA</summary>
+        <pre class="texto-corrigido">{{ item.texto_corrigido }}</pre>
+      </details>
+      {% endif %}
     </article>
     {% else %}
     <p class="empty">Nenhuma publicação classificada para esta edição.</p>
@@ -50,7 +116,8 @@
   </div>
 </section>
 
-<section class="panel">
+<!-- Menções Brutas -->
+<section class="panel fade-in">
   <div class="panel-head">
     <h2>Menções Brutas</h2>
     <span>{{ mencoes|length }} itens</span>
@@ -66,4 +133,116 @@
     {% endfor %}
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Debug OCR: carrega imagem + texto ao clicar
+const pgSelect = document.getElementById('pg-select');
+const pgLoadBtn = document.getElementById('pg-load-btn');
+const pgPrevBtn = document.getElementById('pg-prev-btn');
+const pgNextBtn = document.getElementById('pg-next-btn');
+const pgImg = document.getElementById('pg-img');
+const pgText = document.getElementById('pg-text');
+const debugContainer = document.getElementById('ocr-debug-container');
+const edicaoId = {{ edicao.id }};
+
+if (pgLoadBtn) {
+  pgLoadBtn.addEventListener('click', async () => {
+    const pagina = pgSelect.value;
+    debugContainer.style.display = 'grid';
+    pgImg.src = '';
+    pgText.textContent = 'Carregando…';
+
+    // Carrega imagem
+    pgImg.src = `/paginas/${edicaoId}/${pagina}.png`;
+
+    // Tenta carregar texto OCR da edição
+    try {
+      const resp = await fetch(`/edicoes/${edicaoId}/texto`);
+      if (resp.ok) {
+        const texto = await resp.text();
+        // Tenta extrair apenas a página específica (heurística por marcação "--- Página N")
+        const linhas = texto.split('\n');
+        let emPagina = false;
+        const blocoTexto = [];
+        for (const linha of linhas) {
+          if (/página\s*0*${pagina}\b/i.test(linha.replace('${pagina}', pagina))) {
+            emPagina = true;
+          } else if (emPagina && /página\s*\d+/i.test(linha)) {
+            break;
+          }
+          if (emPagina) blocoTexto.push(linha);
+        }
+        pgText.textContent = blocoTexto.length > 3 ? blocoTexto.join('\n') : texto.slice(0, 3000) + '\n…(texto completo)';
+      } else {
+        pgText.textContent = 'Texto OCR não disponível para esta edição.';
+      }
+    } catch(e) {
+      pgText.textContent = 'Erro ao carregar texto: ' + e.message;
+    }
+  });
+}
+
+if (pgPrevBtn && pgNextBtn && pgSelect && pgLoadBtn) {
+  pgPrevBtn.addEventListener('click', () => {
+    const currentIndex = pgSelect.selectedIndex;
+    if (currentIndex > 0) {
+      pgSelect.selectedIndex = currentIndex - 1;
+      pgLoadBtn.click();
+    }
+  });
+
+  pgNextBtn.addEventListener('click', () => {
+    const currentIndex = pgSelect.selectedIndex;
+    if (currentIndex < pgSelect.options.length - 1) {
+      pgSelect.selectedIndex = currentIndex + 1;
+      pgLoadBtn.click();
+    }
+  });
+}
+
+// Copiar dados estruturados do card
+function copiarPublicacao(button) {
+  const card = button.closest('.publication-card');
+  const badgeElement = card.querySelector('.badge');
+  const categoria = badgeElement ? badgeElement.textContent.trim() : 'N/A';
+  
+  const h3Element = card.querySelector('h3');
+  const orgao = h3Element ? h3Element.textContent.trim() : 'Órgão não identificado';
+  
+  const resumoBlock = card.querySelector('.ia-resumo');
+  const resumo = resumoBlock ? resumoBlock.textContent.trim() : '';
+  
+  const assuntoBlock = card.querySelector('.subject');
+  const assunto = assuntoBlock ? assuntoBlock.textContent.trim() : '';
+  
+  // Extract facts
+  const facts = [];
+  card.querySelectorAll('.facts > div').forEach(div => {
+    const dt = div.querySelector('dt').textContent.trim();
+    const dd = div.querySelector('dd').textContent.trim();
+    facts.push(`${dt}: ${dd}`);
+  });
+
+  let textToCopy = `🏛️ Órgão: ${orgao}\n`;
+  textToCopy += `🏷️ Categoria: ${categoria}\n`;
+  textToCopy += `📌 Detalhes: ${facts.join(' | ')}\n`;
+  if (resumo) textToCopy += `✨ Resumo IA: ${resumo}\n`;
+  if (assunto) textToCopy += `📝 Assunto: ${assunto}\n`;
+
+  navigator.clipboard.writeText(textToCopy).then(() => {
+    const originalText = button.innerHTML;
+    button.innerHTML = '✅ Copiado!';
+    button.classList.add('active');
+    setTimeout(() => {
+      button.innerHTML = originalText;
+      button.classList.remove('active');
+    }, 2000);
+  }).catch(err => {
+    console.error('Erro ao copiar: ', err);
+    alert('Erro ao copiar para o clipboard.');
+  });
+}
+</script>
 {% endblock %}

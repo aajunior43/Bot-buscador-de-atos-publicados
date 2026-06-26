@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from config import SETTINGS
 from ocr_processor import PageText, TextBlock
+from ai_processor import refinar_publicacoes
 
 
 BASE_TERMS = [
@@ -614,6 +615,12 @@ def detectar(
             publicacao = _publicacao_do_segmento(segmento, termos_segmento)
             if publicacao:
                 publicacoes.append(publicacao)
+
+    if publicacoes:
+        import logging as _log
+        _log.getLogger("detector").info("Chamando IA para refinar %s publicacoes...", len(publicacoes))
+        publicacoes = refinar_publicacoes(publicacoes)
+        _log.getLogger("detector").info("IA concluida. Publicacoes refinadas: %s", sum(1 for p in publicacoes if p.get("resumo_ia")))
 
     return DetectionResult(
         encontrado=bool(trechos or publicacoes),

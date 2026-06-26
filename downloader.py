@@ -38,6 +38,8 @@ def _safe_filename(url: str, titulo: str) -> str:
     if not nome or "." not in nome:
         nome = titulo
     nome = re.sub(r"[^A-Za-z0-9_.-]+", "_", nome).strip("_")
+    # Corrige anos com dígitos extras no nome (ex: 20266 → 2026)
+    nome = re.sub(r"\b(2\d{3})\d+\b", r"\1", nome)
     if not nome.lower().endswith(".pdf"):
         nome = f"{nome or 'edicao'}.pdf"
     return nome

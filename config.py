@@ -56,8 +56,29 @@ class Settings:
     ocr_dpi: int = _int_env("OCR_DPI", 200)
     ocr_fast_dpi: int = _int_env("OCR_FAST_DPI", 150)
     ocr_timeout_seconds: int = _int_env("OCR_TIMEOUT_SECONDS", 120)
-    ocr_fast_timeout_seconds: int = _int_env("OCR_FAST_TIMEOUT_SECONDS", 45)
+    ocr_fast_timeout_seconds: int = _int_env("OCR_FAST_TIMEOUT_SECONDS", 90)
     ocr_layout_columns: int = _int_env("OCR_LAYOUT_COLUMNS", 3)
+    opencode_api_key: str = os.getenv("OPENCODE_API_KEY", "").strip()
+    opencode_model: str = os.getenv("OPENCODE_MODEL", "deepseek-v4-flash").strip()
+    ai_refine_publications: bool = _bool_env("AI_REFINE_PUBLICATIONS", True)
+    ai_timeout_seconds: int = _int_env("AI_TIMEOUT_SECONDS", 30)
+    ai_max_tokens: int = _int_env("AI_MAX_TOKENS", 8000)
+    # SMTP / E-mail
+    smtp_host: str = os.getenv("SMTP_HOST", "").strip()
+    smtp_port: int = _int_env("SMTP_PORT", 587)
+    smtp_user: str = os.getenv("SMTP_USER", "").strip()
+    smtp_pass: str = os.getenv("SMTP_PASS", "").strip()
+    smtp_to: str = os.getenv("SMTP_TO", "").strip()
+    smtp_from: str = os.getenv("SMTP_FROM", "").strip()
+    # Alerta de ausência
+    absence_alert_days: int = _int_env("ABSENCE_ALERT_DAYS", 30)
+    # Webhook genérico
+    webhook_url: str = os.getenv("WEBHOOK_URL", "").strip()
+    # Poppler (para pdf2image no Windows)
+    poppler_path: str = os.getenv("POPPLER_PATH", "").strip()
+    # Tesseract OCR (para pytesseract no Windows)
+    tesseract_path: str = os.getenv("TESSERACT_PATH", "").strip()
+
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "extra_terms", _csv_env("INAJA_EXTRA_TERMS"))

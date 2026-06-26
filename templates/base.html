@@ -3,8 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0d0f14">
     <title>{% block title %}Monitor O Regional{% endblock %}</title>
+    <meta name="description" content="Monitor automático de publicações oficiais de Inajá-PR no jornal O Regional.">
     <link rel="stylesheet" href="/static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   </head>
   <body>
     <div class="page-shell">
@@ -17,10 +21,12 @@
           </span>
         </a>
         <nav>
-          <a href="/">Dashboard</a>
-          <a href="/edicoes-detectadas">Edições</a>
-          <a href="/status">Status</a>
-          <a href="/api/publicacoes">API</a>
+          <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>Dashboard</a>
+          <a href="/edicoes-detectadas" {% if '/edicoes-detectadas' in request.url.path %}class="active"{% endif %}>Edições</a>
+          <a href="/status" {% if request.url.path == '/status' %}class="active"{% endif %}>Status</a>
+          <a href="/notificacoes" {% if request.url.path == '/notificacoes' %}class="active"{% endif %}>Alertas</a>
+          <a href="/exportar" {% if request.url.path == '/exportar' %}class="active"{% endif %}>Exportar</a>
+          <a href="/admin" {% if request.url.path == '/admin' %}class="active"{% endif %}>Admin</a>
         </nav>
       </header>
       <main>

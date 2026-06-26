@@ -5,11 +5,16 @@
   <p class="eyebrow">Varredura automática</p>
   <h1>Edições detectadas</h1>
   <p>O sistema registra edições automaticamente 4 vezes ao dia. A análise OCR é iniciada manualmente por edição.</p>
-  <div class="actions">
-    <form method="post" action="/edicoes-detectadas/detectar">
+  <div class="actions" style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+    <form method="post" action="/edicoes-detectadas/detectar" style="margin:0;">
       <button type="submit">Detectar agora</button>
     </form>
-    <a href="/status">Ver status</a>
+    {% if stats.pendentes and stats.pendentes > 0 %}
+    <form method="post" action="/edicoes-detectadas/analisar-lote" style="margin:0;">
+      <button type="submit" class="btn btn-secondary">Analisar lote de 5 pendentes</button>
+    </form>
+    {% endif %}
+    <a href="/status" style="font-size:.9rem; margin-left:.5rem;">Ver status</a>
   </div>
 </section>
 
@@ -25,15 +30,27 @@
     <h2>Lista de edições</h2>
     <span>
       {% if ultimo_detector %}
-      Última varredura: {{ ultimo_detector.atualizado_em }}
+        Última varredura: {{ ultimo_detector.atualizado_em }}
       {% else %}
-      Nenhuma varredura registrada
+        Nenhuma varredura registrada
       {% endif %}
     </span>
   </div>
+  <div style="padding:1rem 1.5rem; border-bottom:1px solid var(--border);">
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="all">Todas</button>
+      <button class="filter-btn" data-filter="pending">Pendentes</button>
+      <button class="filter-btn" data-filter="analyzed">Analisadas</button>
+      <button class="filter-btn" data-filter="inaja">Com Inajá</button>
+      <input type="text" id="edition-search" class="search-input" placeholder="Buscar edição por título ou data..." style="margin-left:auto;">
+    </div>
+  </div>
   <div class="edition-list">
     {% for edicao in edicoes %}
-    <article class="edition-row detected-edition">
+    <article class="edition-row detected-edition"
+             data-status="{% if edicao.ocr_processado %}analyzed{% else %}pending{% endif %}"
+             data-inaja="{% if edicao.tem_inaja %}true{% else %}false{% endif %}"
+             data-title="{{ (edicao.titulo or '')|lower }} {{ (edicao.data_publicacao or '')|lower }}">
       <a href="{% if edicao.ocr_processado %}/edicoes/{{ edicao.id }}{% else %}{{ edicao.url }}{% endif %}" target="{% if not edicao.ocr_processado %}_blank{% endif %}">
         <span>
           <strong>{{ edicao.titulo or ("Edição " ~ edicao.id) }}</strong>
@@ -42,12 +59,12 @@
       </a>
       <span class="chips">
         {% if edicao.ocr_processado %}
-          {% if edicao.tem_inaja %}<em>Inajá</em>{% endif %}
-          <em>analisada</em>
+          {% if edicao.tem_inaja %}<span class="badge badge-inaja">Inajá</span>{% endif %}
+          <span class="badge badge-analyzed">analisada</span>
           <em>{{ edicao.publicacoes_count }} pub.</em>
           <em>{{ edicao.mencoes_count }} men.</em>
         {% else %}
-          <em>pendente</em>
+          <span class="badge badge-pending">pendente</span>
         {% endif %}
         {% if edicao.ultimo_status %}
           <em>{{ edicao.ultima_etapa }}: {{ edicao.ultimo_status }}</em>
@@ -65,3 +82,58 @@
   </div>
 </section>
 {% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    const searchInput = document.getElementById('edition-search');
+    const editions = document.querySelectorAll('.detected-edition');
+
+    function applyFilterAndSearch() {
+      const activeFilter = document.querySelector('.filter-btn.active').getAttribute('data-filter');
+      const query = searchInput.value.toLowerCase().trim();
+
+      editions.forEach(edition => {
+        const status = edition.getAttribute('data-status');
+        const inaja = edition.getAttribute('data-inaja') === 'true';
+        const titleText = edition.getAttribute('data-title');
+
+        // Status matching
+        let matchesFilter = false;
+        if (activeFilter === 'all') {
+          matchesFilter = true;
+        } else if (activeFilter === 'pending') {
+          matchesFilter = (status === 'pending');
+        } else if (activeFilter === 'analyzed') {
+          matchesFilter = (status === 'analyzed');
+        } else if (activeFilter === 'inaja') {
+          matchesFilter = inaja;
+        }
+
+        // Text query matching
+        const matchesQuery = query === '' || titleText.includes(query);
+
+        if (matchesFilter && matchesQuery) {
+          edition.style.display = 'flex';
+        } else {
+          edition.style.display = 'none';
+        }
+      });
+    }
+
+    filterButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyFilterAndSearch();
+      });
+    });
+
+    if (searchInput) {
+      searchInput.addEventListener('input', applyFilterAndSearch);
+    }
+  });
+</script>
+{% endblock %}
+

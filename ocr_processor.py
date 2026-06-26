@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
 import pdfplumber
 import pytesseract
 from pdf2image import convert_from_path
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 from config import SETTINGS
 
 
 logger = logging.getLogger(__name__)
+_WORKERS = min(4, max(2, (SETTINGS.ocr_layout_columns or 1)))
+
+# Configura caminho do Tesseract (necessário no Windows quando não está no PATH)
+if SETTINGS.tesseract_path:
+    pytesseract.pytesseract.tesseract_cmd = SETTINGS.tesseract_path
+
 
 
 @dataclass(frozen=True)
@@ -41,7 +48,10 @@ class OCRResult:
 
 def _preprocessar(imagem: Image.Image) -> Image.Image:
     cinza = imagem.convert("L")
-    return cinza.point(lambda p: 255 if p > 180 else 0)
+    contraste = ImageEnhance.Contrast(cinza).enhance(1.5)
+    nitido = contraste.filter(ImageFilter.SHARPEN)
+    equalizada = ImageOps.equalize(nitido, mask=None)
+    return equalizada
 
 
 def _texto_pdfplumber(pdf_path: Path) -> list[PageText]:
@@ -82,24 +92,25 @@ def _texto_ocr_paginas(
         dpi=SETTINGS.ocr_dpi,
         first_page=primeira,
         last_page=ultima,
+        poppler_path=SETTINGS.poppler_path or None,
     )
     paginas_set = set(paginas)
-    textos: dict[int, PageText] = {}
+    imagens_filtradas: list[tuple[int, Image.Image]] = []
     numero_pagina = primeira
     for imagem in imagens:
-        if numero_pagina not in paginas_set:
-            numero_pagina += 1
-            continue
-        processada = _preprocessar(imagem)
-        blocks = _extrair_blocos_tesseract(processada, numero_pagina, avisos)
-        texto = "\n\n".join(block.texto for block in blocks)
-        textos[numero_pagina] = PageText(
-            pagina=numero_pagina,
-            texto=texto.strip(),
-            metodo="ocr",
-            blocks=blocks,
-        )
+        if numero_pagina in paginas_set:
+            imagens_filtradas.append((numero_pagina, imagem))
         numero_pagina += 1
+
+    textos: dict[int, PageText] = {}
+    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+        future_to_pagina = {
+            pool.submit(_ocr_completo_pagina, num, img, avisos or []): num
+            for num, img in imagens_filtradas
+        }
+        for future in as_completed(future_to_pagina):
+            num = future_to_pagina[future]
+            textos[num] = future.result()
     return textos
 
 
@@ -128,24 +139,33 @@ def _extrair_blocos_tesseract_por_coluna(
     colunas: int,
     avisos: list[str] | None = None,
 ) -> list[TextBlock]:
-    blocos: list[TextBlock] = []
     largura = imagem.width
+    recortes: list[tuple[int, Image.Image, int]] = []
     for coluna in range(colunas):
         x0 = round((largura * coluna) / colunas)
         x1 = round((largura * (coluna + 1)) / colunas)
         if x1 <= x0:
             continue
         recorte = imagem.crop((x0, 0, x1, imagem.height))
-        blocos.extend(
-            _extrair_blocos_tesseract_imagem(
+        recortes.append((coluna, recorte, x0))
+
+    blocos: list[TextBlock] = []
+    with ThreadPoolExecutor(max_workers=len(recortes)) as pool:
+        future_to_coluna = {
+            pool.submit(
+                _extrair_blocos_tesseract_imagem,
                 recorte,
                 pagina=pagina,
                 coluna=coluna,
                 x_offset=x0,
                 timeout=SETTINGS.ocr_timeout_seconds,
                 avisos=avisos,
-            )
-        )
+            ): coluna
+            for coluna, recorte, x0 in recortes
+        }
+        for future in as_completed(future_to_coluna):
+            blocos.extend(future.result())
+
     return sorted(
         blocos,
         key=lambda bloco: (
@@ -262,45 +282,81 @@ def _extrair_blocos_tesseract_imagem(
     return blocos
 
 
+def _ocr_completo_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> PageText:
+    processada = _preprocessar(imagem)
+    blocks = _extrair_blocos_tesseract(processada, idx, avisos)
+    texto = "\n\n".join(block.texto for block in blocks)
+    return PageText(pagina=idx, texto=texto.strip(), metodo="ocr", blocks=blocks)
+
+
 def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None) -> list[PageText]:
-    imagens = convert_from_path(str(pdf_path), dpi=SETTINGS.ocr_dpi)
-    paginas: list[PageText] = []
-    for idx, imagem in enumerate(imagens, start=1):
-        processada = _preprocessar(imagem)
-        blocks = _extrair_blocos_tesseract(processada, idx, avisos)
-        texto = "\n\n".join(block.texto for block in blocks)
-        paginas.append(
-            PageText(pagina=idx, texto=texto.strip(), metodo="ocr", blocks=blocks)
+    imagens = convert_from_path(str(pdf_path), dpi=SETTINGS.ocr_dpi, poppler_path=SETTINGS.poppler_path or None)
+    avisos = avisos if avisos is not None else []
+    paginas: list[PageText | None] = [None] * len(imagens)
+    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+        futures = {
+            pool.submit(_ocr_completo_pagina, idx, imagem, avisos): idx
+            for idx, imagem in enumerate(imagens, start=1)
+        }
+        for future in as_completed(futures):
+            idx = futures[future]
+            paginas[idx - 1] = future.result()
+    return [p for p in paginas if p is not None]
+
+
+def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> PageText:
+    processada = _preprocessar(imagem)
+    try:
+        texto = pytesseract.image_to_string(
+            processada,
+            lang=SETTINGS.ocr_language,
+            config="--psm 3",
+            timeout=SETTINGS.ocr_fast_timeout_seconds,
         )
-    return paginas
+    except RuntimeError:
+        logger.warning(
+            "Timeout de OCR rápido na página %s — retentando com resolução reduzida", idx
+        )
+        avisos.append(f"Timeout/falha de OCR rápido na página {idx}")
+        # Retry com imagem na metade da resolução para páginas muito densas
+        try:
+            reduzida = processada.resize(
+                (processada.width // 2, processada.height // 2),
+                Image.LANCZOS,
+            )
+            texto = pytesseract.image_to_string(
+                reduzida,
+                lang=SETTINGS.ocr_language,
+                config="--psm 3",
+                timeout=60,
+            )
+            logger.info("OCR rápido na página %s recuperado com resolução reduzida", idx)
+        except RuntimeError:
+            logger.exception(
+                "Timeout persistente de OCR rápido na página %s mesmo com resolução reduzida", idx
+            )
+            texto = ""
+    texto = texto.strip()
+    return PageText(
+        pagina=idx,
+        texto=texto,
+        metodo="ocr-rapido",
+        blocks=[TextBlock(pagina=idx, bloco=1, texto=texto)] if texto else [],
+    )
 
 
 def _texto_ocr_rapido_pdf(pdf_path: Path, avisos: list[str]) -> list[PageText]:
-    imagens = convert_from_path(str(pdf_path), dpi=SETTINGS.ocr_fast_dpi)
-    paginas: list[PageText] = []
-    for idx, imagem in enumerate(imagens, start=1):
-        processada = _preprocessar(imagem)
-        try:
-            texto = pytesseract.image_to_string(
-                processada,
-                lang=SETTINGS.ocr_language,
-                config="--psm 3",
-                timeout=SETTINGS.ocr_fast_timeout_seconds,
-            )
-        except RuntimeError:
-            logger.exception("Timeout/falha de OCR rápido na página %s", idx)
-            avisos.append(f"Timeout/falha de OCR rápido na página {idx}")
-            texto = ""
-        texto = texto.strip()
-        paginas.append(
-            PageText(
-                pagina=idx,
-                texto=texto,
-                metodo="ocr-rapido",
-                blocks=[TextBlock(pagina=idx, bloco=1, texto=texto)] if texto else [],
-            )
-        )
-    return paginas
+    imagens = convert_from_path(str(pdf_path), dpi=SETTINGS.ocr_fast_dpi, poppler_path=SETTINGS.poppler_path or None)
+    paginas: list[PageText | None] = [None] * len(imagens)
+    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+        futures = {
+            pool.submit(_ocr_rapido_pagina, idx, imagem, avisos): idx
+            for idx, imagem in enumerate(imagens, start=1)
+        }
+        for future in as_completed(futures):
+            idx = futures[future]
+            paginas[idx - 1] = future.result()
+    return [p for p in paginas if p is not None]
 
 
 def _texto_tem_candidato_inaja(texto: str) -> bool:
@@ -321,7 +377,84 @@ def _texto_tem_candidato_inaja(texto: str) -> bool:
     )
 
 
+def _salvar_cache_ocr(pdf_path: Path, result: OCRResult) -> None:
+    try:
+        import json
+        cache_path = pdf_path.with_suffix(".ocr.json")
+        data = {
+            "texto_completo": result.texto_completo,
+            "avisos": result.avisos,
+            "paginas": [
+                {
+                    "pagina": p.pagina,
+                    "texto": p.texto,
+                    "metodo": p.metodo,
+                    "blocks": [
+                        {
+                            "pagina": b.pagina,
+                            "bloco": b.bloco,
+                            "texto": b.texto,
+                            "bbox": list(b.bbox) if b.bbox else None
+                        }
+                        for b in (p.blocks or [])
+                    ]
+                }
+                for p in result.paginas
+            ]
+        }
+        cache_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        logger.exception("Falha ao salvar cache OCR para %s", pdf_path)
+
+
+def _carregar_cache_ocr(pdf_path: Path) -> OCRResult | None:
+    try:
+        import json
+        cache_path = pdf_path.with_suffix(".ocr.json")
+        if not cache_path.exists():
+            return None
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+        
+        paginas = []
+        for p in data["paginas"]:
+            blocks = []
+            for b in p.get("blocks", []):
+                bbox = tuple(b["bbox"]) if b.get("bbox") else None
+                blocks.append(
+                    TextBlock(
+                        pagina=b["pagina"],
+                        bloco=b["bloco"],
+                        texto=b["texto"],
+                        bbox=bbox
+                    )
+                )
+            paginas.append(
+                PageText(
+                    pagina=p["pagina"],
+                    texto=p["texto"],
+                    metodo=p["metodo"],
+                    blocks=blocks
+                )
+            )
+        
+        return OCRResult(
+            texto_completo=data["texto_completo"],
+            paginas=paginas,
+            texto_path=pdf_path.with_suffix(".txt"),
+            avisos=data.get("avisos", [])
+        )
+    except Exception:
+        logger.exception("Falha ao carregar cache OCR para %s", pdf_path)
+        return None
+
+
 def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path) -> OCRResult:
+    if not SETTINGS.force_ocr:
+        cache = _carregar_cache_ocr(pdf_path)
+        if cache:
+            logger.info("OCR recuperado do cache com sucesso para %s", pdf_path)
+            return cache
+
     logger.info("Executando OCR rápido com estruturação só em páginas candidatas: %s", pdf_path)
     avisos: list[str] = []
     paginas = _texto_ocr_rapido_pdf(pdf_path, avisos)
@@ -339,17 +472,25 @@ def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path) -> OCRResult:
     )
     texto_path = pdf_path.with_suffix(".txt")
     texto_path.write_text(texto_completo, encoding="utf-8")
-    return OCRResult(
+    result = OCRResult(
         texto_completo=texto_completo,
         paginas=paginas,
         texto_path=texto_path,
         avisos=avisos,
     )
+    _salvar_cache_ocr(pdf_path, result)
+    return result
 
 
 def extrair_texto(pdf_path: Path, force_ocr: bool | None = None) -> OCRResult:
-    logger.info("Extraindo texto de %s", pdf_path)
     usar_force_ocr = SETTINGS.force_ocr if force_ocr is None else force_ocr
+    if not usar_force_ocr:
+        cache = _carregar_cache_ocr(pdf_path)
+        if cache:
+            logger.info("OCR recuperado do cache com sucesso para %s", pdf_path)
+            return cache
+
+    logger.info("Extraindo texto de %s", pdf_path)
     avisos: list[str] = []
 
     if usar_force_ocr:
@@ -380,9 +521,12 @@ def extrair_texto(pdf_path: Path, force_ocr: bool | None = None) -> OCRResult:
     )
     texto_path = pdf_path.with_suffix(".txt")
     texto_path.write_text(texto_completo, encoding="utf-8")
-    return OCRResult(
+    result = OCRResult(
         texto_completo=texto_completo,
         paginas=paginas,
         texto_path=texto_path,
         avisos=avisos,
     )
+    _salvar_cache_ocr(pdf_path, result)
+    return result
+

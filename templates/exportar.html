@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Exportar Dados - Monitor Inajá{% endblock %}
+{% block content %}
+<section class="detail-hero fade-in">
+  <a class="backlink" href="/">← Voltar</a>
+  <h1>Exportar Publicações</h1>
+  <p>Baixe os dados de publicações detectadas em CSV (Excel) ou JSON.</p>
+</section>
+
+<div class="split fade-in">
+  <!-- Formulário de filtros -->
+  <div class="panel">
+    <div class="panel-head"><h2>Filtros</h2></div>
+    <form id="export-form" style="padding:1.25rem 1.5rem;">
+      <div class="field">
+        <label for="data_inicio">Data início</label>
+        <input type="date" id="data_inicio" name="data_inicio">
+      </div>
+      <div class="field">
+        <label for="data_fim">Data fim</label>
+        <input type="date" id="data_fim" name="data_fim">
+      </div>
+      <div class="field">
+        <label for="tipo">Tipo de ato</label>
+        <input type="text" id="tipo" name="tipo" placeholder="Ex: Decreto, Portaria, Lei…">
+      </div>
+      <div class="field">
+        <label for="orgao">Órgão</label>
+        <input type="text" id="orgao" name="orgao" placeholder="Ex: Prefeitura, Câmara…">
+      </div>
+      <div class="field" style="display:flex; align-items:center; gap:.75rem;">
+        <input type="checkbox" id="apenas_inaja" name="apenas_inaja" value="true" style="width:auto;">
+        <label for="apenas_inaja" style="margin:0; font-weight:400; color:var(--text-2);">Apenas edições com Inajá detectado</label>
+      </div>
+      <div class="actions" style="margin-top:1.5rem;">
+        <button type="button" id="btn-csv" class="btn">⬇ Baixar CSV</button>
+        <button type="button" id="btn-json" class="btn btn-secondary">⬇ Baixar JSON</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Instruções -->
+  <div class="panel">
+    <div class="panel-head"><h2>Como usar</h2></div>
+    <div style="padding:1.25rem 1.5rem; display:flex; flex-direction:column; gap:1rem;">
+      <div class="info-box" style="margin:0;">
+        <h3>📊 CSV (Excel/Planilhas)</h3>
+        <p style="font-size:.85rem; color:var(--text-2);">Ideal para análise em Excel, Google Sheets ou LibreOffice. Separado por ponto-e-vírgula (<code>;</code>), codificação UTF-8.</p>
+        <p style="font-size:.78rem; color:var(--text-3); margin-top:.5rem;">Campos: id, edição, data, página, categoria, órgão, tipo, número, data do ato, assunto, valor, resumo IA.</p>
+      </div>
+      <div class="info-box" style="margin:0;">
+        <h3>🔧 JSON (API)</h3>
+        <p style="font-size:.85rem; color:var(--text-2);">Ideal para integrações com outros sistemas, scripts Python ou dashboards. Também disponível em tempo real via <code>/api/publicacoes</code>.</p>
+      </div>
+      <div class="info-box" style="margin:0;">
+        <h3>🔗 URL direta</h3>
+        <p style="font-size:.78rem; color:var(--text-3);">Você pode acessar diretamente:</p>
+        <code style="display:block; margin-top:.4rem; word-break:break-all;">/api/exportar?format=csv&apenas_inaja=true</code>
+        <code style="display:block; margin-top:.3rem; word-break:break-all;">/api/exportar?format=json&tipo=Decreto</code>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function montarUrl(format) {
+  const form = document.getElementById('export-form');
+  const params = new URLSearchParams();
+  params.set('format', format);
+  const di = form.querySelector('#data_inicio').value;
+  const df = form.querySelector('#data_fim').value;
+  const tp = form.querySelector('#tipo').value;
+  const org = form.querySelector('#orgao').value;
+  const inaja = form.querySelector('#apenas_inaja').checked;
+  if (di)    params.set('data_inicio', di);
+  if (df)    params.set('data_fim', df);
+  if (tp)    params.set('tipo', tp);
+  if (org)   params.set('orgao', org);
+  if (inaja) params.set('apenas_inaja', 'true');
+  return `/api/exportar?${params.toString()}`;
+}
+
+document.getElementById('btn-csv').addEventListener('click', () => {
+  window.location.href = montarUrl('csv');
+});
+
+document.getElementById('btn-json').addEventListener('click', () => {
+  window.open(montarUrl('json'), '_blank');
+});
+</script>
+{% endblock %}

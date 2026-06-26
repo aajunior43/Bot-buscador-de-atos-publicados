@@ -1,30 +1,37 @@
 {% extends "base.html" %}
 {% block title %}Status - Monitor Inajá{% endblock %}
 {% block content %}
-<section class="detail-hero status-hero">
+<section class="detail-hero status-hero fade-in">
   <a class="backlink" href="/">← Voltar</a>
   <h1>Fila e Status</h1>
   <p>Acompanhe cada etapa: download, OCR, detecção, notificação e erros.</p>
   <div class="live-strip">
     <span class="live-dot"></span>
-    <span>Atualização automática a cada 5 segundos</span>
+    <span>Atualização automática via SSE</span>
     <span id="last-refresh">carregado agora</span>
   </div>
 </section>
 
-<section class="stats-grid">
-  <article><strong>{{ resumo.rodando or 0 }}</strong><span>Rodando</span></article>
-  <article><strong>{{ resumo.avisos or 0 }}</strong><span>Avisos</span></article>
-  <article><strong>{{ resumo.erros or 0 }}</strong><span>Erros</span></article>
-  <article><strong>{{ resumo.concluidos or 0 }}</strong><span>Concluídos</span></article>
+<section class="stats-grid fade-in">
+  <article id="stat-rodando"><strong>{{ resumo.rodando or 0 }}</strong><span>Rodando</span></article>
+  <article id="stat-avisos"><strong>{{ resumo.avisos or 0 }}</strong><span>Avisos</span></article>
+  <article id="stat-erros"><strong>{{ resumo.erros or 0 }}</strong><span>Erros</span></article>
+  <article id="stat-concluidos"><strong>{{ resumo.concluidos or 0 }}</strong><span>Concluídos</span></article>
 </section>
 
-<section class="panel">
+<section class="panel fade-in">
   <div class="panel-head">
-    <h2>Histórico Operacional</h2>
-    <span>agrupado por edição</span>
+    <div>
+      <h2>Histórico Operacional</h2>
+      <span>agrupado por edição (últimos 200 eventos)</span>
+    </div>
+    <form action="/status/limpar" method="post" onsubmit="return confirm('Deseja realmente limpar todo o histórico de execuções finalizadas?');" style="margin: 0;">
+      <button type="submit" class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
+        Limpar Histórico
+      </button>
+    </form>
   </div>
-  <div class="status-groups">
+  <div class="status-groups" id="status-groups">
     {% for grupo in grupos %}
     <article class="status-group status-{{ grupo.status }}">
       <header class="status-group-head">
@@ -45,7 +52,7 @@
           </span>
           {% if grupo.edicao_id %}
           <a class="status-link" href="/edicoes/{{ grupo.edicao_id }}">
-            Abrir edição de {{ grupo.data_publicacao or grupo.titulo }}
+            Abrir edição ↗
           </a>
           {% endif %}
         </div>
@@ -72,12 +79,59 @@
   </div>
 </section>
 {% endblock %}
+
 {% block scripts %}
 <script>
-  const refreshEl = document.getElementById("last-refresh");
-  if (refreshEl) {
-    refreshEl.textContent = "última atualização: " + new Date().toLocaleTimeString("pt-BR");
-  }
-  setTimeout(() => window.location.reload(), 5000);
+const refreshEl = document.getElementById('last-refresh');
+let isRunning = {{ resumo.rodando or 0 }} > 0;
+
+function atualizarResumo() {
+  fetch('/api/status', {cache: 'no-store'}).then(r => r.json()).then(jobs => {
+    const contadores = {rodando:0, aviso:0, erro:0, concluido:0};
+    jobs.forEach(j => {
+      let st = j.status;
+      if (st === 'concluido') contadores.concluido++;
+      else if (st === 'aviso') contadores.aviso++;
+      else if (st === 'erro') contadores.erro++;
+      else if (st === 'rodando') contadores.rodando++;
+    });
+    document.querySelector('#stat-rodando strong').textContent = contadores.rodando;
+    document.querySelector('#stat-avisos strong').textContent = contadores.aviso;
+    document.querySelector('#stat-erros strong').textContent = contadores.erro;
+    document.querySelector('#stat-concluidos strong').textContent = contadores.concluido;
+    if (refreshEl) refreshEl.textContent = 'última atualização: ' + new Date().toLocaleTimeString('pt-BR');
+    
+    if (contadores.rodando > 0 && !isRunning) {
+      isRunning = true;
+      setTimeout(() => window.location.reload(), 3000);
+    }
+  }).catch(() => {});
+}
+
+// Escuta eventos SSE para auto-refresh inteligente
+if (window.EventSource) {
+  const source = new EventSource('/api/eventos');
+  source.onmessage = function(event) {
+    try {
+      const data = JSON.parse(event.data);
+      const rodandoCount = data.rodando ? data.rodando.length : 0;
+      
+      // Se algo está rodando ou acabou de rodar, atualiza contadores e agenda reload
+      if (rodandoCount > 0 || isRunning) {
+        atualizarResumo();
+        if (rodandoCount === 0 && isRunning) {
+          isRunning = false;
+          setTimeout(() => window.location.reload(), 2000);
+        } else if (rodandoCount > 0 && !isRunning) {
+          isRunning = true;
+          setTimeout(() => window.location.reload(), 2000);
+        }
+      }
+    } catch(e) {}
+  };
+} else {
+  setInterval(atualizarResumo, 10000);
+}
+atualizarResumo();
 </script>
 {% endblock %}

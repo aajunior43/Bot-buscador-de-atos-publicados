@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -28,8 +29,10 @@ CREATE TABLE IF NOT EXISTS mencoes (
   pagina INTEGER,
   trecho TEXT,
   termo_encontrado TEXT,
+  hash_trecho TEXT,
   notificado INTEGER DEFAULT 0,
-  criado_em TEXT DEFAULT CURRENT_TIMESTAMP
+  criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(edicao_id, hash_trecho)
 );
 
 CREATE TABLE IF NOT EXISTS publicacoes (
@@ -60,10 +63,44 @@ CREATE TABLE IF NOT EXISTS jobs (
   finalizado_em TEXT
 );
 
+CREATE TABLE IF NOT EXISTS notificacoes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  edicao_id INTEGER REFERENCES edicoes(id),
+  canal TEXT NOT NULL,
+  conteudo TEXT,
+  sucesso INTEGER DEFAULT 1,
+  erro TEXT,
+  criado_em TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS webhooks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  url TEXT UNIQUE NOT NULL,
+  descricao TEXT,
+  ativo INTEGER DEFAULT 1,
+  criado_em TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_edicoes_url ON edicoes(url);
 CREATE INDEX IF NOT EXISTS idx_mencoes_edicao ON mencoes(edicao_id);
 CREATE INDEX IF NOT EXISTS idx_publicacoes_edicao ON publicacoes(edicao_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, atualizado_em);
+CREATE INDEX IF NOT EXISTS idx_notificacoes_edicao ON notificacoes(edicao_id);
+
+CREATE TABLE IF NOT EXISTS settings (
+  chave TEXT PRIMARY KEY,
+  valor TEXT NOT NULL,
+  atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+
+_MIGRATIONS_SQL = """
+ALTER TABLE publicacoes ADD COLUMN resumo_ia TEXT;
+ALTER TABLE publicacoes ADD COLUMN categoria_ia TEXT;
+ALTER TABLE publicacoes ADD COLUMN texto_corrigido TEXT;
+ALTER TABLE publicacoes ADD COLUMN ia_processado INTEGER DEFAULT 0;
+ALTER TABLE mencoes ADD COLUMN hash_trecho TEXT;
 """
 
 
@@ -84,6 +121,62 @@ def connect(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        for sql in _MIGRATIONS_SQL.strip().split(";"):
+            sql = sql.strip()
+            if sql:
+                try:
+                    conn.execute(sql)
+                except sqlite3.OperationalError:
+                    pass
+
+
+def cleanup_stuck_jobs(max_hours: int = 2) -> int:
+    """Marca como erro jobs que ficaram 'rodando' por mais de max_hours horas (ou todos se max_hours <= 0)."""
+    with connect() as conn:
+        if max_hours <= 0:
+            cur = conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'erro',
+                    mensagem = 'Job interrompido - servidor reiniciado',
+                    finalizado_em = CURRENT_TIMESTAMP,
+                    atualizado_em = CURRENT_TIMESTAMP
+                WHERE status = 'rodando'
+                """
+            )
+        else:
+            cur = conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'erro',
+                    mensagem = 'Job travado: marcado como erro automaticamente',
+                    finalizado_em = CURRENT_TIMESTAMP,
+                    atualizado_em = CURRENT_TIMESTAMP
+                WHERE status = 'rodando'
+                  AND atualizado_em < datetime('now', ? || ' hours')
+                """,
+                (f"-{max_hours}",),
+            )
+        return cur.rowcount
+
+
+def get_setting(chave: str, padrao: str = "") -> str:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT valor FROM settings WHERE chave = ?", (chave,)
+        ).fetchone()
+        return row["valor"] if row else padrao
+
+
+def set_setting(chave: str, valor: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO settings (chave, valor, atualizado_em)
+               VALUES (?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor,
+                 atualizado_em = CURRENT_TIMESTAMP""",
+            (chave, valor),
+        )
 
 
 def url_exists(url: str) -> bool:
@@ -147,23 +240,36 @@ def update_tem_inaja(edicao_id: int, tem_inaja: bool) -> None:
         )
 
 
+def _hash_trecho(pagina: int, trecho: str, termo: str) -> str:
+    """Gera hash único para deduplicar menções."""
+    raw = f"{pagina}|{trecho}|{termo}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
 def insert_mencoes(edicao_id: int, mencoes: list[dict]) -> None:
+    """Insere menções usando deduplicação por hash — preserva histórico de notificações."""
     with connect() as conn:
-        conn.execute("DELETE FROM mencoes WHERE edicao_id = ?", (edicao_id,))
+        # Remove apenas menções deste processo que nunca foram notificadas
+        conn.execute(
+            "DELETE FROM mencoes WHERE edicao_id = ? AND notificado = 0",
+            (edicao_id,),
+        )
+        rows = [
+            (
+                edicao_id,
+                item["pagina"],
+                item["trecho"],
+                item["termo"],
+                _hash_trecho(item["pagina"], item["trecho"], item["termo"]),
+            )
+            for item in mencoes
+        ]
         conn.executemany(
             """
-            INSERT INTO mencoes (edicao_id, pagina, trecho, termo_encontrado)
-            VALUES (?, ?, ?, ?)
+            INSERT OR IGNORE INTO mencoes (edicao_id, pagina, trecho, termo_encontrado, hash_trecho)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            [
-                (
-                    edicao_id,
-                    item["pagina"],
-                    item["trecho"],
-                    item["termo"],
-                )
-                for item in mencoes
-            ],
+            rows,
         )
 
 
@@ -174,9 +280,10 @@ def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
             """
             INSERT INTO publicacoes (
               edicao_id, pagina, bloco, categoria, orgao, tipo, numero,
-              data_documento, assunto, valor, trecho
+              data_documento, assunto, valor, trecho,
+              resumo_ia, categoria_ia, texto_corrigido, ia_processado
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -191,6 +298,10 @@ def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
                     item.get("assunto"),
                     item.get("valor"),
                     item.get("trecho"),
+                    item.get("resumo_ia"),
+                    item.get("categoria_ia"),
+                    item.get("texto_corrigido"),
+                    1 if item.get("resumo_ia") or item.get("categoria_ia") else 0,
                 )
                 for item in publicacoes
             ],
@@ -283,5 +394,216 @@ def reset_processing() -> None:
             SET ocr_processado = 0, tem_inaja = 0, texto_extraido_path = NULL
             """
         )
-        conn.execute("DELETE FROM mencoes")
+        conn.execute("DELETE FROM mencoes WHERE notificado = 0")
         conn.execute("DELETE FROM publicacoes")
+
+
+def insert_notificacao(
+    edicao_id: int | None,
+    canal: str,
+    conteudo: str,
+    sucesso: bool = True,
+    erro: str | None = None,
+) -> int:
+    with connect() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO notificacoes (edicao_id, canal, conteudo, sucesso, erro)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (edicao_id, canal, conteudo, 1 if sucesso else 0, erro),
+        )
+        return int(cur.lastrowid)
+
+
+def get_notificacoes(limit: int = 100) -> list[sqlite3.Row]:
+    with connect() as conn:
+        return list(
+            conn.execute(
+                """
+                SELECT n.*, e.titulo AS edicao_titulo, e.data_publicacao
+                FROM notificacoes n
+                LEFT JOIN edicoes e ON e.id = n.edicao_id
+                ORDER BY n.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        )
+
+
+def get_absence_alert_needed(days: int = 30) -> bool:
+    """Retorna True se não houve publicação com Inajá nos últimos `days` dias."""
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM edicoes
+            WHERE tem_inaja = 1
+              AND data_publicacao >= date('now', ? || ' days')
+            """,
+            (f"-{days}",),
+        ).fetchone()
+        return (row["cnt"] if row else 0) == 0
+
+
+def get_webhooks() -> list[sqlite3.Row]:
+    with connect() as conn:
+        return list(conn.execute("SELECT * FROM webhooks WHERE ativo = 1 ORDER BY id"))
+
+
+def upsert_webhook(url: str, descricao: str = "", ativo: bool = True) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO webhooks (url, descricao, ativo)
+            VALUES (?, ?, ?)
+            ON CONFLICT(url) DO UPDATE SET
+              descricao = excluded.descricao,
+              ativo = excluded.ativo
+            """,
+            (url, descricao, 1 if ativo else 0),
+        )
+
+
+def delete_webhook(webhook_id: int) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM webhooks WHERE id = ?", (webhook_id,))
+
+
+def get_publicacoes_por_mes() -> list[dict]:
+    """Dados para gráfico de linha do tempo — publicações por mês."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+              substr(e.data_publicacao, 1, 7) AS mes,
+              COUNT(p.id) AS total,
+              SUM(CASE WHEN e.tem_inaja = 1 THEN 1 ELSE 0 END) AS com_inaja
+            FROM edicoes e
+            LEFT JOIN publicacoes p ON p.edicao_id = e.id
+            WHERE e.data_publicacao IS NOT NULL
+            GROUP BY mes
+            ORDER BY mes DESC
+            LIMIT 12
+            """
+        ).fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+
+def get_publicacoes_por_tipo() -> list[dict]:
+    """Dados para gráfico de pizza — publicações por tipo de ato."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+              COALESCE(tipo, 'Sem tipo') AS tipo,
+              COUNT(*) AS total
+            FROM publicacoes
+            GROUP BY tipo
+            ORDER BY total DESC
+            LIMIT 10
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def clear_jobs_history() -> int:
+    """Remove jobs antigos (concluídos, erro, ignorado) para limpar o histórico."""
+    with connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM jobs WHERE status IN ('concluido', 'erro', 'ignorado')"
+        )
+        return cur.rowcount
+
+
+def delete_hnetsistemas_edicoes() -> int:
+    """Remove edições antigas associadas ao domínio hnetsistemas.com.br."""
+    with connect() as conn:
+        conn.execute(
+            """
+            DELETE FROM publicacoes
+            WHERE edicao_id IN (SELECT id FROM edicoes WHERE url LIKE '%hnetsistemas.com.br%')
+            """
+        )
+        conn.execute(
+            """
+            DELETE FROM mencoes
+            WHERE edicao_id IN (SELECT id FROM edicoes WHERE url LIKE '%hnetsistemas.com.br%')
+            """
+        )
+        conn.execute(
+            """
+            DELETE FROM jobs
+            WHERE edicao_id IN (SELECT id FROM edicoes WHERE url LIKE '%hnetsistemas.com.br%')
+            """
+        )
+        cur = conn.execute(
+            "DELETE FROM edicoes WHERE url LIKE '%hnetsistemas.com.br%'"
+        )
+        return cur.rowcount
+
+
+def salvar_arquivos_atos_locais(texto_path: Path | str, publicacoes: list[dict]) -> None:
+    """Salva arquivos .atos.json e .atos.md na mesma pasta do PDF contendo apenas os atos daquela edição."""
+    try:
+        import json
+        from datetime import datetime
+        if not texto_path:
+            return
+        base_path = Path(texto_path).with_suffix("")
+        json_path = Path(str(base_path) + ".atos.json")
+        md_path = Path(str(base_path) + ".atos.md")
+
+        # 1. Salvar JSON estruturado
+        dados = []
+        for p in publicacoes:
+            dados.append({
+                "pagina": p.get("pagina"),
+                "orgao": p.get("orgao"),
+                "tipo": p.get("tipo"),
+                "numero": p.get("numero"),
+                "data_documento": p.get("data_documento"),
+                "valor": p.get("valor"),
+                "assunto": p.get("assunto") or p.get("resumo_ia"),
+                "resumo_ia": p.get("resumo_ia"),
+                "trecho_ocr": p.get("trecho") or p.get("texto_corrigido")
+            })
+        
+        json_path.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 2. Salvar Markdown legível
+        linhas = [
+            f"# Atos Oficiais de Inajá-PR — {base_path.name}",
+            f"Edição reprocessada/analisada em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}",
+            f"Total de atos detectados: {len(publicacoes)}",
+            "",
+            "---",
+            ""
+        ]
+        
+        for idx, p in enumerate(publicacoes, 1):
+            linhas.extend([
+                f"## Ato {idx}: {p.get('tipo') or 'Ato Oficial'} {p.get('numero') or ''}",
+                f"- **Órgão:** {p.get('orgao') or 'Não especificado'}",
+                f"- **Data do Ato:** {p.get('data_documento') or 'Não informada'}",
+                f"- **Página no Jornal:** {p.get('pagina') or 'N/A'}",
+                f"- **Valor:** {p.get('valor') or '—'}",
+                f"- **Resumo IA:** {p.get('resumo_ia') or p.get('assunto') or 'Não gerado'}",
+                "",
+                "### Trecho do Documento:",
+                "```text",
+                (p.get("trecho") or p.get("texto_corrigido") or "").strip(),
+                "```",
+                "",
+                "---",
+                ""
+            ])
+            
+        md_path.write_text("\n".join(linhas), encoding="utf-8")
+    except Exception:
+        import logging
+        logging.getLogger("database").exception("Falha ao salvar arquivos locais de atos para %s", texto_path)
+
+
+

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urljoin
@@ -85,15 +86,45 @@ def _extrair_com_playwright(url: str) -> list[Edicao]:
 
 
 def coletar_edicoes() -> list[Edicao]:
+    """Coleta edições com retry exponencial para maior resiliência."""
     logger.info("Coletando edições em %s", SETTINGS.site_url)
-    resp = requests.get(SETTINGS.site_url, headers=_headers(), timeout=SETTINGS.request_timeout)
-    resp.raise_for_status()
+    ultimo_erro: Exception | None = None
+    for tentativa in range(1, SETTINGS.max_retries + 1):
+        try:
+            resp = requests.get(
+                SETTINGS.site_url,
+                headers=_headers(),
+                timeout=SETTINGS.request_timeout,
+            )
+            resp.raise_for_status()
+            edicoes = _extrair_com_bs4(resp.text, SETTINGS.site_url)
+            if not edicoes:
+                logger.warning(
+                    "Nenhuma edição encontrada via BS4 (possível mudança de layout). "
+                    "Tentando Playwright..."
+                )
+                edicoes = _extrair_com_playwright(SETTINGS.site_url)
+            if not edicoes:
+                logger.error(
+                    "Nenhuma edição encontrada em %s — verifique se o layout do site mudou.",
+                    SETTINGS.site_url,
+                )
+            logger.info("Edições encontradas: %s", len(edicoes))
+            return edicoes
+        except requests.RequestException as exc:
+            ultimo_erro = exc
+            espera = 2 ** (tentativa - 1)
+            logger.warning(
+                "Falha ao coletar edições (tentativa %s/%s): %s. Aguardando %ss...",
+                tentativa,
+                SETTINGS.max_retries,
+                exc,
+                espera,
+            )
+            time.sleep(espera)
 
-    edicoes = _extrair_com_bs4(resp.text, SETTINGS.site_url)
-    if not edicoes:
-        edicoes = _extrair_com_playwright(SETTINGS.site_url)
-    logger.info("Edições encontradas: %s", len(edicoes))
-    return edicoes
+    logger.error("Todas as tentativas de coleta falharam: %s", ultimo_erro)
+    return []
 
 
 def listar_edicoes(force_rescan: bool = False) -> list[Edicao]:

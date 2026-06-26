@@ -1,51 +1,64 @@
 {% extends "base.html" %}
 {% block title %}Dashboard - Monitor Inajá{% endblock %}
 {% block content %}
-<section class="hero">
-  <div>
-    <p class="eyebrow">Monitor automático</p>
-    <h1>Publicações sobre Inajá em edições do O Regional.</h1>
-    <p class="hero-copy">OCR por blocos, filtro de patrocinadores e classificação de publicações oficiais.</p>
-  </div>
+<section class="hero fade-in">
+  <p class="eyebrow">Monitor automático</p>
+  <h1>Publicações sobre Inajá em edições do O Regional.</h1>
+  <p class="hero-copy">OCR por blocos, filtro de patrocinadores e classificação de publicações oficiais com IA.</p>
   <form class="search-card" method="get" action="/">
-    <label for="q">Buscar</label>
+    <label for="q">Buscar publicações</label>
     <div class="search-row">
-      <input id="q" name="q" value="{{ q }}" placeholder="Ex: decreto, Inajá, crédito, 2026-01">
+      <input id="q" name="q" value="{{ q }}" placeholder="Ex: decreto, crédito, Inajá, 2026-01…">
       <button type="submit">Filtrar</button>
     </div>
   </form>
 </section>
 
-<section class="stats-grid">
-  <article><strong>{{ stats.total_edicoes or 0 }}</strong><span>Edições no banco</span></article>
-  <article><strong>{{ stats.edicoes_inaja or 0 }}</strong><span>Com Inajá</span></article>
-  <article><strong>{{ stats.total_publicacoes or 0 }}</strong><span>Publicações</span></article>
-  <article><strong>{{ stats.total_mencoes or 0 }}</strong><span>Menções</span></article>
+<section class="stats-grid fade-in">
+  <article>
+    <strong>{{ stats.total_edicoes or 0 }}</strong>
+    <span>Edições no banco</span>
+  </article>
+  <article>
+    <strong>{{ stats.edicoes_inaja or 0 }}</strong>
+    <span>Com Inajá</span>
+  </article>
+  <article>
+    <strong>{{ stats.total_publicacoes or 0 }}</strong>
+    <span>Publicações</span>
+  </article>
+  <article>
+    <strong>{{ stats.total_mencoes or 0 }}</strong>
+    <span>Menções</span>
+  </article>
 </section>
 
-<section class="panel activity-panel" id="activity-panel">
+<!-- Gráficos -->
+<div class="charts-row fade-in">
+  <div class="chart-panel">
+    <h3>Publicações por mês</h3>
+    <canvas id="chart-por-mes" aria-label="Gráfico de publicações por mês"></canvas>
+  </div>
+  <div class="chart-panel">
+    <h3>Tipos de ato</h3>
+    <canvas id="chart-por-tipo" aria-label="Gráfico de tipos de ato"></canvas>
+  </div>
+</div>
+
+<!-- Atividade -->
+<section class="panel activity-panel fade-in" id="activity-panel">
   <div class="panel-head">
     <h2>Atividade agora</h2>
     <span id="activity-refresh">atualizando automaticamente</span>
   </div>
   <div class="activity-state {% if atividade.tem_atividade %}is-running{% else %}is-idle{% endif %}" id="activity-state">
-    <div class="activity-orb">
-      <span></span>
-    </div>
+    <div class="activity-orb"><span></span></div>
     <div>
       <strong id="activity-title">
-        {% if atividade.tem_atividade %}
-        Executando {{ atividade.rodando|length }} etapa(s)
-        {% else %}
-        Nenhuma etapa em execução
-        {% endif %}
+        {% if atividade.tem_atividade %}Executando {{ atividade.rodando|length }} etapa(s){% else %}Sistema aguardando{% endif %}
       </strong>
       <p id="activity-message">
-        {% if atividade.tem_atividade %}
-        Acompanhe abaixo o processamento em andamento.
-        {% else %}
-        O sistema está aguardando a próxima varredura automática ou uma análise manual.
-        {% endif %}
+        {% if atividade.tem_atividade %}Acompanhe abaixo o processamento em andamento.{% else %}Aguardando próxima varredura ou análise manual.{% endif %}
       </p>
     </div>
   </div>
@@ -75,10 +88,7 @@
           <span class="status-dot"></span>
           <div>
             <strong>{{ job.etapa }}</strong>
-            <small>
-              {% if job.status == "aviso" %}concluído com avisos{% else %}{{ job.status }}{% endif %}
-              · {{ job.atualizado_em }}
-            </small>
+            <small>{% if job.status == "aviso" %}concluído com avisos{% else %}{{ job.status }}{% endif %} · {{ job.atualizado_em }}</small>
             {% if job.mensagem %}<p>{{ job.mensagem }}</p>{% endif %}
           </div>
         </article>
@@ -90,7 +100,8 @@
   </div>
 </section>
 
-<section class="split">
+<div class="split fade-in">
+  <!-- Publicações Recentes -->
   <div class="panel">
     <div class="panel-head">
       <h2>Publicações Recentes</h2>
@@ -99,7 +110,7 @@
     <div class="cards">
       {% for item in publicacoes %}
       <a class="publication-card" href="/edicoes/{{ item.edicao_id }}">
-        <img class="thumb" src="/paginas/{{ item.edicao_id }}/{{ item.pagina }}.png" alt="Página {{ item.pagina }}">
+        <img class="thumb" src="/paginas/{{ item.edicao_id }}/{{ item.pagina }}.png" alt="Página {{ item.pagina }}" loading="lazy">
         <span class="badge">{{ item.categoria or "publicação" }}</span>
         <h3>{{ item.orgao or "Órgão não identificado" }}</h3>
         <p>{{ item.tipo or "Ato" }}{% if item.numero %} {{ item.numero }}{% endif %}</p>
@@ -111,11 +122,12 @@
         </div>
       </a>
       {% else %}
-      <p class="empty">Nenhuma publicação estruturada ainda.</p>
+      <p class="empty">Nenhuma publicação estruturada ainda.<br>Analise uma edição para começar.</p>
       {% endfor %}
     </div>
   </div>
 
+  <!-- Edições -->
   <div class="panel">
     <div class="panel-head">
       <h2>Edições</h2>
@@ -135,72 +147,150 @@
         </span>
       </a>
       {% else %}
-      <p class="empty">Nenhuma edição registrada.</p>
+      <p class="empty">Nenhuma edição registrada.<br>Acesse <a href="/edicoes-detectadas">Edições</a> para iniciar.</p>
       {% endfor %}
     </div>
   </div>
-</section>
+</div>
 {% endblock %}
+
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-  const statusLabel = {
-    aviso: "concluído com avisos"
-  };
+// ── Chart defaults ──────────────────────────────────────────
+Chart.defaults.color = '#a0a8c0';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+Chart.defaults.font.family = "'Inter', sans-serif";
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
+// ── Line chart: publicações por mês ────────────────────────
+async function carregarGraficoPorMes() {
+  try {
+    const r = await fetch('/api/graficos/por-mes');
+    const dados = await r.json();
+    const labels = dados.map(d => d.mes);
+    const totais = dados.map(d => d.total);
+    const inaja  = dados.map(d => d.com_inaja);
+    const ctx = document.getElementById('chart-por-mes');
+    if (!ctx) return;
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Total publicações',
+            data: totais,
+            borderColor: '#6366f1',
+            backgroundColor: 'rgba(99,102,241,0.08)',
+            tension: 0.4,
+            fill: true,
+            pointBackgroundColor: '#6366f1',
+            pointRadius: 4,
+          },
+          {
+            label: 'Com Inajá',
+            data: inaja,
+            borderColor: '#22d3a5',
+            backgroundColor: 'rgba(34,211,165,0.08)',
+            tension: 0.4,
+            fill: true,
+            pointBackgroundColor: '#22d3a5',
+            pointRadius: 4,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 16 } } },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.04)' } },
+          y: { grid: { color: 'rgba(255,255,255,0.04)' }, beginAtZero: true, ticks: { stepSize: 1 } }
+        }
+      }
+    });
+  } catch(e) { console.warn('Gráfico por mês não disponível', e); }
+}
 
-  function renderJob(job, includeTitle) {
-    const title = includeTitle ? (job.edicao_titulo || job.titulo || "Processo geral") : (statusLabel[job.status] || job.status);
-    return `
-      <article class="activity-item status-${escapeHtml(job.status)}">
-        <span class="status-dot"></span>
-        <div>
-          <strong>${escapeHtml(job.etapa)}</strong>
-          <small>${escapeHtml(title)} · ${escapeHtml(job.atualizado_em)}</small>
-          ${job.mensagem ? `<p>${escapeHtml(job.mensagem)}</p>` : ""}
-        </div>
-      </article>
-    `;
-  }
+// ── Doughnut chart: tipos de ato ───────────────────────────
+async function carregarGraficoPorTipo() {
+  try {
+    const r = await fetch('/api/graficos/por-tipo');
+    const dados = await r.json();
+    const labels = dados.map(d => d.tipo);
+    const totais = dados.map(d => d.total);
+    const cores = ['#6366f1','#22d3a5','#fbbf24','#f87171','#38bdf8','#a78bfa','#34d399','#fb923c','#e879f9','#94a3b8'];
+    const ctx = document.getElementById('chart-por-tipo');
+    if (!ctx) return;
+    new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{ data: totais, backgroundColor: cores, borderColor: '#13161e', borderWidth: 2, hoverOffset: 6 }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } }
+        },
+        cutout: '68%',
+      }
+    });
+  } catch(e) { console.warn('Gráfico por tipo não disponível', e); }
+}
 
-  async function refreshActivity() {
+// ── SSE activity refresh ────────────────────────────────────
+const statusLabel = { aviso: 'concluído com avisos' };
+
+function escapeHtml(v) {
+  return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;");
+}
+
+function renderJob(job, includeTitle) {
+  const title = includeTitle
+    ? (job.edicao_titulo || job.titulo || 'Processo geral')
+    : (statusLabel[job.status] || job.status);
+  return `
+    <article class="activity-item status-${escapeHtml(job.status)}">
+      <span class="status-dot"></span>
+      <div>
+        <strong>${escapeHtml(job.etapa)}</strong>
+        <small>${escapeHtml(title)} · ${escapeHtml(job.atualizado_em)}</small>
+        ${job.mensagem ? `<p>${escapeHtml(job.mensagem)}</p>` : ''}
+      </div>
+    </article>`;
+}
+
+function conectarSSE() {
+  const source = new EventSource('/api/eventos');
+  source.onmessage = function(event) {
     try {
-      const response = await fetch("/api/atividade", { cache: "no-store" });
-      if (!response.ok) return;
-      const data = await response.json();
-      const state = document.getElementById("activity-state");
-      const title = document.getElementById("activity-title");
-      const message = document.getElementById("activity-message");
-      const running = document.getElementById("running-list");
-      const recent = document.getElementById("recent-list");
-      const refresh = document.getElementById("activity-refresh");
+      const data = JSON.parse(event.data);
+      const state   = document.getElementById('activity-state');
+      const title   = document.getElementById('activity-title');
+      const message = document.getElementById('activity-message');
+      const running = document.getElementById('running-list');
+      const recent  = document.getElementById('recent-list');
+      const refresh = document.getElementById('activity-refresh');
+      if (!state) return;
 
-      state.className = `activity-state ${data.tem_atividade ? "is-running" : "is-idle"}`;
-      title.textContent = data.tem_atividade ? `Executando ${data.rodando.length} etapa(s)` : "Nenhuma etapa em execução";
-      message.textContent = data.tem_atividade
-        ? "Acompanhe abaixo o processamento em andamento."
-        : "O sistema está aguardando a próxima varredura automática ou uma análise manual.";
-      running.innerHTML = data.rodando.length
-        ? data.rodando.map((job) => renderJob(job, true)).join("")
-        : '<p class="empty">Nada rodando neste momento.</p>';
-      recent.innerHTML = data.recentes.length
-        ? data.recentes.map((job) => renderJob(job, false)).join("")
-        : '<p class="empty">Nenhum evento registrado ainda.</p>';
-      refresh.textContent = "última atualização: " + new Date().toLocaleTimeString("pt-BR");
-    } catch (_error) {
-      const refresh = document.getElementById("activity-refresh");
-      if (refresh) refresh.textContent = "falha ao atualizar";
-    }
-  }
+      state.className = `activity-state ${data.tem_atividade ? 'is-running' : 'is-idle'}`;
+      title.textContent = data.tem_atividade ? `Executando ${data.rodando.length} etapa(s)` : 'Sistema aguardando';
+      message.textContent = data.tem_atividade ? 'Acompanhe abaixo o processamento em andamento.' : 'Aguardando próxima varredura ou análise manual.';
+      running.innerHTML = data.rodando.length ? data.rodando.map(j => renderJob(j, true)).join('') : '<p class="empty">Nada rodando neste momento.</p>';
+      recent.innerHTML  = data.recentes.length ? data.recentes.map(j => renderJob(j, false)).join('') : '<p class="empty">Nenhum evento registrado ainda.</p>';
+      refresh.textContent = 'última atualização: ' + new Date().toLocaleTimeString('pt-BR');
+    } catch(e) {}
+  };
+  source.onerror = function() {
+    const refresh = document.getElementById('activity-refresh');
+    if (refresh) refresh.textContent = 'reconectando…';
+  };
+}
 
-  refreshActivity();
-  setInterval(refreshActivity, 4000);
+carregarGraficoPorMes();
+carregarGraficoPorTipo();
+conectarSSE();
 </script>
 {% endblock %}

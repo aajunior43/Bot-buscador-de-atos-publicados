@@ -1,13 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import sqlite3
 import threading
 import time
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pdf2image import convert_from_path
@@ -17,6 +28,7 @@ import database
 from config import SETTINGS
 from detector import detectar
 from downloader import baixar_edicao
+from exporter import exportar_csv, exportar_json
 from ocr_processor import extrair_texto_rapido_com_estruturado_candidato
 from scraper import Edicao, coletar_edicoes
 
@@ -29,6 +41,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 _detector_lock = threading.Lock()
 _analise_lock = threading.Lock()
 _scheduler_started = False
+_task_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="heavy-task")
 
 
 def _conn() -> sqlite3.Connection:
@@ -74,8 +87,15 @@ def _atividade_atual(conn: sqlite3.Connection) -> dict:
 @app.on_event("startup")
 def startup() -> None:
     database.init_db()
+    stuck = database.cleanup_stuck_jobs(max_hours=0)
+    if stuck:
+        logger.warning("Startup: %s job(s) travado(s) marcado(s) como erro.", stuck)
     _start_scheduler()
 
+
+# ---------------------------------------------------------------------------
+# Detecção de edições
+# ---------------------------------------------------------------------------
 
 def _registrar_edicoes_detectadas() -> int:
     job_id = database.start_job(
@@ -138,6 +158,10 @@ def _start_scheduler() -> None:
     thread.start()
 
 
+# ---------------------------------------------------------------------------
+# Análise de edição
+# ---------------------------------------------------------------------------
+
 def _analisar_edicao(edicao_id: int) -> None:
     if not _analise_lock.acquire(blocking=False):
         database.log_job(
@@ -188,9 +212,9 @@ def _analisar_edicao(edicao_id: int) -> None:
             titulo=edicao.titulo,
             edicao_id=download.edicao_id,
         )
-        resultado = detectar(download.edicao_id, edicao.titulo, ocr.paginas)
         database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
         database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
+        database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
         database.update_ocr(download.edicao_id, ocr.texto_path, resultado.encontrado)
         database.update_job(
             detectar_job,
@@ -200,6 +224,9 @@ def _analisar_edicao(edicao_id: int) -> None:
                 f"{len(resultado.mencoes_db)} menção(ões)"
             ),
         )
+        if resultado.encontrado:
+            from notifier import notificar
+            notificar(resultado, edicao)
     except Exception as exc:
         logger.exception("Falha ao analisar edição %s.", edicao_id)
         database.log_job(
@@ -211,6 +238,38 @@ def _analisar_edicao(edicao_id: int) -> None:
     finally:
         _analise_lock.release()
 
+
+def _analisar_edicoes_lote(edicao_ids: list[int]) -> None:
+    for edicao_id in edicao_ids:
+        adquiriu = False
+        for _ in range(30):
+            if _analise_lock.acquire(blocking=False):
+                adquiriu = True
+                break
+            time.sleep(10)
+
+        if not adquiriu:
+            database.log_job(
+                "analisando edição",
+                "erro",
+                edicao_id=edicao_id,
+                mensagem="Timeout ao aguardar liberação da fila de processamento",
+            )
+            continue
+
+        try:
+            _analise_lock.release()
+            _analisar_edicao(edicao_id)
+        except Exception as exc:
+            logger.exception("Falha na chamada de lote para edição %s", edicao_id)
+
+        time.sleep(3)
+
+
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard(
@@ -257,7 +316,7 @@ def dashboard(
                 FROM edicoes e
                 ORDER BY e.data_publicacao DESC, e.id DESC
                 LIMIT 100
-                """
+                """,
             ).fetchall()
 
         publicacoes = conn.execute(
@@ -272,9 +331,9 @@ def dashboard(
         atividade = _atividade_atual(conn)
 
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
         {
-            "request": request,
             "stats": stats,
             "edicoes": edicoes,
             "publicacoes": publicacoes,
@@ -283,6 +342,10 @@ def dashboard(
         },
     )
 
+
+# ---------------------------------------------------------------------------
+# Edições detectadas
+# ---------------------------------------------------------------------------
 
 @app.get("/edicoes-detectadas", response_class=HTMLResponse)
 def edicoes_detectadas(request: Request) -> HTMLResponse:
@@ -331,9 +394,9 @@ def edicoes_detectadas(request: Request) -> HTMLResponse:
         ).fetchone()
 
     return templates.TemplateResponse(
+        request,
         "edicoes_detectadas.html",
         {
-            "request": request,
             "stats": stats,
             "edicoes": edicoes,
             "ultimo_detector": ultimo_detector,
@@ -348,7 +411,7 @@ def edicoes_detectadas_head() -> Response:
 
 @app.post("/edicoes-detectadas/detectar")
 def detectar_edicoes_agora(background_tasks: BackgroundTasks) -> RedirectResponse:
-    background_tasks.add_task(_detectar_edicoes_com_trava)
+    _task_executor.submit(_detectar_edicoes_com_trava)
     return RedirectResponse("/edicoes-detectadas", status_code=303)
 
 
@@ -359,9 +422,32 @@ def analisar_edicao_manual(
 ) -> RedirectResponse:
     with _conn() as conn:
         _row_or_404(conn, "SELECT id FROM edicoes WHERE id = ?", (edicao_id,))
-    background_tasks.add_task(_analisar_edicao, edicao_id)
+    _task_executor.submit(_analisar_edicao, edicao_id)
     return RedirectResponse("/edicoes-detectadas", status_code=303)
 
+
+@app.post("/edicoes-detectadas/analisar-lote")
+def analisar_lote_pendentes() -> RedirectResponse:
+    with _conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id FROM edicoes
+            WHERE ocr_processado = 0
+              AND url NOT LIKE '%hnetsistemas.com.br%'
+            ORDER BY data_publicacao DESC, id DESC
+            LIMIT 5
+            """
+        ).fetchall()
+    edicao_ids = [row["id"] for row in rows]
+    if edicao_ids:
+        _task_executor.submit(_analisar_edicoes_lote, edicao_ids)
+    return RedirectResponse("/edicoes-detectadas", status_code=303)
+
+
+
+# ---------------------------------------------------------------------------
+# Detalhe de edição
+# ---------------------------------------------------------------------------
 
 @app.get("/edicoes/{edicao_id}", response_class=HTMLResponse)
 def edicao_detail(request: Request, edicao_id: int) -> HTMLResponse:
@@ -385,14 +471,24 @@ def edicao_detail(request: Request, edicao_id: int) -> HTMLResponse:
             """,
             (edicao_id,),
         ).fetchall()
+        # Número total de páginas (para o modo debug)
+        num_paginas = 0
+        if edicao["caminho_local"] and Path(edicao["caminho_local"]).exists():
+            try:
+                import pdfplumber
+                with pdfplumber.open(edicao["caminho_local"]) as pdf:
+                    num_paginas = len(pdf.pages)
+            except Exception:
+                pass
 
     return templates.TemplateResponse(
+        request,
         "edicao.html",
         {
-            "request": request,
             "edicao": edicao,
             "publicacoes": publicacoes,
             "mencoes": mencoes,
+            "num_paginas": num_paginas,
         },
     )
 
@@ -403,6 +499,10 @@ def edicao_detail_head(edicao_id: int) -> Response:
         _row_or_404(conn, "SELECT id FROM edicoes WHERE id = ?", (edicao_id,))
     return Response(status_code=200)
 
+
+# ---------------------------------------------------------------------------
+# Status
+# ---------------------------------------------------------------------------
 
 @app.get("/status", response_class=HTMLResponse)
 def status_page(request: Request) -> HTMLResponse:
@@ -421,7 +521,9 @@ def status_page(request: Request) -> HTMLResponse:
         jobs = conn.execute(
             """
             SELECT j.*, e.data_publicacao, e.url
-            FROM jobs j
+            FROM (
+                SELECT * FROM jobs ORDER BY id DESC LIMIT 200
+            ) j
             LEFT JOIN edicoes e ON e.id = j.edicao_id
             ORDER BY j.id ASC
             """
@@ -464,10 +566,22 @@ def status_page(request: Request) -> HTMLResponse:
     grupos = sorted(grupos, key=lambda grupo: grupo["atualizado_em"], reverse=True)
 
     return templates.TemplateResponse(
+        request,
         "status.html",
-        {"request": request, "resumo": resumo, "jobs": jobs, "grupos": grupos},
+        {"resumo": resumo, "jobs": jobs, "grupos": grupos},
     )
 
+
+@app.post("/status/limpar")
+def limpar_status_jobs() -> RedirectResponse:
+    database.clear_jobs_history()
+    return RedirectResponse("/status", status_code=303)
+
+
+
+# ---------------------------------------------------------------------------
+# PDF e imagens
+# ---------------------------------------------------------------------------
 
 @app.get("/edicoes/{edicao_id}/pdf")
 def abrir_pdf(edicao_id: int, page: int | None = None) -> FileResponse:
@@ -521,6 +635,7 @@ def imagem_pagina(edicao_id: int, pagina: int) -> FileResponse:
             dpi=220,
             first_page=pagina,
             last_page=pagina,
+            poppler_path=SETTINGS.poppler_path or None,
         )
         if not imagens:
             raise HTTPException(status_code=404, detail="Página não encontrada")
@@ -528,6 +643,193 @@ def imagem_pagina(edicao_id: int, pagina: int) -> FileResponse:
 
     return FileResponse(image_path, media_type="image/png", filename=image_path.name)
 
+
+# ---------------------------------------------------------------------------
+# Admin
+# ---------------------------------------------------------------------------
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request, msg: str = "") -> HTMLResponse:
+    api_key = database.get_setting("opencode_api_key", "") or SETTINGS.opencode_api_key
+    model = database.get_setting("opencode_model", "") or SETTINGS.opencode_model
+    api_key_masked = f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else ("***" if api_key else "")
+
+    extra_terms = database.get_setting("extra_terms", "") or ",".join(SETTINGS.extra_terms)
+    ignore_terms = database.get_setting("ignore_terms", "") or ",".join(SETTINGS.ignore_context_terms)
+    smtp_host = database.get_setting("smtp_host", "") or SETTINGS.smtp_host
+    smtp_port = database.get_setting("smtp_port", "") or str(SETTINGS.smtp_port)
+    smtp_user = database.get_setting("smtp_user", "") or SETTINGS.smtp_user
+    smtp_to = database.get_setting("smtp_to", "") or SETTINGS.smtp_to
+    webhook_url = database.get_setting("webhook_url", "") or SETTINGS.webhook_url
+
+    webhooks = database.get_webhooks()
+
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        {
+            "api_key_configured": bool(api_key),
+            "api_key_masked": api_key_masked,
+            "model": model or "deepseek-v4-flash",
+            "ai_ativo": bool(api_key) and SETTINGS.ai_refine_publications,
+            "extra_terms": extra_terms,
+            "ignore_terms": ignore_terms,
+            "smtp_host": smtp_host,
+            "smtp_port": smtp_port,
+            "smtp_user": smtp_user,
+            "smtp_to": smtp_to,
+            "webhook_url": webhook_url,
+            "webhooks": webhooks,
+            "msg": msg,
+            "teste_resultado": None,
+        },
+    )
+
+
+@app.post("/admin/limpar-edicoes-antigas")
+def limpar_edicoes_antigas() -> RedirectResponse:
+    database.delete_hnetsistemas_edicoes()
+    return RedirectResponse("/admin?msg=Edições de sistema antigo removidas com sucesso!", status_code=303)
+
+
+@app.post("/admin/salvar")
+
+async def admin_salvar(request: Request) -> RedirectResponse:
+    form = await request.form()
+    fields = {
+        "opencode_api_key": str(form.get("opencode_api_key", "")),
+        "opencode_model": str(form.get("opencode_model", "")),
+        "extra_terms": str(form.get("extra_terms", "")),
+        "ignore_terms": str(form.get("ignore_terms", "")),
+        "smtp_host": str(form.get("smtp_host", "")),
+        "smtp_port": str(form.get("smtp_port", "")),
+        "smtp_user": str(form.get("smtp_user", "")),
+        "smtp_pass": str(form.get("smtp_pass", "")),
+        "smtp_to": str(form.get("smtp_to", "")),
+        "smtp_from": str(form.get("smtp_from", "")),
+        "webhook_url": str(form.get("webhook_url", "")),
+        "absence_alert_days": str(form.get("absence_alert_days", "30")),
+    }
+    for chave, valor in fields.items():
+        if valor.strip():
+            database.set_setting(chave, valor.strip())
+    return RedirectResponse("/admin?msg=Configurações salvas com sucesso!", status_code=303)
+
+
+@app.post("/admin/testar")
+def admin_testar(request: Request) -> HTMLResponse:
+    from ai_processor import _api_key, _extrair_publicacao
+    key = _api_key()
+    if not key:
+        resultado = "❌ Nenhuma API Key configurada."
+    else:
+        try:
+            r = _extrair_publicacao("DECRETO Nº 001/2026 - Prefeitura Municipal de Inajá - PR.", timeout=15)
+            resultado = f"✅ OK — Resposta recebida: {str(r)[:200]}"
+        except Exception as exc:
+            resultado = f"❌ Erro: {exc}"
+
+    api_key = database.get_setting("opencode_api_key", "") or SETTINGS.opencode_api_key
+    model = database.get_setting("opencode_model", "") or SETTINGS.opencode_model
+    api_key_masked = f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else ("***" if api_key else "")
+    webhooks = database.get_webhooks()
+    extra_terms = database.get_setting("extra_terms", "") or ",".join(SETTINGS.extra_terms)
+    ignore_terms = database.get_setting("ignore_terms", "") or ",".join(SETTINGS.ignore_context_terms)
+    smtp_host = database.get_setting("smtp_host", "") or SETTINGS.smtp_host
+    smtp_port = database.get_setting("smtp_port", "") or str(SETTINGS.smtp_port)
+    smtp_user = database.get_setting("smtp_user", "") or SETTINGS.smtp_user
+    smtp_to = database.get_setting("smtp_to", "") or SETTINGS.smtp_to
+    webhook_url = database.get_setting("webhook_url", "") or SETTINGS.webhook_url
+
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        {
+            "api_key_configured": bool(api_key),
+            "api_key_masked": api_key_masked,
+            "model": model or "deepseek-v4-flash",
+            "ai_ativo": bool(api_key) and SETTINGS.ai_refine_publications,
+            "extra_terms": extra_terms,
+            "ignore_terms": ignore_terms,
+            "smtp_host": smtp_host,
+            "smtp_port": smtp_port,
+            "smtp_user": smtp_user,
+            "smtp_to": smtp_to,
+            "webhook_url": webhook_url,
+            "webhooks": webhooks,
+            "msg": "",
+            "teste_resultado": resultado,
+        },
+    )
+
+
+@app.post("/admin/webhook/adicionar")
+async def admin_webhook_adicionar(request: Request) -> RedirectResponse:
+    form = await request.form()
+    url = str(form.get("webhook_url", "")).strip()
+    descricao = str(form.get("webhook_descricao", "")).strip()
+    if url:
+        database.upsert_webhook(url, descricao)
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/webhook/{webhook_id}/remover")
+def admin_webhook_remover(webhook_id: int) -> RedirectResponse:
+    database.delete_webhook(webhook_id)
+    return RedirectResponse("/admin", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Notificações
+# ---------------------------------------------------------------------------
+
+@app.get("/notificacoes", response_class=HTMLResponse)
+def notificacoes_page(request: Request) -> HTMLResponse:
+    notificacoes = database.get_notificacoes(limit=200)
+    return templates.TemplateResponse(
+        request,
+        "notificacoes.html",
+        {"notificacoes": notificacoes},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Exportar
+# ---------------------------------------------------------------------------
+
+@app.get("/exportar", response_class=HTMLResponse)
+def exportar_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "exportar.html", {})
+
+
+@app.get("/api/exportar")
+def api_exportar(
+    format: str = Query("json", description="csv ou json"),
+    data_inicio: str = Query("", description="YYYY-MM-DD"),
+    data_fim: str = Query("", description="YYYY-MM-DD"),
+    tipo: str = Query("", description="Filtrar por tipo de ato"),
+    orgao: str = Query("", description="Filtrar por órgão"),
+    apenas_inaja: bool = Query(False, description="Apenas edições com Inajá"),
+) -> Response:
+    di = data_inicio.strip() or None
+    df = data_fim.strip() or None
+    tp = tipo.strip() or None
+    org = orgao.strip() or None
+
+    if format.lower() == "csv":
+        conteudo = exportar_csv(di, df, tp, org, apenas_inaja)
+        return Response(
+            content=conteudo,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=publicacoes.csv"},
+        )
+    dados = exportar_json(di, df, tp, org, apenas_inaja)
+    return JSONResponse(content=dados)
+
+
+# ---------------------------------------------------------------------------
+# API endpoints
+# ---------------------------------------------------------------------------
 
 @app.get("/api/publicacoes")
 def api_publicacoes() -> list[dict]:
@@ -563,3 +865,67 @@ def api_status() -> list[dict]:
             """
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+@app.get("/api/graficos/por-mes")
+def api_graficos_por_mes() -> list[dict]:
+    """Dados para gráfico de linha do tempo — publicações por mês."""
+    return database.get_publicacoes_por_mes()
+
+
+@app.get("/api/graficos/por-tipo")
+def api_graficos_por_tipo() -> list[dict]:
+    """Dados para gráfico de pizza — publicações por tipo de ato."""
+    return database.get_publicacoes_por_tipo()
+
+
+@app.get("/api/eventos")
+async def api_eventos(request: Request) -> StreamingResponse:
+    """Server-Sent Events para auto-refresh do dashboard sem polling."""
+    async def gerador():
+        while True:
+            if await request.is_disconnected():
+                break
+            with _conn() as conn:
+                atividade = _atividade_atual(conn)
+            data = json.dumps(atividade)
+            yield f"data: {data}\n\n"
+            await asyncio.sleep(4)
+
+    return StreamingResponse(
+        gerador(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Refinamento IA manual
+# ---------------------------------------------------------------------------
+
+@app.post("/edicoes/{edicao_id}/ia")
+def refinar_ia_manual(edicao_id: int) -> RedirectResponse:
+    with _conn() as conn:
+        row = _row_or_404(conn, "SELECT texto_extraido_path FROM edicoes WHERE id = ?", (edicao_id,))
+        texto_path = row["texto_extraido_path"]
+        publicacoes_rows = conn.execute(
+            "SELECT * FROM publicacoes WHERE edicao_id = ?", (edicao_id,)
+        ).fetchall()
+
+    if not publicacoes_rows:
+        return RedirectResponse(f"/edicoes/{edicao_id}", status_code=303)
+
+    def _refinar():
+        from ai_processor import refinar_publicacoes
+        pubs = [dict(r) for r in publicacoes_rows]
+        refinadas = refinar_publicacoes(pubs)
+        database.insert_publicacoes(edicao_id, refinadas)
+        if texto_path:
+            database.salvar_arquivos_atos_locais(texto_path, refinadas)
+
+    _task_executor.submit(_refinar)
+    return RedirectResponse(f"/edicoes/{edicao_id}", status_code=303)
+

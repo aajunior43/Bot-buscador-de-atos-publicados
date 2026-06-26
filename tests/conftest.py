@@ -1,0 +1,77 @@
+"""
+Fixtures e configuração global de testes.
+Usa banco de dados SQLite em memória para isolamento completo.
+"""
+from __future__ import annotations
+
+import sys
+import os
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+# Garante que o root do projeto está no path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+
+@pytest.fixture(autouse=True)
+def mock_settings(tmp_path):
+    """Sobrescreve SETTINGS para usar diretórios temporários e banco em memória."""
+    from config import Settings
+    settings = Settings.__new__(Settings)
+    # Não usar __post_init__ para evitar criar pastas de verdade
+    object.__setattr__(settings, "site_url", "https://example.com/edicoes/")
+    object.__setattr__(settings, "user_agent", "TestAgent/1.0")
+    object.__setattr__(settings, "telegram_bot_token", "")
+    object.__setattr__(settings, "telegram_chat_id", "")
+    object.__setattr__(settings, "check_interval_hours", 6)
+    object.__setattr__(settings, "ocr_language", "por")
+    object.__setattr__(settings, "extra_terms", ["Nome Teste"])
+    object.__setattr__(settings, "inaja_cep_prefixes", ["87670"])
+    object.__setattr__(settings, "ignore_context_terms", ["distribuição avulsa", "farmácia"])
+    object.__setattr__(settings, "download_dir", tmp_path / "edicoes")
+    object.__setattr__(settings, "alert_dir", tmp_path / "alertas")
+    object.__setattr__(settings, "log_dir", tmp_path / "logs")
+    object.__setattr__(settings, "db_path", tmp_path / "test.db")
+    object.__setattr__(settings, "request_timeout", 10)
+    object.__setattr__(settings, "max_retries", 1)
+    object.__setattr__(settings, "min_text_chars_per_page", 100)
+    object.__setattr__(settings, "force_ocr", False)
+    object.__setattr__(settings, "ocr_dpi", 150)
+    object.__setattr__(settings, "ocr_fast_dpi", 100)
+    object.__setattr__(settings, "ocr_timeout_seconds", 30)
+    object.__setattr__(settings, "ocr_fast_timeout_seconds", 20)
+    object.__setattr__(settings, "ocr_layout_columns", 3)
+    object.__setattr__(settings, "opencode_api_key", "")
+    object.__setattr__(settings, "opencode_model", "test-model")
+    object.__setattr__(settings, "ai_refine_publications", False)
+    object.__setattr__(settings, "ai_timeout_seconds", 5)
+    object.__setattr__(settings, "ai_max_tokens", 100)
+    object.__setattr__(settings, "smtp_host", "")
+    object.__setattr__(settings, "smtp_port", 587)
+    object.__setattr__(settings, "smtp_user", "")
+    object.__setattr__(settings, "smtp_pass", "")
+    object.__setattr__(settings, "smtp_to", "")
+    object.__setattr__(settings, "smtp_from", "")
+    object.__setattr__(settings, "absence_alert_days", 30)
+    object.__setattr__(settings, "webhook_url", "")
+    for pasta in (settings.download_dir, settings.alert_dir, settings.log_dir):
+        pasta.mkdir(parents=True, exist_ok=True)
+
+    with patch("config.SETTINGS", settings):
+        import database
+        import importlib
+        importlib.reload(database)
+        with patch("database.SETTINGS", settings), \
+             patch("detector.SETTINGS", settings), \
+             patch("webapp.SETTINGS", settings, create=True):
+            yield settings
+
+
+@pytest.fixture
+def db(mock_settings):
+    """Inicializa o banco de dados de teste e retorna o path."""
+    import database
+    database.init_db()
+    return mock_settings.db_path
