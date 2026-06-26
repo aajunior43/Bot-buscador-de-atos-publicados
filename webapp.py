@@ -198,9 +198,11 @@ def _analisar_edicao(edicao_id: int) -> None:
             "rodando OCR",
             titulo=edicao.titulo,
             edicao_id=download.edicao_id,
-            mensagem="OCR rápido + estruturado em páginas candidatas",
+            mensagem="Iniciando OCR rápido + estruturado...",
         )
-        ocr = extrair_texto_rapido_com_estruturado_candidato(download.caminho)
+        def on_progress(msg: str):
+            database.update_job(ocr_job, "rodando", mensagem=msg)
+        ocr = extrair_texto_rapido_com_estruturado_candidato(download.caminho, on_progress=on_progress)
         ocr_status = "aviso" if ocr.avisos else "concluido"
         ocr_mensagem = f"{len(ocr.paginas)} página(s), {len(ocr.texto_completo)} caracteres"
         if ocr.avisos:
@@ -212,6 +214,7 @@ def _analisar_edicao(edicao_id: int) -> None:
             titulo=edicao.titulo,
             edicao_id=download.edicao_id,
         )
+        resultado = detectar(download.edicao_id, edicao.titulo, ocr.paginas)
         database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
         database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
         database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
