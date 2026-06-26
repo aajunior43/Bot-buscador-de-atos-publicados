@@ -131,6 +131,30 @@ def _texto_ocr_paginas(
     return textos
 
 
+def _detectar_numero_colunas(imagem: Image.Image) -> int:
+    try:
+        img_gray = imagem.convert("L").resize((400, 200))
+        largura, altura = img_gray.size
+
+        def pct_whiteness(pct: float) -> float:
+            x_center = int(largura * pct)
+            total_val = 0
+            count = 0
+            for dx in range(-2, 3):
+                x = x_center + dx
+                if 0 <= x < largura:
+                    total_val += sum(img_gray.getpixel((x, y)) for y in range(altura))
+                    count += altura
+            return total_val / count if count > 0 else 0
+
+        w3 = (pct_whiteness(0.33) + pct_whiteness(0.66)) / 2
+        w4 = (pct_whiteness(0.25) + pct_whiteness(0.50) + pct_whiteness(0.75)) / 3
+
+        return 4 if w4 > w3 else 3
+    except Exception:
+        return 3
+
+
 def _extrair_blocos_tesseract(
     imagem: Image.Image,
     pagina: int,
@@ -138,7 +162,9 @@ def _extrair_blocos_tesseract(
 ) -> list[TextBlock]:
     colunas = max(1, SETTINGS.ocr_layout_columns)
     if colunas > 1:
-        return _extrair_blocos_tesseract_por_coluna(imagem, pagina, colunas, avisos)
+        colunas_detectadas = _detectar_numero_colunas(imagem)
+        logger.info("Página %s: colunas detectadas = %s", pagina, colunas_detectadas)
+        return _extrair_blocos_tesseract_por_coluna(imagem, pagina, colunas_detectadas, avisos)
 
     return _extrair_blocos_tesseract_imagem(
         imagem,
