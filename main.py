@@ -77,10 +77,12 @@ def _processar_edicao(
         ),
     )
     try:
+        def on_progress(msg: str):
+            database.update_job(ocr_job, "rodando", mensagem=msg)
         if fast_ocr and force_ocr:
-            ocr = extrair_texto_rapido_com_estruturado_candidato(download.caminho)
+            ocr = extrair_texto_rapido_com_estruturado_candidato(download.caminho, on_progress=on_progress)
         else:
-            ocr = extrair_texto(download.caminho, force_ocr=force_ocr)
+            ocr = extrair_texto(download.caminho, force_ocr=force_ocr, on_progress=on_progress)
         ocr_status = "aviso" if ocr.avisos else "concluido"
         ocr_mensagem = f"{len(ocr.paginas)} página(s), {len(ocr.texto_completo)} caracteres"
         if ocr.avisos:

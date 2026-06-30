@@ -4,7 +4,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from config import SETTINGS
+from config import SETTINGS, MUNICIPIOS_VIZINHOS
 from ocr_processor import PageText, TextBlock
 from ai_processor import refinar_publicacoes
 
@@ -19,10 +19,11 @@ BASE_TERMS = [
     "Município de Inajá",
     "Municipio de Inaja",
     "75.771.400/0001-48",
+    "76.970.318/0001",
 ]
 
 GENERIC_TERMS = {"inajá", "inaja"}
-CEP_RE = re.compile(r"\b87\d{3}-\d{3}\b")
+CEP_RE = re.compile(r"\b87\.?\d{3}-\d{3}\b")
 CPF_RE = re.compile(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b")
 VALOR_RE = re.compile(r"R\s*[$S]\s*[\d\.\,]+", re.IGNORECASE)
 VALOR_DE_RE = re.compile(
@@ -46,6 +47,8 @@ TIPOS_ATO = [
     "ADJUDICAÇÃO",
     "TERMO",
     "RESOLUÇÃO",
+    "ERRATA",
+    "NOTIFICAÇÃO",
 ]
 TIPO_ATO_RE = re.compile(
     r"\b("
@@ -289,8 +292,18 @@ def _extrair_orgao(texto: str) -> str | None:
         return "Câmara Municipal de Inajá"
     if re.match(r"^municipio de inaja\b", inicio_norm):
         return "Município de Inajá"
-    if "75.771.400/0001-48" in texto or "76.970.318/0001" in texto:
+    # Fallback por CNPJ: o CNPJ 76.970.318 aparece em documentos tanto da
+    # Prefeitura quanto da Câmara, então só atribuir à Câmara se houver
+    # menção explícita a "câmara" no texto. Caso contrário, é neutro
+    # (Prefeitura/Município).
+    texto_norm = _sem_acentos(texto).casefold()
+    tem_camara = "camara municipal" in texto_norm or "camara de inaja" in texto_norm
+    if "75.771.400/0001-48" in texto:
         return "Prefeitura Municipal de Inajá"
+    if "76.970.318/0001" in texto:
+        if tem_camara:
+            return "Câmara Municipal de Inajá"
+        return "Município de Inajá"
     return None
 
 
@@ -502,9 +515,30 @@ def _valor_float(valor: str) -> float:
         return 0.0
 
 
+def _mencao_generica_sem_palavra_isolada(texto: str, inicio: int, fim: int) -> bool:
+    """Menção genérica 'inajá' colada a outras letras (ex: dentro de token/email corrompido)."""
+    antes = texto[inicio - 1] if inicio > 0 else " "
+    depois = texto[fim] if fim < len(texto) else " "
+    return antes.isalpha() or depois.isalpha()
+
+
+def _orgao_de_outro_municipio(texto: str) -> bool:
+    """Detecta se o segmento começa com órgão de outro município (não-Inajá)."""
+    inicio = _sem_acentos(_limpar(texto)[:220]).casefold()
+    if not inicio:
+        return False
+    if "inaja" in inicio[:120]:
+        return False
+    if not re.search(r"(prefeitura|camara|municipio)", inicio[:80]):
+        return False
+    return any(mun in inicio[:140] for mun in MUNICIPIOS_VIZINHOS)
+
+
 def _publicacao_do_segmento(segmento: TextBlock, termos: set[str]) -> dict | None:
     categoria = _categoria(segmento.texto)
     if categoria == "patrocinador_distribuicao":
+        return None
+    if _orgao_de_outro_municipio(segmento.texto):
         return None
 
     orgao = _extrair_orgao(segmento.texto)
@@ -569,7 +603,10 @@ def detectar(
                     fim = idx + len(termo_norm)
                     if (
                         termo_norm in GENERIC_TERMS
-                        and _contexto_ignorado_para_mencao_generica(texto, idx, fim)
+                        and (
+                            _contexto_ignorado_para_mencao_generica(texto, idx, fim)
+                            or _mencao_generica_sem_palavra_isolada(texto, idx, fim)
+                        )
                     ):
                         start = fim
                         continue
@@ -590,7 +627,7 @@ def detectar(
                     start = fim
 
             for match in CEP_RE.finditer(texto):
-                cep = match.group(0)
+                cep = match.group(0).replace(".", "")
                 if not _cep_de_inaja(cep):
                     continue
                 if _contexto_ignorado_para_mencao_generica(

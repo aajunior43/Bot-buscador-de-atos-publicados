@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import smtplib
 import threading
@@ -19,6 +20,20 @@ from scraper import Edicao
 
 
 logger = logging.getLogger(__name__)
+
+
+def _rodar_async(coro):
+    """Executa uma coroutine de forma segura de dentro de um contexto síncrono.
+
+    Funciona tanto quando não há um event loop rodando (usa asyncio.run)
+    quanto quando já há um loop rodando (executa em uma thread separada).
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def _resumir(trecho: str, limite: int = 150) -> str:
@@ -170,7 +185,7 @@ def notificar(resultado: DetectionResult, edicao: Edicao) -> None:
     # 1. Telegram
     if SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id:
         try:
-            asyncio.run(_enviar_telegram(mensagem))
+            _rodar_async(_enviar_telegram(mensagem))
             database.mark_notified(resultado.edicao_id)
             logger.info("Notificação Telegram enviada para edição %s", resultado.edicao_id)
             canal_usado = "telegram"
@@ -230,7 +245,7 @@ def verificar_ausencia_publicacao() -> None:
     logger.warning("Alerta de ausência: nenhuma publicação em %s dias", days)
     if SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id:
         try:
-            asyncio.run(_enviar_telegram(mensagem))
+            _rodar_async(_enviar_telegram(mensagem))
         except Exception:
             logger.exception("Falha ao enviar alerta de ausência via Telegram")
     database.insert_notificacao(

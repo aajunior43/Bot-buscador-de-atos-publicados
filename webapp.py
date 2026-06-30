@@ -6,10 +6,11 @@ import logging
 import sqlite3
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Form
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -35,7 +36,17 @@ from scraper import Edicao, coletar_edicoes
 
 BASE_DIR = Path(__file__).resolve().parent
 logger = logging.getLogger(__name__)
-app = FastAPI(title="Monitor O Regional - Inajá")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    database.init_db()
+    stuck = database.cleanup_stuck_jobs(max_hours=0)
+    if stuck:
+        logger.warning("Startup: %s job(s) travado(s) marcado(s) como erro.", stuck)
+    _start_scheduler()
+    yield
+
+app = FastAPI(title="Monitor O Regional - Inajá", lifespan=lifespan)
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 _detector_lock = threading.Lock()
@@ -84,13 +95,6 @@ def _atividade_atual(conn: sqlite3.Connection) -> dict:
     }
 
 
-@app.on_event("startup")
-def startup() -> None:
-    database.init_db()
-    stuck = database.cleanup_stuck_jobs(max_hours=0)
-    if stuck:
-        logger.warning("Startup: %s job(s) travado(s) marcado(s) como erro.", stuck)
-    _start_scheduler()
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +166,68 @@ def _start_scheduler() -> None:
 # Análise de edição
 # ---------------------------------------------------------------------------
 
+def _analisar_edicao_internal(edicao_id: int) -> None:
+    """Corpo da análise de uma edição sem gerenciamento de lock."""
+    with _conn() as conn:
+        row = _row_or_404(conn, "SELECT * FROM edicoes WHERE id = ?", (edicao_id,))
+        edicao = Edicao(
+            url=row["url"],
+            titulo=row["titulo"] or f"Edição {row['id']}",
+            data_publicacao=row["data_publicacao"],
+        )
+
+    download_job = database.start_job(
+        "baixando PDF",
+        titulo=edicao.titulo,
+        edicao_id=edicao_id,
+        mensagem=edicao.url,
+    )
+    download = baixar_edicao(edicao)
+    database.update_job(
+        download_job,
+        "concluido",
+        mensagem=f"PDF salvo em {download.caminho}",
+        edicao_id=download.edicao_id,
+    )
+
+    ocr_job = database.start_job(
+        "rodando OCR",
+        titulo=edicao.titulo,
+        edicao_id=download.edicao_id,
+        mensagem="Iniciando OCR rápido + estruturado...",
+    )
+    def on_progress(msg: str):
+        database.update_job(ocr_job, "rodando", mensagem=msg)
+    ocr = extrair_texto_rapido_com_estruturado_candidato(download.caminho, on_progress=on_progress)
+    ocr_status = "aviso" if ocr.avisos else "concluido"
+    ocr_mensagem = f"{len(ocr.paginas)} página(s), {len(ocr.texto_completo)} caracteres"
+    if ocr.avisos:
+        ocr_mensagem += " | " + "; ".join(ocr.avisos)
+    database.update_job(ocr_job, ocr_status, mensagem=ocr_mensagem)
+
+    detectar_job = database.start_job(
+        "detectando publicações",
+        titulo=edicao.titulo,
+        edicao_id=download.edicao_id,
+    )
+    resultado = detectar(download.edicao_id, edicao.titulo, ocr.paginas)
+    database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
+    database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
+    database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
+    database.update_ocr(download.edicao_id, ocr.texto_path, resultado.encontrado)
+    database.update_job(
+        detectar_job,
+        "concluido",
+        mensagem=(
+            f"{len(resultado.publicacoes)} publicação(ões), "
+            f"{len(resultado.mencoes_db)} menção(ões)"
+        ),
+    )
+    if resultado.encontrado:
+        from notifier import notificar
+        notificar(resultado, edicao)
+
+
 def _analisar_edicao(edicao_id: int) -> None:
     if not _analise_lock.acquire(blocking=False):
         database.log_job(
@@ -172,64 +238,7 @@ def _analisar_edicao(edicao_id: int) -> None:
         )
         return
     try:
-        with _conn() as conn:
-            row = _row_or_404(conn, "SELECT * FROM edicoes WHERE id = ?", (edicao_id,))
-            edicao = Edicao(
-                url=row["url"],
-                titulo=row["titulo"] or f"Edição {row['id']}",
-                data_publicacao=row["data_publicacao"],
-            )
-
-        download_job = database.start_job(
-            "baixando PDF",
-            titulo=edicao.titulo,
-            edicao_id=edicao_id,
-            mensagem=edicao.url,
-        )
-        download = baixar_edicao(edicao)
-        database.update_job(
-            download_job,
-            "concluido",
-            mensagem=f"PDF salvo em {download.caminho}",
-            edicao_id=download.edicao_id,
-        )
-
-        ocr_job = database.start_job(
-            "rodando OCR",
-            titulo=edicao.titulo,
-            edicao_id=download.edicao_id,
-            mensagem="Iniciando OCR rápido + estruturado...",
-        )
-        def on_progress(msg: str):
-            database.update_job(ocr_job, "rodando", mensagem=msg)
-        ocr = extrair_texto_rapido_com_estruturado_candidato(download.caminho, on_progress=on_progress)
-        ocr_status = "aviso" if ocr.avisos else "concluido"
-        ocr_mensagem = f"{len(ocr.paginas)} página(s), {len(ocr.texto_completo)} caracteres"
-        if ocr.avisos:
-            ocr_mensagem += " | " + "; ".join(ocr.avisos)
-        database.update_job(ocr_job, ocr_status, mensagem=ocr_mensagem)
-
-        detectar_job = database.start_job(
-            "detectando publicações",
-            titulo=edicao.titulo,
-            edicao_id=download.edicao_id,
-        )
-        resultado = detectar(download.edicao_id, edicao.titulo, ocr.paginas)
-        database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
-        database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
-        database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
-        database.update_ocr(download.edicao_id, ocr.texto_path, resultado.encontrado)
-        database.update_job(
-            detectar_job,
-            "concluido",
-            mensagem=(
-                f"{len(resultado.publicacoes)} publicação(ões), "
-                f"{len(resultado.mencoes_db)} menção(ões)"
-            ),
-        )
-        if resultado.encontrado:
-            from notifier import notificar
-            notificar(resultado, edicao)
+        _analisar_edicao_internal(edicao_id)
     except Exception as exc:
         logger.exception("Falha ao analisar edição %s.", edicao_id)
         database.log_job(
@@ -244,27 +253,26 @@ def _analisar_edicao(edicao_id: int) -> None:
 
 def _analisar_edicoes_lote(edicao_ids: list[int]) -> None:
     for edicao_id in edicao_ids:
-        adquiriu = False
-        for _ in range(30):
-            if _analise_lock.acquire(blocking=False):
-                adquiriu = True
-                break
-            time.sleep(10)
-
-        if not adquiriu:
-            database.log_job(
-                "analisando edição",
-                "erro",
-                edicao_id=edicao_id,
-                mensagem="Timeout ao aguardar liberação da fila de processamento",
-            )
-            continue
+        if not _analise_lock.acquire(blocking=False):
+            for _ in range(30):
+                if _analise_lock.acquire(blocking=False):
+                    break
+                time.sleep(10)
+            else:
+                database.log_job(
+                    "analisando edição",
+                    "erro",
+                    edicao_id=edicao_id,
+                    mensagem="Timeout ao aguardar liberação da fila de processamento",
+                )
+                continue
 
         try:
-            _analise_lock.release()
-            _analisar_edicao(edicao_id)
+            _analisar_edicao_internal(edicao_id)
         except Exception as exc:
             logger.exception("Falha na chamada de lote para edição %s", edicao_id)
+        finally:
+            _analise_lock.release()
 
         time.sleep(3)
 
@@ -396,12 +404,37 @@ def edicoes_detectadas(request: Request) -> HTMLResponse:
             """
         ).fetchone()
 
+    # Agrupa edições por mês (YYYY-MM) para a visualização
+    meses_nomes = {
+        1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril",
+        5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto",
+        9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
+    }
+    grupos_mes: list[dict] = []
+    indice: dict[str, int] = {}
+    for ed in edicoes:
+        chave = (ed["data_publicacao"] or "")[:7]
+        if not chave:
+            chave = "sem-data"
+        if chave not in indice:
+            indice[chave] = len(grupos_mes)
+            rotulo = "Sem data"
+            if chave != "sem-data":
+                try:
+                    ano, mes = chave.split("-")
+                    rotulo = f"{meses_nomes.get(int(mes), mes)} de {ano}"
+                except (ValueError, KeyError):
+                    rotulo = chave
+            grupos_mes.append({"chave": chave, "rotulo": rotulo, "edicoes": []})
+        grupos_mes[indice[chave]]["edicoes"].append(ed)
+
     return templates.TemplateResponse(
         request,
         "edicoes_detectadas.html",
         {
             "stats": stats,
             "edicoes": edicoes,
+            "grupos_mes": grupos_mes,
             "ultimo_detector": ultimo_detector,
         },
     )
@@ -430,7 +463,8 @@ def analisar_edicao_manual(
 
 
 @app.post("/edicoes-detectadas/analisar-lote")
-def analisar_lote_pendentes() -> RedirectResponse:
+def analisar_lote_pendentes(limite: int = Form(5)) -> RedirectResponse:
+    limite = max(1, min(limite, 50))
     with _conn() as conn:
         rows = conn.execute(
             """
@@ -438,8 +472,9 @@ def analisar_lote_pendentes() -> RedirectResponse:
             WHERE ocr_processado = 0
               AND url NOT LIKE '%hnetsistemas.com.br%'
             ORDER BY data_publicacao DESC, id DESC
-            LIMIT 5
-            """
+            LIMIT ?
+            """,
+            (limite,),
         ).fetchall()
     edicao_ids = [row["id"] for row in rows]
     if edicao_ids:
@@ -482,7 +517,7 @@ def edicao_detail(request: Request, edicao_id: int) -> HTMLResponse:
                 with pdfplumber.open(edicao["caminho_local"]) as pdf:
                     num_paginas = len(pdf.pages)
             except Exception:
-                pass
+                logger.debug("Não foi possível abrir PDF para contar páginas: %s", edicao["caminho_local"])
 
     return templates.TemplateResponse(
         request,

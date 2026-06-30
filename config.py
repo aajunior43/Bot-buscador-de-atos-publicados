@@ -105,3 +105,28 @@ class Settings:
 
 
 SETTINGS = Settings()
+
+
+# Municípios vizinhos de Inajá-PR — publicações dessas cidades não devem ser
+# atribuídas a Inajá. Lista normalizada (sem acentos, minúscula) para comparação.
+MUNICIPIOS_VIZINHOS = [
+    "jardim olinda",
+    "cruzeiro do sul",
+    "santo inacio",
+    "florai",
+    "paranapoema",
+    "itaguaje",
+    "colorado",
+    "paranacity",
+    "loanda",
+    "querencia do norte",
+    "santa isabel do ivai",
+    "marilena",
+    "guaira",
+    "esperanca nova",
+    "altamira do paraná",
+    "altamira do parana",
+    "nova londrina",
+    "santa cruz de monte castelo",
+    "pioneiro jayme canet",
+]

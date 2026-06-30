@@ -31,6 +31,13 @@
       </button>
     </form>
   </div>
+  <div class="filter-bar status-filter-bar" style="margin:1rem 1.5rem 0;">
+    <button type="button" class="filter-btn active" data-status-filter="all">Todos</button>
+    <button type="button" class="filter-btn" data-status-filter="erro">Erros</button>
+    <button type="button" class="filter-btn" data-status-filter="aviso">Avisos</button>
+    <button type="button" class="filter-btn" data-status-filter="concluido">Concluídos</button>
+    <button type="button" class="filter-btn" data-status-filter="rodando">Rodando</button>
+  </div>
   <div class="status-groups" id="status-groups">
     {% for grupo in grupos %}
     <article class="status-group status-{{ grupo.status }}">
@@ -133,5 +140,35 @@ if (window.EventSource) {
   setInterval(atualizarResumo, 10000);
 }
 atualizarResumo();
+
+// Filtro de eventos de log
+const statusFilterBtns = document.querySelectorAll('.status-filter-bar .filter-btn');
+const statusGroups = document.querySelectorAll('#status-groups .status-group');
+
+function applyStatusFilter(filter) {
+  statusGroups.forEach(group => {
+    if (filter === 'all') {
+      group.style.display = '';
+      group.querySelectorAll('.timeline-item').forEach(it => it.style.display = '');
+      return;
+    }
+    const groupMatches = group.classList.contains('status-' + filter);
+    let anyItemVisible = false;
+    group.querySelectorAll('.timeline-item').forEach(item => {
+      const itemMatches = item.classList.contains('status-' + filter);
+      item.style.display = itemMatches ? '' : 'none';
+      if (itemMatches) anyItemVisible = true;
+    });
+    group.style.display = (groupMatches || anyItemVisible) ? '' : 'none';
+  });
+}
+
+statusFilterBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    statusFilterBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    applyStatusFilter(btn.dataset.statusFilter);
+  });
+});
 </script>
 {% endblock %}

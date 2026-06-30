@@ -15,6 +15,8 @@ from detector import (
     _sem_acentos,
     _parece_linha_de_rodape_ou_assinatura,
     _normalizar_valor,
+    _orgao_de_outro_municipio,
+    _mencao_generica_sem_palavra_isolada,
     detectar,
 )
 from ocr_processor import PageText, TextBlock
@@ -39,9 +41,37 @@ class TestExtrairOrgao:
         texto = "Município de Inajá\nPORTARIA"
         assert _extrair_orgao(texto) == "Município de Inajá"
 
-    def test_por_cnpj(self):
+    def test_por_cnpj_prefeitura(self):
+        # 75.771.400 pertence à Prefeitura, sozinho basta para identificar
         texto = "CNPJ: 75.771.400/0001-48\nDECRETO"
         assert _extrair_orgao(texto) == "Prefeitura Municipal de Inajá"
+
+    def test_por_cnpj_camara_com_mencao_explicita(self):
+        # 76.970.318 + "Câmara Municipal" no texto -> Câmara
+        texto = "CÂMARA MUNICIPAL DE INAJÁ\nCNPJ: 76.970.318/0001-67\nRESOLUÇÃO Nº 002/2026"
+        assert _extrair_orgao(texto) == "Câmara Municipal de Inajá"
+
+    def test_cnpj_76_sem_camara_vai_municipio(self):
+        # Documentos da Prefeitura citam 76.970.318 — quando o texto começa com
+        # "Prefeitura", o regex inicial vence (Prefeitura, correto). O CNPJ sozinho
+        # só é fallback quando não há menção textual explícita.
+        texto = "PREFEITURA MUNICIPAL DE INAJÁ\nDECRETO Nº 071/2026\nCNPJ 76.970.318/0001-67"
+        # Prefeitura aparece no início -> vence (correto, é da Prefeitura)
+        assert _extrair_orgao(texto) == "Prefeitura Municipal de Inajá"
+
+    def test_cnpj_76_isolado_vai_municipio_neutro(self):
+        # Sem menção textual explícita a Prefeitura/Câmara, o CNPJ 76.970.318
+        # sozinho não deve ser atribuído como Câmara (neutral → Município).
+        texto = "DECRETO Nº 071/2026\nCNPJ: 76.970.318/0001-67\nDispõe sobre..."
+        assert _extrair_orgao(texto) == "Município de Inajá"
+
+    def test_prefeitura_com_cnpj_76_nao_e_camara(self):
+        # Texto começa com PREFEITURA mesmo citando 76.970.318 — deve ser Prefeitura
+        texto = "Prefeitura Municipal de Inajá\nDECRETO Nº 071/2026"
+        resultado = _extrair_orgao(texto)
+        assert resultado == "Prefeitura Municipal de Inajá"
+        # E não deve ser atribuído à Câmara
+        assert "Câmara" not in (resultado or "")
 
     def test_sem_orgao(self):
         texto = "Texto qualquer sem identificação de órgão"
@@ -85,6 +115,18 @@ class TestExtrairTipoNumero:
         tipo, numero = _extrair_tipo_numero(texto)
         # Número pode ser extraído ou None dependendo da heurística
         assert tipo is not None or tipo is None  # não deve levantar exceção
+
+    def test_errata(self):
+        texto = "ERRATA Nº 001/2026\nCorrige o Decreto Nº 042/2026"
+        tipo, numero = _extrair_tipo_numero(texto)
+        assert tipo is not None
+        assert "errata" in tipo.lower()
+
+    def test_notificacao(self):
+        texto = "NOTIFICAÇÃO\nNotifica a empresa X para cumprimento de prazo."
+        tipo, numero = _extrair_tipo_numero(texto)
+        assert tipo is not None
+        assert "notificacao" in _sem_acentos(tipo).lower()
 
 
 # ── _extrair_data ────────────────────────────────────────────
@@ -219,3 +261,83 @@ class TestDetectar:
         if resultado.publicacoes:
             pub = resultado.publicacoes[0]
             assert pub.get("orgao") or pub.get("tipo")
+
+
+# ── CEP com ponto ────────────────────────────────────────────
+
+class TestCEP:
+    def test_cep_com_ponto(self, db):
+        import database
+        database.init_db()
+        texto = "Rua XV de Novembro, 100 - Centro\nCEP 87.670-000 - Inajá-PR"
+        paginas = [PageText(pagina=1, texto=texto, metodo="test", blocks=[])]
+        resultado = detectar(10, "Teste CEP ponto", paginas)
+        ceps = [t for t in resultado.termos_encontrados if "CEP" in t]
+        assert ceps, "CEP com ponto deve ser detectado"
+
+    def test_cep_sem_ponto(self, db):
+        import database
+        database.init_db()
+        texto = "Av. Brasil, 200 - Centro\nCEP: 87670-000"
+        paginas = [PageText(pagina=1, texto=texto, metodo="test", blocks=[])]
+        resultado = detectar(11, "Teste CEP", paginas)
+        ceps = [t for t in resultado.termos_encontrados if "CEP" in t]
+        assert ceps
+
+
+# ── Município vizinho (pré-filtro) ──────────────────────────
+
+class TestMunicipioVizinho:
+    def test_detecta_orgao_de_outro_municipio(self):
+        texto = "PREFEITURA MUNICIPAL DE CRUZEIRO DO SUL - PR\nAVISO DE LICITAÇÃO Nº 009/2026"
+        assert _orgao_de_outro_municipio(texto) is True
+
+    def test_nao_flagra_inaja_como_vizinho(self):
+        texto = "Prefeitura Municipal de Inajá\nDECRETO Nº 001/2026"
+        assert _orgao_de_outro_municipio(texto) is False
+
+    def test_jardim_olinda(self):
+        texto = "Município de Jardim Olinda\nPORTARIA Nº 003/2026"
+        assert _orgao_de_outro_municipio(texto) is True
+
+    def test_publicacao_vizinha_filtrada(self, db):
+        import database
+        from detector import _publicacao_do_segmento
+        from ocr_processor import TextBlock
+        database.init_db()
+        bloco = TextBlock(
+            pagina=1,
+            bloco=1,
+            texto=(
+                "PREFEITURA MUNICIPAL DE CRUZEIRO DO SUL - PR\n"
+                "AVISO DE LICITAÇÃO Nº 009/2026\n"
+                "Contratação de empresa para obras."
+            ),
+        )
+        # Mesmo com termo Inajá no segmento, órgão de outro município é filtrado
+        pub = _publicacao_do_segmento(bloco, {"Inajá"})
+        assert pub is None
+
+
+# ── Menção genérica colada (boundary) ───────────────────────
+
+class TestMencaoGenericaBoundary:
+    def test_colada_em_token_ignorada(self):
+        # "inaja" dentro de token corrompido "listacaceinaja" não deve contar
+        texto = "contato listacaceinaja prgov br telefone"
+        # Encontra posição de "inaja" dentro de "listacaceinaja"
+        idx = texto.find("inaja")
+        fim = idx + len("inaja")
+        assert _mencao_generica_sem_palavra_isolada(texto, idx, fim) is True
+
+    def test_palavra_isolada_nao_ignorada(self):
+        texto = "Prefeitura Municipal de Inajá publicou o decreto."
+        idx = texto.find("Inaj")
+        fim = idx + len("Inajá")
+        assert _mencao_generica_sem_palavra_isolada(texto, idx, fim) is False
+
+    def test_inaja_com_hifen_nao_ignorada(self):
+        texto = "Município de Inajá-PR"
+        idx = texto.find("Inaj")
+        fim = idx + len("Inajá")
+        assert _mencao_generica_sem_palavra_isolada(texto, idx, fim) is False

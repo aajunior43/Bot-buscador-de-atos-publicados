@@ -99,3 +99,29 @@ def test_detectar_edicoes_agora(db, monkeypatch):
     assert response.status_code in [302, 303]
     assert response.headers["location"] == "/edicoes-detectadas"
 
+
+def test_analisar_lote_com_limite(db, monkeypatch):
+    # Evita processamento real de OCR em background durante o teste
+    monkeypatch.setattr("webapp._analisar_edicoes_lote", lambda ids: None)
+    for i in range(3):
+        database.insert_or_get_edicao(
+            f"https://example.com/lote_{i}.pdf",
+            f"Edicao Lote {i}",
+            "2026-06-26",
+        )
+    client = TestClient(app)
+
+    # Sem o campo limite -> usa o default (5) e continua compatível
+    r = client.post("/edicoes-detectadas/analisar-lote", follow_redirects=False)
+    assert r.status_code in [302, 303]
+    assert r.headers["location"] == "/edicoes-detectadas"
+
+    # Com o campo limite enviado pelo <select> do formulário
+    r = client.post(
+        "/edicoes-detectadas/analisar-lote",
+        data={"limite": "20"},
+        follow_redirects=False,
+    )
+    assert r.status_code in [302, 303]
+    assert r.headers["location"] == "/edicoes-detectadas"
+

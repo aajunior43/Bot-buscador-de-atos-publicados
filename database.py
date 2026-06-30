@@ -108,6 +108,8 @@ ALTER TABLE mencoes ADD COLUMN hash_trecho TEXT;
 def connect(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(db_path or SETTINGS.db_path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     try:
         yield conn
         conn.commit()

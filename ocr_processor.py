@@ -17,7 +17,7 @@ import os
 os.environ["OMP_THREAD_LIMIT"] = "1"
 
 logger = logging.getLogger(__name__)
-_WORKERS = min(8, max(2, os.cpu_count() or 2))
+_WORKERS = 1
 
 # Configura caminho do Tesseract (necessário no Windows quando não está no PATH)
 if SETTINGS.tesseract_path:
@@ -53,8 +53,14 @@ def _preprocessar(imagem: Image.Image) -> Image.Image:
     cinza = imagem.convert("L")
     contraste = ImageEnhance.Contrast(cinza).enhance(1.5)
     nitido = contraste.filter(ImageFilter.SHARPEN)
-    equalizada = ImageOps.equalize(nitido, mask=None)
+    equalizada = ImageOps.equalize(nitido)
     return equalizada
+
+
+def _binarizar(imagem: Image.Image) -> Image.Image:
+    """Binarização por threshold de Otsu — eficaz em imagens de baixa qualidade."""
+    cinza = imagem.convert("L")
+    return cinza.point(lambda x: 0 if x < 140 else 255, "1")
 
 
 def _texto_pdfplumber(pdf_path: Path, on_progress=None) -> list[PageText]:
@@ -131,28 +137,61 @@ def _texto_ocr_paginas(
     return textos
 
 
-def _detectar_numero_colunas(imagem: Image.Image) -> int:
+def _detectar_faixas_colunas(imagem: Image.Image) -> list[tuple[int, int]]:
+    """Detecta colunas reais na página usando análise de projeção vertical.
+
+    Retorna lista de tuplas (x0, x1) em coordenadas da imagem original,
+    ou lista vazia se não conseguir detectar (fallback para página inteira).
+    """
     try:
-        img_gray = imagem.convert("L").resize((400, 200))
-        largura, altura = img_gray.size
+        largura_original = imagem.width
+        altura_original = imagem.height
 
-        def pct_whiteness(pct: float) -> float:
-            x_center = int(largura * pct)
-            total_val = 0
-            count = 0
-            for dx in range(-2, 3):
-                x = x_center + dx
-                if 0 <= x < largura:
-                    total_val += sum(img_gray.getpixel((x, y)) for y in range(altura))
-                    count += altura
-            return total_val / count if count > 0 else 0
+        escala = 800 / largura_original
+        img_analise = imagem.convert("L").resize((800, max(200, int(altura_original * escala))))
+        largura, altura = img_analise.size
 
-        w3 = (pct_whiteness(0.33) + pct_whiteness(0.66)) / 2
-        w4 = (pct_whiteness(0.25) + pct_whiteness(0.50) + pct_whiteness(0.75)) / 3
+        profile = [sum(img_analise.getpixel((x, y)) for y in range(altura)) / altura for x in range(largura)]
 
-        return 4 if w4 > w3 else 3
+        janela = 3
+        suave = []
+        for i in range(largura):
+            start = max(0, i - janela)
+            end = min(largura, i + janela + 1)
+            suave.append(sum(profile[start:end]) / (end - start))
+
+        threshold_branco = 220
+        largura_min_gutter = max(4, largura // 50)
+
+        gutters = []
+        i = 0
+        while i < largura:
+            if suave[i] > threshold_branco:
+                inicio = i
+                while i < largura and suave[i] > threshold_branco:
+                    i += 1
+                if i - inicio >= largura_min_gutter:
+                    gutters.append((inicio + i) // 2)
+            else:
+                i += 1
+
+        boundaries = [0] + gutters + [largura]
+        faixas_escaladas = []
+        largura_min_coluna = largura // 14
+
+        for i in range(len(boundaries) - 1):
+            x0 = boundaries[i]
+            x1 = boundaries[i + 1]
+            if x1 - x0 >= largura_min_coluna:
+                faixas_escaladas.append((x0, x1))
+
+        if len(faixas_escaladas) <= 1:
+            return []
+
+        fator = largura_original / largura
+        return [(round(x0 * fator), round(x1 * fator)) for x0, x1 in faixas_escaladas]
     except Exception:
-        return 3
+        return []
 
 
 def _extrair_blocos_tesseract(
@@ -160,11 +199,10 @@ def _extrair_blocos_tesseract(
     pagina: int,
     avisos: list[str] | None = None,
 ) -> list[TextBlock]:
-    colunas = max(1, SETTINGS.ocr_layout_columns)
-    if colunas > 1:
-        colunas_detectadas = _detectar_numero_colunas(imagem)
-        logger.info("Página %s: colunas detectadas = %s", pagina, colunas_detectadas)
-        return _extrair_blocos_tesseract_por_coluna(imagem, pagina, colunas_detectadas, avisos)
+    faixas = _detectar_faixas_colunas(imagem)
+    if faixas:
+        logger.info("Página %s: %s coluna(s) detectada(s)", pagina, len(faixas))
+        return _extrair_blocos_tesseract_por_coluna(imagem, pagina, faixas, avisos)
 
     return _extrair_blocos_tesseract_imagem(
         imagem,
@@ -179,21 +217,18 @@ def _extrair_blocos_tesseract(
 def _extrair_blocos_tesseract_por_coluna(
     imagem: Image.Image,
     pagina: int,
-    colunas: int,
+    faixas: list[tuple[int, int]],
     avisos: list[str] | None = None,
 ) -> list[TextBlock]:
-    largura = imagem.width
     recortes: list[tuple[int, Image.Image, int]] = []
-    for coluna in range(colunas):
-        x0 = round((largura * coluna) / colunas)
-        x1 = round((largura * (coluna + 1)) / colunas)
+    for coluna, (x0, x1) in enumerate(faixas):
         if x1 <= x0:
             continue
         recorte = imagem.crop((x0, 0, x1, imagem.height))
         recortes.append((coluna, recorte, x0))
 
     blocos: list[TextBlock] = []
-    with ThreadPoolExecutor(max_workers=len(recortes)) as pool:
+    with ThreadPoolExecutor(max_workers=1) as pool:
         future_to_coluna = {
             pool.submit(
                 _extrair_blocos_tesseract_imagem,
@@ -228,24 +263,54 @@ def _extrair_blocos_tesseract_imagem(
     timeout: int,
     avisos: list[str] | None = None,
 ) -> list[TextBlock]:
+    data = _tentar_image_to_data(imagem, pagina, coluna, timeout, "--psm 4")
+    if data is not None:
+        return _agrupar_data_tesseract(data, pagina, coluna, x_offset)
+
+    binarizada = _binarizar(imagem)
+    data = _tentar_image_to_data(binarizada, pagina, coluna, timeout, "--psm 6")
+    if data is not None:
+        logger.info("OCR na página %s coluna %s recuperado (binarização + psm 6)", pagina, coluna + 1)
+        return _agrupar_data_tesseract(data, pagina, coluna, x_offset)
+
+    data = _tentar_image_to_data(imagem, pagina, coluna, timeout, "--psm 3")
+    if data is not None:
+        logger.info("OCR na página %s coluna %s recuperado (psm 3 automático)", pagina, coluna + 1)
+        return _agrupar_data_tesseract(data, pagina, coluna, x_offset)
+
+    logger.warning("Falha de OCR na página %s coluna %s após todas as estratégias", pagina, coluna + 1)
+    if avisos is not None:
+        avisos.append(f"Falha de OCR na página {pagina}, coluna {coluna + 1}")
+    return []
+
+
+def _tentar_image_to_data(
+    imagem: Image.Image,
+    pagina: int,
+    coluna: int,
+    timeout: int,
+    psm: str,
+) -> dict | None:
+    """Tenta executar image_to_data; retorna None se falhar."""
     try:
-        data = pytesseract.image_to_data(
+        return pytesseract.image_to_data(
             imagem,
             lang=SETTINGS.ocr_language,
-            config="--psm 4",
+            config=psm,
             output_type=pytesseract.Output.DICT,
             timeout=timeout,
         )
-    except RuntimeError:
-        logger.exception(
-            "Timeout/falha de OCR estruturado na página %s coluna %s",
-            pagina,
-            coluna + 1,
-        )
-        if avisos is not None:
-            avisos.append(f"Timeout/falha de OCR na página {pagina}, coluna {coluna + 1}")
-        return []
+    except Exception as exc:
+        logger.warning("OCR estruturado falhou (página %s coluna %s psm=%s): %s", pagina, coluna + 1, psm, exc)
+        return None
 
+
+def _agrupar_data_tesseract(
+    data: dict,
+    pagina: int,
+    coluna: int,
+    x_offset: int,
+) -> list[TextBlock]:
     agrupado: dict[tuple[int, int, int, int], dict[str, object]] = {}
     total = len(data.get("text", []))
     for idx in range(total):
@@ -363,19 +428,23 @@ def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None, on_prog
 
 def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> PageText:
     processada = _preprocessar(imagem)
+    timeout_base = SETTINGS.ocr_fast_timeout_seconds
+    timeout_retry = max(60, timeout_base * 2)
+
+    texto = None
+    # Estratégia 1: OCR rápido com psm 3 (padrão)
     try:
         texto = pytesseract.image_to_string(
             processada,
             lang=SETTINGS.ocr_language,
             config="--psm 3",
-            timeout=SETTINGS.ocr_fast_timeout_seconds,
+            timeout=timeout_base,
         )
-    except RuntimeError:
-        logger.warning(
-            "Timeout de OCR rápido na página %s — retentando com resolução reduzida", idx
-        )
-        avisos.append(f"Timeout/falha de OCR rápido na página {idx}")
-        # Retry com imagem na metade da resolução para páginas muito densas
+    except (RuntimeError, Exception) as exc:
+        logger.warning("OCR rápido falhou na página %s (psm 3): %s", idx, exc)
+
+    # Estratégia 2: resolução reduzida + timeout maior
+    if not texto or not texto.strip():
         try:
             reduzida = processada.resize(
                 (processada.width // 2, processada.height // 2),
@@ -385,14 +454,30 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
                 reduzida,
                 lang=SETTINGS.ocr_language,
                 config="--psm 3",
-                timeout=60,
+                timeout=timeout_retry,
             )
-            logger.info("OCR rápido na página %s recuperado com resolução reduzida", idx)
-        except RuntimeError:
-            logger.exception(
-                "Timeout persistente de OCR rápido na página %s mesmo com resolução reduzida", idx
+            logger.info("OCR rápido na página %s recuperado (resolução reduzida)", idx)
+        except (RuntimeError, Exception) as exc:
+            logger.warning("OCR rápido falhou na página %s (resolução reduzida): %s", idx, exc)
+
+    # Estratégia 3: binarização + psm 6 (bloco de texto uniforme)
+    if not texto or not texto.strip():
+        try:
+            binarizada = _binarizar(processada)
+            texto = pytesseract.image_to_string(
+                binarizada,
+                lang=SETTINGS.ocr_language,
+                config="--psm 6",
+                timeout=timeout_retry,
             )
-            texto = ""
+            logger.info("OCR rápido na página %s recuperado (binarização + psm 6)", idx)
+        except (RuntimeError, Exception) as exc:
+            logger.warning("OCR rápido falhou na página %s (binarização): %s", idx, exc)
+
+    if not texto or not texto.strip():
+        avisos.append(f"Timeout/falha de OCR rápido na página {idx} após 3 tentativas")
+        texto = ""
+
     texto = texto.strip()
     return PageText(
         pagina=idx,

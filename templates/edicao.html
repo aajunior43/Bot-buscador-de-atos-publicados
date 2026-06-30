@@ -69,7 +69,15 @@
       <h3>{{ item.orgao or "Órgão não identificado" }}</h3>
 
       {% if item.resumo_ia %}
-      <blockquote class="ia-resumo">{{ item.resumo_ia }}</blockquote>
+      <blockquote class="ia-resumo markdown-body" data-markdown>{{ item.resumo_ia|e }}</blockquote>
+      {% endif %}
+
+      {% if item.tags %}
+      <div class="ia-tags">
+        {% for tag in item.tags.split(',') %}
+        <span class="ia-tag">#{{ tag.strip() }}</span>
+        {% endfor %}
+      </div>
       {% endif %}
 
       <dl class="facts">
@@ -136,6 +144,54 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+// Renderizador de markdown leve para resumos da IA
+(function () {
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function renderInline(s) {
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    return s;
+  }
+  function renderMarkdown(md) {
+    const lines = escapeHtml(md).split('\n');
+    let html = '';
+    let inUl = false, inOl = false;
+    function closeLists() {
+      if (inUl) { html += '</ul>'; inUl = false; }
+      if (inOl) { html += '</ol>'; inOl = false; }
+    }
+    for (let line of lines) {
+      const t = line.trim();
+      if (!t) { closeLists(); continue; }
+      let m;
+      if ((m = t.match(/^###\s+(.*)/))) { closeLists(); html += '<h3>' + renderInline(m[1]) + '</h3>'; continue; }
+      if ((m = t.match(/^##\s+(.*)/)))  { closeLists(); html += '<h2>' + renderInline(m[1]) + '</h2>'; continue; }
+      if ((m = t.match(/^[-*]\s+(.*)/))) {
+        if (!inUl) { closeLists(); html += '<ul>'; inUl = true; }
+        html += '<li>' + renderInline(m[1]) + '</li>';
+        continue;
+      }
+      if ((m = t.match(/^\d+[.)]\s+(.*)/))) {
+        if (!inOl) { closeLists(); html += '<ol>'; inOl = true; }
+        html += '<li>' + renderInline(m[1]) + '</li>';
+        continue;
+      }
+      closeLists();
+      html += '<p>' + renderInline(t) + '</p>';
+    }
+    closeLists();
+    return html;
+  }
+  document.querySelectorAll('[data-markdown]').forEach(function (el) {
+    el.innerHTML = renderMarkdown(el.textContent);
+  });
+})();
+</script>
 <script>
 // Debug OCR: carrega imagem + texto ao clicar
 const pgSelect = document.getElementById('pg-select');

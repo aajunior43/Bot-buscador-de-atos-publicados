@@ -17,169 +17,201 @@
 </div>
 {% endif %}
 
-<form method="post" action="/admin/salvar">
-  <!-- IA -->
-  <div class="panel fade-in" style="margin-bottom:1.5rem;">
-    <div class="panel-head"><h2>✨ Inteligência Artificial (OpenCode Go)</h2></div>
-    <div class="admin-form">
-      <div class="admin-section">
+<form method="post" action="/admin/salvar" id="admin-form">
+  <nav class="tabs-nav" id="admin-tabs" role="tablist">
+    <button type="button" class="tab-btn active" data-tab="ia-busca" role="tab">✨ IA &amp; Busca</button>
+    <button type="button" class="tab-btn" data-tab="smtp" role="tab">📧 Notificações &amp; SMTP</button>
+    <button type="button" class="tab-btn" data-tab="webhooks" role="tab">🔗 Webhooks</button>
+    <button type="button" class="tab-btn" data-tab="manutencao" role="tab">🛠️ Manutenção &amp; Diagnóstico</button>
+  </nav>
+
+  <!-- Aba: IA & Busca -->
+  <div class="tab-panel active" data-panel="ia-busca">
+    <div class="panel fade-in" style="margin-bottom:1.5rem;">
+      <div class="panel-head"><h2>✨ Inteligência Artificial (OpenCode Go)</h2></div>
+      <div class="admin-form">
+        <div class="admin-section">
+          <div class="field">
+            <label for="opencode_api_key">API Key</label>
+            <input type="password" id="opencode_api_key" name="opencode_api_key" placeholder="oc_...">
+            {% if api_key_configured %}
+            <small>Configurada: <code>{{ api_key_masked }}</code></small>
+            {% else %}
+            <small>Não configurada. Obtenha em <a href="https://opencode.ai/auth" target="_blank">opencode.ai/auth</a></small>
+            {% endif %}
+          </div>
+          <div class="field">
+            <label for="opencode_model">Modelo</label>
+            <input type="text" id="opencode_model" name="opencode_model" value="{{ model }}" placeholder="deepseek-v4-flash">
+            <small>Sugestões: <code>deepseek-v4-flash</code> (barato) · <code>deepseek-v4-pro</code> · <code>qwen3.7-plus</code></small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel fade-in" style="margin-bottom:1.5rem;">
+      <div class="panel-head"><h2>🔍 Termos de Busca</h2></div>
+      <div class="admin-form">
         <div class="field">
-          <label for="opencode_api_key">API Key</label>
-          <input type="password" id="opencode_api_key" name="opencode_api_key" placeholder="oc_...">
-          {% if api_key_configured %}
-          <small>Configurada: <code>{{ api_key_masked }}</code></small>
-          {% else %}
-          <small>Não configurada. Obtenha em <a href="https://opencode.ai/auth" target="_blank">opencode.ai/auth</a></small>
-          {% endif %}
+          <label for="extra_terms">Termos extras (separados por vírgula)</label>
+          <input type="text" id="extra_terms" name="extra_terms" value="{{ extra_terms }}" placeholder="João Eder,Luana Aiara,Amarildo Peres">
+          <small>Nomes de pessoas ou expressões adicionais a monitorar.</small>
         </div>
         <div class="field">
-          <label for="opencode_model">Modelo</label>
-          <input type="text" id="opencode_model" name="opencode_model" value="{{ model }}" placeholder="deepseek-v4-flash">
-          <small>Sugestões: <code>deepseek-v4-flash</code> (barato) · <code>deepseek-v4-pro</code> · <code>qwen3.7-plus</code></small>
+          <label for="ignore_terms">Termos a ignorar no contexto (separados por vírgula)</label>
+          <input type="text" id="ignore_terms" name="ignore_terms" value="{{ ignore_terms }}" placeholder="distribuição avulsa,farmácia,loterias">
+          <small>Contextos onde menções genéricas de "Inajá" devem ser descartadas.</small>
+        </div>
+        <div class="field">
+          <label for="absence_alert_days">Dias sem publicação para alerta</label>
+          <input type="number" id="absence_alert_days" name="absence_alert_days" value="30" min="1" max="365" style="max-width:120px;">
+          <small>Se não houver publicação com Inajá neste período, um alerta é enviado.</small>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Termos de busca -->
-  <div class="panel fade-in" style="margin-bottom:1.5rem;">
-    <div class="panel-head"><h2>🔍 Termos de Busca</h2></div>
-    <div class="admin-form">
-      <div class="field">
-        <label for="extra_terms">Termos extras (separados por vírgula)</label>
-        <input type="text" id="extra_terms" name="extra_terms" value="{{ extra_terms }}" placeholder="João Eder,Luana Aiara,Amarildo Peres">
-        <small>Nomes de pessoas ou expressões adicionais a monitorar.</small>
-      </div>
-      <div class="field">
-        <label for="ignore_terms">Termos a ignorar no contexto (separados por vírgula)</label>
-        <input type="text" id="ignore_terms" name="ignore_terms" value="{{ ignore_terms }}" placeholder="distribuição avulsa,farmácia,loterias">
-        <small>Contextos onde menções genéricas de "Inajá" devem ser descartadas.</small>
-      </div>
-      <div class="field">
-        <label for="absence_alert_days">Dias sem publicação para alerta</label>
-        <input type="number" id="absence_alert_days" name="absence_alert_days" value="30" min="1" max="365" style="max-width:120px;">
-        <small>Se não houver publicação com Inajá neste período, um alerta é enviado.</small>
-      </div>
-    </div>
-  </div>
-
-  <!-- E-mail SMTP -->
-  <div class="panel fade-in" style="margin-bottom:1.5rem;">
-    <div class="panel-head"><h2>📧 Notificação por E-mail (SMTP)</h2></div>
-    <div class="admin-form">
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
-        <div class="field">
-          <label for="smtp_host">Servidor SMTP</label>
-          <input type="text" id="smtp_host" name="smtp_host" value="{{ smtp_host }}" placeholder="smtp.gmail.com">
-        </div>
-        <div class="field">
-          <label for="smtp_port">Porta</label>
-          <input type="number" id="smtp_port" name="smtp_port" value="{{ smtp_port or 587 }}" placeholder="587" style="max-width:100px;">
-        </div>
-        <div class="field">
-          <label for="smtp_user">Usuário (e-mail remetente)</label>
-          <input type="email" id="smtp_user" name="smtp_user" value="{{ smtp_user }}" placeholder="seu@gmail.com">
-        </div>
-        <div class="field">
-          <label for="smtp_pass">Senha / App Password</label>
-          <input type="password" id="smtp_pass" name="smtp_pass" placeholder="••••••••">
-          <small>Use uma "App Password" do Google se usar Gmail.</small>
-        </div>
-        <div class="field">
-          <label for="smtp_to">Destinatário(s)</label>
-          <input type="text" id="smtp_to" name="smtp_to" value="{{ smtp_to }}" placeholder="destino@email.com">
-          <small>Múltiplos e-mails separados por vírgula.</small>
-        </div>
-        <div class="field">
-          <label for="smtp_from">Remetente (nome)</label>
-          <input type="text" id="smtp_from" name="smtp_from" value="{{ smtp_user }}" placeholder="Monitor Inajá">
+  <!-- Aba: Notificações & SMTP -->
+  <div class="tab-panel" data-panel="smtp">
+    <div class="panel fade-in" style="margin-bottom:1.5rem;">
+      <div class="panel-head"><h2>📧 Notificação por E-mail (SMTP)</h2></div>
+      <div class="admin-form">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+          <div class="field">
+            <label for="smtp_host">Servidor SMTP</label>
+            <input type="text" id="smtp_host" name="smtp_host" value="{{ smtp_host }}" placeholder="smtp.gmail.com">
+          </div>
+          <div class="field">
+            <label for="smtp_port">Porta</label>
+            <input type="number" id="smtp_port" name="smtp_port" value="{{ smtp_port or 587 }}" placeholder="587" style="max-width:100px;">
+          </div>
+          <div class="field">
+            <label for="smtp_user">Usuário (e-mail remetente)</label>
+            <input type="email" id="smtp_user" name="smtp_user" value="{{ smtp_user }}" placeholder="seu@gmail.com">
+          </div>
+          <div class="field">
+            <label for="smtp_pass">Senha / App Password</label>
+            <input type="password" id="smtp_pass" name="smtp_pass" placeholder="••••••••">
+            <small>Use uma "App Password" do Google se usar Gmail.</small>
+          </div>
+          <div class="field">
+            <label for="smtp_to">Destinatário(s)</label>
+            <input type="text" id="smtp_to" name="smtp_to" value="{{ smtp_to }}" placeholder="destino@email.com">
+            <small>Múltiplos e-mails separados por vírgula.</small>
+          </div>
+          <div class="field">
+            <label for="smtp_from">Remetente (nome)</label>
+            <input type="text" id="smtp_from" name="smtp_from" value="{{ smtp_user }}" placeholder="Monitor Inajá">
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <div style="padding:0 0 1.5rem;">
-    <button type="submit" class="btn">💾 Salvar todas as configurações</button>
+  <!-- Barra de salvamento (visível apenas nas abas de configuração) -->
+  <div class="save-bar" id="save-bar">
+    <button type="submit" class="btn">💾 Salvar configurações (IA, termos e SMTP)</button>
+  </div>
+
+  <!-- Aba: Webhooks -->
+  <div class="tab-panel" data-panel="webhooks">
+    <div class="panel fade-in" style="margin-bottom:1.5rem;">
+      <div class="panel-head">
+        <h2>🔗 Webhooks</h2>
+        <span>{{ webhooks|length }} configurado(s)</span>
+      </div>
+      <div style="padding:1rem 1.5rem;">
+        {% if webhooks %}
+        <div class="webhook-list" style="margin-bottom:1.25rem;">
+          {% for wh in webhooks %}
+          <div class="webhook-item">
+            <div class="webhook-info">
+              <strong>{{ wh.url }}</strong>
+              <small>{{ wh.descricao or "Sem descrição" }} · desde {{ wh.criado_em }}</small>
+            </div>
+            <button type="submit" formaction="/admin/webhook/{{ wh.id }}/remover" class="btn btn-danger" style="font-size:.75rem; padding:.3rem .7rem;">Remover</button>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div style="display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end;">
+          <div class="field" style="flex:2; margin:0;">
+            <label for="webhook_url">URL do webhook</label>
+            <input type="url" id="webhook_url" name="webhook_url" placeholder="https://hooks.zapier.com/...">
+          </div>
+          <div class="field" style="flex:1; margin:0;">
+            <label for="webhook_descricao">Descrição</label>
+            <input type="text" id="webhook_descricao" name="webhook_descricao" placeholder="Zapier, n8n, etc.">
+          </div>
+          <button type="submit" formaction="/admin/webhook/adicionar" class="btn">Adicionar</button>
+        </div>
+        <p style="font-size:.75rem; color:var(--text-3); margin-top:.75rem;">
+          Payload JSON enviado a cada detecção: <code>{ edicao_id, edicao_titulo, paginas, termos, publicacoes, mencoes, url }</code>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aba: Manutenção & Diagnóstico -->
+  <div class="tab-panel" data-panel="manutencao">
+    <div class="panel fade-in" style="margin-bottom:1.5rem;">
+      <div class="panel-head"><h2>🧪 Diagnóstico</h2></div>
+      <div class="admin-form" style="display:flex; gap:1rem;">
+        <button type="submit" formaction="/admin/testar" class="btn btn-secondary">Testar conexão com OpenCode Go</button>
+      </div>
+    </div>
+
+    <div class="panel fade-in" style="margin-bottom:1.5rem;">
+      <div class="panel-head"><h2>🧹 Utilitários de Limpeza</h2></div>
+      <div class="admin-form">
+        <p style="font-size:.85rem; color:var(--text-2); margin-bottom:.75rem;">
+          Remova as 1.074 edições cadastradas no domínio antigo (<code>hnetsistemas.com.br</code>) que estão com links quebrados e poluem a listagem.
+        </p>
+        <button type="submit" formaction="/admin/limpar-edicoes-antigas" class="btn btn-danger" onclick="return confirm('Tem certeza que deseja apagar as edições do sistema antigo? Essa ação não pode ser desfeita.');">Apagar Edições do Sistema Antigo</button>
+      </div>
+    </div>
+
+    <div class="panel fade-in">
+      <div class="panel-head"><h2>📊 Status do Sistema</h2></div>
+      <div class="admin-form">
+        <div class="info-box" style="margin:0;">
+          <table class="status-table">
+            <tr><td>IA via OpenCode Go</td><td>{{ "✅ Ativo" if ai_ativo else "❌ Desativado" }}</td></tr>
+            <tr><td>Modelo configurado</td><td><code>{{ model }}</code></td></tr>
+            <tr><td>API Key cadastrada</td><td>{{ "Sim" if api_key_configured else "Não" }}</td></tr>
+            <tr><td>Refinamento de publicações</td><td>{{ "Ligado" if ai_ativo else "Desligado" }}</td></tr>
+            <tr><td>Termos extras ativos</td><td>{{ extra_terms or "nenhum" }}</td></tr>
+            <tr><td>SMTP configurado</td><td>{{ "Sim" if smtp_host else "Não" }}</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
+{% endblock %}
 
-<!-- Teste de IA -->
-<div class="panel fade-in" style="margin-bottom:1.5rem;">
-  <div class="panel-head"><h2>🧪 Diagnóstico</h2></div>
-  <div class="admin-form" style="display:flex; gap:1rem;">
-    <form method="post" action="/admin/testar" style="margin:0;">
-      <button type="submit" class="btn btn-secondary">Testar conexão com OpenCode Go</button>
-    </form>
-  </div>
-</div>
+{% block scripts %}
+<script>
+(function () {
+  const tabBtns = document.querySelectorAll('#admin-tabs .tab-btn');
+  const panels = document.querySelectorAll('.tab-panel');
+  const saveBar = document.getElementById('save-bar');
+  const STORAGE_KEY = 'admin-active-tab';
 
-<!-- Utilitários de Banco -->
-<div class="panel fade-in" style="margin-bottom:1.5rem;">
-  <div class="panel-head"><h2>🧹 Utilitários de Limpeza</h2></div>
-  <div class="admin-form">
-    <p style="font-size:.85rem; color:var(--text-2); margin-bottom:.75rem;">
-      Remova as 1.074 edições cadastradas no domínio antigo (<code>hnetsistemas.com.br</code>) que estão com links quebrados e poluem a listagem.
-    </p>
-    <form method="post" action="/admin/limpar-edicoes-antigas" onsubmit="return confirm('Tem certeza que deseja apagar as edições do sistema antigo? Essa ação não pode ser desfeita.');" style="margin:0;">
-      <button type="submit" class="btn btn-danger">Apagar Edições do Sistema Antigo</button>
-    </form>
-  </div>
-</div>
+  function activateTab(name) {
+    tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    panels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+    if (saveBar) saveBar.style.display = (name === 'ia-busca' || name === 'smtp') ? '' : 'none';
+    try { localStorage.setItem(STORAGE_KEY, name); } catch (e) {}
+  }
 
-<!-- Webhooks -->
-<div class="panel fade-in" style="margin-bottom:1.5rem;">
+  tabBtns.forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 
-  <div class="panel-head">
-    <h2>🔗 Webhooks</h2>
-    <span>{{ webhooks|length }} configurado(s)</span>
-  </div>
-  <div style="padding:1rem 1.5rem;">
-    {% if webhooks %}
-    <div class="webhook-list" style="margin-bottom:1.25rem;">
-      {% for wh in webhooks %}
-      <div class="webhook-item">
-        <div class="webhook-info">
-          <strong>{{ wh.url }}</strong>
-          <small>{{ wh.descricao or "Sem descrição" }} · desde {{ wh.criado_em }}</small>
-        </div>
-        <form method="post" action="/admin/webhook/{{ wh.id }}/remover">
-          <button type="submit" class="btn btn-danger" style="font-size:.75rem; padding:.3rem .7rem;">Remover</button>
-        </form>
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
-    <form method="post" action="/admin/webhook/adicionar" style="display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end;">
-      <div class="field" style="flex:2; margin:0;">
-        <label for="webhook_url">URL do webhook</label>
-        <input type="url" id="webhook_url" name="webhook_url" placeholder="https://hooks.zapier.com/...">
-      </div>
-      <div class="field" style="flex:1; margin:0;">
-        <label for="webhook_descricao">Descrição</label>
-        <input type="text" id="webhook_descricao" name="webhook_descricao" placeholder="Zapier, n8n, etc.">
-      </div>
-      <button type="submit" class="btn">Adicionar</button>
-    </form>
-    <p style="font-size:.75rem; color:var(--text-3); margin-top:.75rem;">
-      Payload JSON enviado a cada detecção: <code>{ edicao_id, edicao_titulo, paginas, termos, publicacoes, mencoes, url }</code>
-    </p>
-  </div>
-</div>
-
-<!-- Status do sistema -->
-<div class="panel fade-in">
-  <div class="panel-head"><h2>📊 Status do Sistema</h2></div>
-  <div class="admin-form">
-    <div class="info-box" style="margin:0;">
-      <table class="status-table">
-        <tr><td>IA via OpenCode Go</td><td>{{ "✅ Ativo" if ai_ativo else "❌ Desativado" }}</td></tr>
-        <tr><td>Modelo configurado</td><td><code>{{ model }}</code></td></tr>
-        <tr><td>API Key cadastrada</td><td>{{ "Sim" if api_key_configured else "Não" }}</td></tr>
-        <tr><td>Refinamento de publicações</td><td>{{ "Ligado" if ai_ativo else "Desligado" }}</td></tr>
-        <tr><td>Termos extras ativos</td><td>{{ extra_terms or "nenhum" }}</td></tr>
-        <tr><td>SMTP configurado</td><td>{{ "Sim" if smtp_host else "Não" }}</td></tr>
-      </table>
-    </div>
-  </div>
-</div>
+  let saved = null;
+  try { saved = localStorage.getItem(STORAGE_KEY); } catch (e) {}
+  if (saved && document.querySelector('.tab-panel[data-panel="' + saved + '"]')) {
+    activateTab(saved);
+  }
+})();
+</script>
 {% endblock %}

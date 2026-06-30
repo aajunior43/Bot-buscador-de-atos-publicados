@@ -8,3 +8,4 @@ logs/
 jornal_monitor.db
 .pytest_cache/
 .mypy_cache/
+=
