@@ -6,7 +6,15 @@ Cobre pre-processamento, binarizacao e estrategias de fallback de OCR.
 from __future__ import annotations
 
 from PIL import Image
-from ocr_processor import _preprocessar, _binarizar, _agrupar_data_tesseract
+from ocr_processor import (
+    _preprocessar,
+    _preprocessar_forte,
+    _ampliar_imagem,
+    _binarizar,
+    _limitar_dimensao,
+    _ocr_rapido_texto_valido,
+    _agrupar_data_tesseract,
+)
 
 
 # ── _preprocessar ──────────────────────────────────────────
@@ -26,6 +34,56 @@ class TestPreprocessar:
         img = Image.new("RGB", (10, 10), color=(0, 0, 0))
         result = _preprocessar(img)
         assert result is not None
+
+
+# ── _ampliar_imagem / _preprocessar_forte ──────────────────
+
+class TestAmpliarEPreprocessarForte:
+    def test_ampliar_dobra_tamanho(self):
+        img = Image.new("L", (100, 50), color=200)
+        result = _ampliar_imagem(img, 2.0)
+        assert result.size == (200, 100)
+
+    def test_preprocessar_forte_mantem_dimensoes(self):
+        img = Image.new("RGB", (120, 80), color=(100, 100, 100))
+        result = _preprocessar_forte(img)
+        assert result.size == (120, 80)
+        assert result.mode == "L"
+
+
+# ── _limitar_dimensao ──────────────────────────────────────
+
+class TestLimitarDimensao:
+    def test_imagem_pequena_nao_altera(self):
+        img = Image.new("L", (800, 600), color=200)
+        result = _limitar_dimensao(img, max_dim=1800)
+        assert result.size == (800, 600)
+
+    def test_imagem_grande_reduz_mantendo_proporcao(self):
+        img = Image.new("L", (4000, 3000), color=200)
+        result = _limitar_dimensao(img, max_dim=1800)
+        assert max(result.size) == 1800
+        assert result.width < img.width
+        assert result.height < img.height
+
+    def test_dimensao_minima_nunca_zero(self):
+        img = Image.new("L", (5000, 8000), color=200)
+        result = _limitar_dimensao(img, max_dim=1)
+        assert result.width >= 1
+        assert result.height >= 1
+
+
+# ── _ocr_rapido_texto_valido ─────────────────────────────
+
+class TestOcrRapidoTextoValido:
+    def test_texto_curto_invalido(self):
+        assert _ocr_rapido_texto_valido("cabeçalho curto") is False
+
+    def test_texto_longo_valido(self):
+        assert _ocr_rapido_texto_valido("x" * 400) is True
+
+    def test_vazio_invalido(self):
+        assert _ocr_rapido_texto_valido("") is False
 
 
 # ── _binarizar ─────────────────────────────────────────────

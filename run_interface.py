@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 
@@ -68,13 +69,36 @@ def main() -> None:
     print()
 
     import uvicorn
+
+    reload = os.getenv("DEV_RELOAD", "1").strip().casefold() in {"1", "true", "sim", "yes", "on"}
     uvicorn.run(
         "webapp:app",
         host="0.0.0.0",
         port=8001,
         log_level="info",
         access_log=True,
-        reload=True,
+        reload=reload,
+        reload_delay=1.5,
+        reload_excludes=[
+            "tests/*",
+            "*.db",
+            "*.db-*",
+            "agent-tools/*",
+            "logs/*",
+            "alertas/*",
+            "_check_*.py",
+            "analyze_*.py",
+            "reprocess_*.py",
+            "process_*.py",
+            "temp_*.py",
+            "count_*.py",
+            "find_*.py",
+            "list_*.py",
+            "quick_*.py",
+            "may_*.py",
+            "final_*.py",
+            "get_*.py",
+        ],
     )
 
 

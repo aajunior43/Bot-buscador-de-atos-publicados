@@ -40,9 +40,14 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_db()
-    stuck = database.cleanup_stuck_jobs(max_hours=0)
-    if stuck:
-        logger.warning("Startup: %s job(s) travado(s) marcado(s) como erro.", stuck)
+    resume_ids = database.pop_interrupted_edicao_ids()
+    if resume_ids:
+        logger.warning(
+            "Startup: %s edição(ões) interrompida(s) serão reprocessada(s): %s",
+            len(resume_ids),
+            resume_ids,
+        )
+        _task_executor.submit(_analisar_edicoes_lote, resume_ids)
     _start_scheduler()
     yield
 

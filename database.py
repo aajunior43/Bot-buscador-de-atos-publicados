@@ -132,6 +132,31 @@ def init_db() -> None:
                     pass
 
 
+def pop_interrupted_edicao_ids() -> list[int]:
+    """Retorna edições com jobs em execução e marca todos os jobs rodando como erro."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT edicao_id
+            FROM jobs
+            WHERE status = 'rodando' AND edicao_id IS NOT NULL
+            ORDER BY edicao_id
+            """
+        ).fetchall()
+        edicao_ids = [int(row["edicao_id"]) for row in rows]
+        conn.execute(
+            """
+            UPDATE jobs
+            SET status = 'erro',
+                mensagem = 'Job interrompido - servidor reiniciado',
+                finalizado_em = CURRENT_TIMESTAMP,
+                atualizado_em = CURRENT_TIMESTAMP
+            WHERE status = 'rodando'
+            """
+        )
+        return edicao_ids
+
+
 def cleanup_stuck_jobs(max_hours: int = 2) -> int:
     """Marca como erro jobs que ficaram 'rodando' por mais de max_hours horas (ou todos se max_hours <= 0)."""
     with connect() as conn:

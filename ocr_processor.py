@@ -18,6 +18,25 @@ os.environ["OMP_THREAD_LIMIT"] = "1"
 
 logger = logging.getLogger(__name__)
 _WORKERS = 1
+_TESSERACT_OEM = "--oem 1"
+
+
+def _tesseract_config(psm: int) -> str:
+    return f"{_TESSERACT_OEM} --psm {psm}"
+
+
+def _limitar_dimensao(imagem: Image.Image, max_dim: int | None = None) -> Image.Image:
+    limite = max_dim or SETTINGS.ocr_fast_max_dimension
+    largura, altura = imagem.size
+    maior = max(largura, altura)
+    if maior <= limite:
+        return imagem
+    escala = limite / maior
+    return imagem.resize(
+        (max(1, int(largura * escala)), max(1, int(altura * escala))),
+        Image.LANCZOS,
+    )
+
 
 # Configura caminho do Tesseract (necessário no Windows quando não está no PATH)
 if SETTINGS.tesseract_path:
@@ -57,10 +76,47 @@ def _preprocessar(imagem: Image.Image) -> Image.Image:
     return equalizada
 
 
-def _binarizar(imagem: Image.Image) -> Image.Image:
-    """Binarização por threshold de Otsu — eficaz em imagens de baixa qualidade."""
+def _preprocessar_forte(imagem: Image.Image) -> Image.Image:
     cinza = imagem.convert("L")
-    return cinza.point(lambda x: 0 if x < 140 else 255, "1")
+    suavizada = cinza.filter(ImageFilter.MedianFilter(size=3))
+    contraste = ImageEnhance.Contrast(suavizada).enhance(2.2)
+    nitido = contraste.filter(ImageFilter.SHARPEN)
+    return ImageOps.autocontrast(nitido)
+
+
+def _ampliar_imagem(imagem: Image.Image, fator: float = 2.0) -> Image.Image:
+    if fator <= 1.0:
+        return imagem
+    largura, altura = imagem.size
+    return imagem.resize(
+        (max(1, int(largura * fator)), max(1, int(altura * fator))),
+        Image.LANCZOS,
+    )
+
+
+def _carregar_pagina_pdf(pdf_path: Path, pagina: int, dpi: int) -> Image.Image | None:
+    imagens = convert_from_path(
+        str(pdf_path),
+        dpi=dpi,
+        first_page=pagina,
+        last_page=pagina,
+        poppler_path=SETTINGS.poppler_path or None,
+    )
+    return imagens[0] if imagens else None
+
+
+def _ocr_rapido_min_chars() -> int:
+    return max(SETTINGS.min_text_chars_per_page, SETTINGS.ocr_fast_min_chars)
+
+
+def _ocr_rapido_texto_valido(texto: str) -> bool:
+    return len((texto or "").strip()) >= _ocr_rapido_min_chars()
+
+
+def _binarizar(imagem: Image.Image, threshold: int = 140) -> Image.Image:
+    """Binarização por threshold — eficaz em imagens de baixa qualidade."""
+    cinza = imagem.convert("L")
+    return cinza.point(lambda x: 0 if x < threshold else 255, "1")
 
 
 def _texto_pdfplumber(pdf_path: Path, on_progress=None) -> list[PageText]:
@@ -228,21 +284,31 @@ def _extrair_blocos_tesseract_por_coluna(
         recortes.append((coluna, recorte, x0))
 
     blocos: list[TextBlock] = []
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future_to_coluna = {
-            pool.submit(
-                _extrair_blocos_tesseract_imagem,
-                recorte,
+    for coluna, recorte, x0 in recortes:
+        resultado = _extrair_blocos_tesseract_imagem(
+            recorte,
+            pagina=pagina,
+            coluna=coluna,
+            x_offset=x0,
+            timeout=SETTINGS.ocr_timeout_seconds,
+            avisos=avisos,
+        )
+        if not resultado:
+            resultado = _extrair_blocos_tesseract_imagem(
+                _ampliar_imagem(recorte, 2.0),
                 pagina=pagina,
                 coluna=coluna,
                 x_offset=x0,
-                timeout=SETTINGS.ocr_timeout_seconds,
+                timeout=max(SETTINGS.ocr_timeout_seconds, SETTINGS.ocr_timeout_seconds * 2),
                 avisos=avisos,
-            ): coluna
-            for coluna, recorte, x0 in recortes
-        }
-        for future in as_completed(future_to_coluna):
-            blocos.extend(future.result())
+            )
+            if resultado:
+                logger.info(
+                    "OCR na página %s coluna %s recuperado (ampliação 2x)",
+                    pagina,
+                    coluna + 1,
+                )
+        blocos.extend(resultado)
 
     return sorted(
         blocos,
@@ -263,20 +329,53 @@ def _extrair_blocos_tesseract_imagem(
     timeout: int,
     avisos: list[str] | None = None,
 ) -> list[TextBlock]:
-    data = _tentar_image_to_data(imagem, pagina, coluna, timeout, "--psm 4")
-    if data is not None:
-        return _agrupar_data_tesseract(data, pagina, coluna, x_offset)
+    base = _preprocessar_forte(imagem)
+    limitada = _limitar_dimensao(base, SETTINGS.ocr_max_dimension)
+    ampliada = _limitar_dimensao(
+        _ampliar_imagem(base, 1.5),
+        int(SETTINGS.ocr_max_dimension * 1.25),
+    )
+    tentativas: list[tuple[str, Image.Image, int]] = [
+        ("psm 4", limitada, 4),
+        ("psm 6", limitada, 6),
+        ("psm 11 texto esparso", limitada, 11),
+        ("binarização + psm 6", _binarizar(limitada, 140), 6),
+        ("binarização 120 + psm 6", _binarizar(limitada, 120), 6),
+        ("pré-processamento forte + psm 6", ampliada, 6),
+    ]
 
-    binarizada = _binarizar(imagem)
-    data = _tentar_image_to_data(binarizada, pagina, coluna, timeout, "--psm 6")
-    if data is not None:
-        logger.info("OCR na página %s coluna %s recuperado (binarização + psm 6)", pagina, coluna + 1)
-        return _agrupar_data_tesseract(data, pagina, coluna, x_offset)
+    reduzida = limitada.resize(
+        (max(1, limitada.width // 2), max(1, limitada.height // 2)),
+        Image.LANCZOS,
+    )
+    tentativas.extend(
+        [
+            ("resolução reduzida + psm 6", reduzida, 6),
+            ("binarização reduzida + psm 6", _binarizar(reduzida), 6),
+            ("psm 3 automático", limitada, 3),
+        ]
+    )
 
-    data = _tentar_image_to_data(imagem, pagina, coluna, timeout, "--psm 3")
-    if data is not None:
-        logger.info("OCR na página %s coluna %s recuperado (psm 3 automático)", pagina, coluna + 1)
-        return _agrupar_data_tesseract(data, pagina, coluna, x_offset)
+    timeout_retry = max(timeout, timeout * 2)
+    for idx, (estrategia, candidata, psm) in enumerate(tentativas):
+        data = _tentar_image_to_data(
+            candidata,
+            pagina,
+            coluna,
+            timeout if idx < 2 else timeout_retry,
+            psm,
+        )
+        if data is not None:
+            blocos = _agrupar_data_tesseract(data, pagina, coluna, x_offset)
+            if blocos:
+                if estrategia != "psm 4":
+                    logger.info(
+                        "OCR na página %s coluna %s recuperado (%s)",
+                        pagina,
+                        coluna + 1,
+                        estrategia,
+                    )
+                return blocos
 
     logger.warning("Falha de OCR na página %s coluna %s após todas as estratégias", pagina, coluna + 1)
     if avisos is not None:
@@ -289,19 +388,46 @@ def _tentar_image_to_data(
     pagina: int,
     coluna: int,
     timeout: int,
-    psm: str,
+    psm: int,
 ) -> dict | None:
     """Tenta executar image_to_data; retorna None se falhar."""
     try:
         return pytesseract.image_to_data(
             imagem,
             lang=SETTINGS.ocr_language,
-            config=psm,
+            config=_tesseract_config(psm),
             output_type=pytesseract.Output.DICT,
             timeout=timeout,
         )
     except Exception as exc:
-        logger.warning("OCR estruturado falhou (página %s coluna %s psm=%s): %s", pagina, coluna + 1, psm, exc)
+        logger.warning(
+            "OCR estruturado falhou (página %s coluna %s psm=%s): %s",
+            pagina,
+            coluna + 1,
+            psm,
+            exc,
+        )
+        return None
+
+
+def _tentar_image_to_string(
+    imagem: Image.Image,
+    pagina: int,
+    estrategia: str,
+    psm: int,
+    timeout: int,
+) -> str | None:
+    try:
+        texto = pytesseract.image_to_string(
+            imagem,
+            lang=SETTINGS.ocr_language,
+            config=_tesseract_config(psm),
+            timeout=timeout,
+        )
+        texto = (texto or "").strip()
+        return texto or None
+    except Exception as exc:
+        logger.warning("OCR rápido falhou na página %s (%s): %s", pagina, estrategia, exc)
         return None
 
 
@@ -390,11 +516,39 @@ def _agrupar_data_tesseract(
     return blocos
 
 
-def _ocr_completo_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> PageText:
-    processada = _preprocessar(imagem)
-    blocks = _extrair_blocos_tesseract(processada, idx, avisos)
-    texto = "\n\n".join(block.texto for block in blocks)
-    return PageText(pagina=idx, texto=texto.strip(), metodo="ocr", blocks=blocks)
+def _ocr_completo_pagina(
+    idx: int,
+    imagem: Image.Image,
+    avisos: list[str],
+    *,
+    alta_qualidade: bool = False,
+) -> PageText:
+    candidatos: list[PageText] = []
+    variantes = (
+        [(_preprocessar_forte, "ocr-hq"), (_preprocessar, "ocr")]
+        if alta_qualidade
+        else [(_preprocessar, "ocr")]
+    )
+    for preprocessar, metodo in variantes:
+        processada = preprocessar(imagem)
+        blocks = _extrair_blocos_tesseract(processada, idx, avisos)
+        texto = "\n\n".join(block.texto for block in blocks).strip()
+        candidatos.append(
+            PageText(pagina=idx, texto=texto, metodo=metodo, blocks=blocks)
+        )
+
+    melhor = max(candidatos, key=lambda pagina: len(pagina.texto))
+    if alta_qualidade and not _ocr_rapido_texto_valido(melhor.texto):
+        ampliada = _preprocessar_forte(_ampliar_imagem(imagem, 2.0))
+        texto = _tentar_image_to_string(ampliada, idx, "ampliação 2x + psm 6", 6, SETTINGS.ocr_timeout_seconds)
+        if texto and len(texto) > len(melhor.texto):
+            melhor = PageText(
+                pagina=idx,
+                texto=texto,
+                metodo="ocr-hq-string",
+                blocks=[TextBlock(pagina=idx, bloco=1, texto=texto)],
+            )
+    return melhor
 
 
 def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None, on_progress=None) -> list[PageText]:
@@ -423,62 +577,108 @@ def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None, on_prog
                 processadas += 1
                 if on_progress:
                     on_progress(f"OCR estruturado completo: Página {processadas}/{total} processada")
+
+    if SETTINGS.ocr_retry_dpi > SETTINGS.ocr_dpi:
+        fracas = [
+            pagina.pagina
+            for pagina in paginas
+            if pagina is not None and not _ocr_rapido_texto_valido(pagina.texto)
+        ]
+        if fracas:
+            logger.info(
+                "Reprocessando %s página(s) em alta resolução (%s DPI): %s",
+                len(fracas),
+                SETTINGS.ocr_retry_dpi,
+                fracas,
+            )
+            if on_progress:
+                on_progress(
+                    f"OCR alta resolução ({SETTINGS.ocr_retry_dpi} DPI) em {len(fracas)} página(s)"
+                )
+            for num in fracas:
+                imagem_hq = _carregar_pagina_pdf(pdf_path, num, SETTINGS.ocr_retry_dpi)
+                if imagem_hq is None:
+                    continue
+                anterior = paginas[num - 1]
+                nova = _ocr_completo_pagina(num, imagem_hq, avisos, alta_qualidade=True)
+                if len(nova.texto) > len(anterior.texto if anterior else ""):
+                    logger.info(
+                        "Página %s melhorada com OCR alta resolução (%s -> %s chars)",
+                        num,
+                        len(anterior.texto if anterior else ""),
+                        len(nova.texto),
+                    )
+                    paginas[num - 1] = nova
+
     return [p for p in paginas if p is not None]
 
 
 def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> PageText:
     processada = _preprocessar(imagem)
+    limitada = _limitar_dimensao(processada)
+    reduzida = limitada.resize(
+        (max(1, limitada.width // 2), max(1, limitada.height // 2)),
+        Image.LANCZOS,
+    )
+
+    timeout_curto = max(30, SETTINGS.ocr_fast_timeout_seconds // 2)
     timeout_base = SETTINGS.ocr_fast_timeout_seconds
-    timeout_retry = max(60, timeout_base * 2)
+    timeout_longo = max(90, timeout_base * 2)
 
-    texto = None
-    # Estratégia 1: OCR rápido com psm 3 (padrão)
-    try:
-        texto = pytesseract.image_to_string(
-            processada,
-            lang=SETTINGS.ocr_language,
-            config="--psm 3",
-            timeout=timeout_base,
+    tentativas: list[tuple[str, Image.Image, int, int]] = [
+        ("psm 6", limitada, 6, timeout_curto),
+        ("resolução reduzida + psm 6", reduzida, 6, timeout_base),
+        ("resolução reduzida + psm 3", reduzida, 3, timeout_base),
+        ("binarização + psm 6", _binarizar(limitada), 6, timeout_longo),
+        ("binarização reduzida + psm 6", _binarizar(reduzida), 6, timeout_longo),
+    ]
+
+    texto = ""
+    estrategia_ok = ""
+    for estrategia, candidata, psm, timeout in tentativas:
+        candidato = _tentar_image_to_string(candidata, idx, estrategia, psm, timeout)
+        if candidato and _ocr_rapido_texto_valido(candidato):
+            texto = candidato
+            estrategia_ok = estrategia
+            break
+        if candidato:
+            logger.info(
+                "OCR rápido na página %s (%s) com pouco texto (%s chars); tentando próxima estratégia",
+                idx,
+                estrategia,
+                len(candidato),
+            )
+
+    if texto and estrategia_ok != "psm 6":
+        logger.info("OCR rápido na página %s recuperado (%s)", idx, estrategia_ok)
+    elif not texto:
+        logger.info("OCR rápido insuficiente na página %s; aplicando OCR estruturado", idx)
+        pagina = _ocr_completo_pagina(idx, imagem, avisos, alta_qualidade=True)
+        if _ocr_rapido_texto_valido(pagina.texto):
+            return pagina
+        ampliada = _preprocessar_forte(_ampliar_imagem(imagem, 2.0))
+        texto_hq = _tentar_image_to_string(
+            ampliada,
+            idx,
+            "fallback ampliação 2x + psm 6",
+            6,
+            max(SETTINGS.ocr_timeout_seconds, SETTINGS.ocr_fast_timeout_seconds * 2),
         )
-    except (RuntimeError, Exception) as exc:
-        logger.warning("OCR rápido falhou na página %s (psm 3): %s", idx, exc)
-
-    # Estratégia 2: resolução reduzida + timeout maior
-    if not texto or not texto.strip():
-        try:
-            reduzida = processada.resize(
-                (processada.width // 2, processada.height // 2),
-                Image.LANCZOS,
+        if texto_hq and len(texto_hq) > len(pagina.texto):
+            pagina = PageText(
+                pagina=idx,
+                texto=texto_hq,
+                metodo="ocr-hq-string",
+                blocks=[TextBlock(pagina=idx, bloco=1, texto=texto_hq)],
             )
-            texto = pytesseract.image_to_string(
-                reduzida,
-                lang=SETTINGS.ocr_language,
-                config="--psm 3",
-                timeout=timeout_retry,
-            )
-            logger.info("OCR rápido na página %s recuperado (resolução reduzida)", idx)
-        except (RuntimeError, Exception) as exc:
-            logger.warning("OCR rápido falhou na página %s (resolução reduzida): %s", idx, exc)
+        if _ocr_rapido_texto_valido(pagina.texto):
+            return pagina
+        avisos.append(
+            f"OCR insuficiente na página {idx} após {len(tentativas)} tentativas rápidas "
+            f"e OCR estruturado ({len(pagina.texto)} caracteres)"
+        )
+        return pagina
 
-    # Estratégia 3: binarização + psm 6 (bloco de texto uniforme)
-    if not texto or not texto.strip():
-        try:
-            binarizada = _binarizar(processada)
-            texto = pytesseract.image_to_string(
-                binarizada,
-                lang=SETTINGS.ocr_language,
-                config="--psm 6",
-                timeout=timeout_retry,
-            )
-            logger.info("OCR rápido na página %s recuperado (binarização + psm 6)", idx)
-        except (RuntimeError, Exception) as exc:
-            logger.warning("OCR rápido falhou na página %s (binarização): %s", idx, exc)
-
-    if not texto or not texto.strip():
-        avisos.append(f"Timeout/falha de OCR rápido na página {idx} após 3 tentativas")
-        texto = ""
-
-    texto = texto.strip()
     return PageText(
         pagina=idx,
         texto=texto,
