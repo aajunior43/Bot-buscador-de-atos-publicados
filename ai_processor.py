@@ -119,7 +119,7 @@ def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
     content = ""
     try:
         resp = requests.post(
-            "https://opencode.ai/zen/go/v1/chat/completions",
+            SETTINGS.opencode_api_url,
             headers=_headers(),
             json={
                 "model": SETTINGS.opencode_model,

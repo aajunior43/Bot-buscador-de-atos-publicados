@@ -5,6 +5,7 @@ import concurrent.futures
 import logging
 import smtplib
 import threading
+import time
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -182,26 +183,45 @@ def notificar(resultado: DetectionResult, edicao: Edicao) -> None:
     sucesso = False
     erro_str = None
 
-    # 1. Telegram
+    # 1. Telegram com retry (até 2 tentativas, intervalo de 3s)
     if SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id:
-        try:
-            _rodar_async(_enviar_telegram(mensagem))
-            database.mark_notified(resultado.edicao_id)
-            logger.info("Notificação Telegram enviada para edição %s", resultado.edicao_id)
-            canal_usado = "telegram"
-            sucesso = True
-        except Exception as exc:
-            erro_str = str(exc)
-            logger.exception("Falha ao enviar Telegram; tentando e-mail.")
+        for tentativa in range(1, 3):
+            try:
+                _rodar_async(_enviar_telegram(mensagem))
+                database.mark_notified(resultado.edicao_id)
+                logger.info("Notificação Telegram enviada para edição %s", resultado.edicao_id)
+                canal_usado = "telegram"
+                sucesso = True
+                erro_str = None
+                break
+            except Exception as exc:
+                erro_str = str(exc)
+                logger.warning(
+                    "Falha ao enviar Telegram (tentativa %s/2): %s", tentativa, exc
+                )
+                if tentativa < 2:
+                    time.sleep(3)
 
-    # 2. E-mail como fallback ou complemento
+        if not sucesso:
+            logger.error("Telegram falhou após 2 tentativas; tentando fallback.")
+
+    # 2. E-mail: como fallback OU como cópia simultânea se notify_email_always=True
+    assunto = f"[Monitor Inajá] {edicao.titulo or 'Nova publicação detectada'}"
     if not sucesso:
-        assunto = f"[Monitor Inajá] {edicao.titulo or 'Nova publicação detectada'}"
+        # Fallback: Telegram falhou
         if _enviar_email(assunto, mensagem):
             database.mark_notified(resultado.edicao_id)
             canal_usado = "email"
             sucesso = True
             erro_str = None
+    elif SETTINGS.notify_email_always:
+        # Cópia simultânea: Telegram OK, mas email também deve ser enviado
+        threading.Thread(
+            target=_enviar_email,
+            args=(assunto, mensagem),
+            daemon=True,
+        ).start()
+        logger.info("E-mail de cópia disparado em background (NOTIFY_EMAIL_ALWAYS=true).")
 
     # 3. Arquivo local como último recurso
     if not sucesso:

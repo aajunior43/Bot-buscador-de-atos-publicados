@@ -207,7 +207,12 @@ def _detectar_faixas_colunas(imagem: Image.Image) -> list[tuple[int, int]]:
         img_analise = imagem.convert("L").resize((800, max(200, int(altura_original * escala))))
         largura, altura = img_analise.size
 
-        profile = [sum(img_analise.getpixel((x, y)) for y in range(altura)) / altura for x in range(largura)]
+        try:
+            import numpy as np
+            arr = np.array(img_analise)          # shape: (altura, largura)
+            profile = arr.mean(axis=0).tolist()  # média por coluna — muito mais rápido
+        except ImportError:
+            profile = [sum(img_analise.getpixel((x, y)) for y in range(altura)) / altura for x in range(largura)]
 
         janela = 3
         suave = []

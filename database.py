@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
 from config import SETTINGS
+
+logger = logging.getLogger(__name__)
 
 
 SCHEMA = """
@@ -92,16 +97,23 @@ CREATE TABLE IF NOT EXISTS settings (
   valor TEXT NOT NULL,
   atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  aplicado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
-_MIGRATIONS_SQL = """
-ALTER TABLE publicacoes ADD COLUMN resumo_ia TEXT;
-ALTER TABLE publicacoes ADD COLUMN categoria_ia TEXT;
-ALTER TABLE publicacoes ADD COLUMN texto_corrigido TEXT;
-ALTER TABLE publicacoes ADD COLUMN ia_processado INTEGER DEFAULT 0;
-ALTER TABLE mencoes ADD COLUMN hash_trecho TEXT;
-"""
+# Migrações versionadas: (version, sql)
+# Adicione novas entradas ao final com version incrementado.
+_MIGRATIONS: list[tuple[int, str]] = [
+    (1, "ALTER TABLE publicacoes ADD COLUMN resumo_ia TEXT"),
+    (2, "ALTER TABLE publicacoes ADD COLUMN categoria_ia TEXT"),
+    (3, "ALTER TABLE publicacoes ADD COLUMN texto_corrigido TEXT"),
+    (4, "ALTER TABLE publicacoes ADD COLUMN ia_processado INTEGER DEFAULT 0"),
+    (5, "ALTER TABLE mencoes ADD COLUMN hash_trecho TEXT"),
+]
 
 
 @contextmanager
@@ -123,13 +135,24 @@ def connect(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
-        for sql in _MIGRATIONS_SQL.strip().split(";"):
-            sql = sql.strip()
-            if sql:
-                try:
-                    conn.execute(sql)
-                except sqlite3.OperationalError:
-                    pass
+        # Descobrir a versão atual do schema
+        versao_atual: int = conn.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+        ).fetchone()[0]
+        # Aplicar apenas migrações com versão superior à atual
+        pendentes = [(v, sql) for v, sql in _MIGRATIONS if v > versao_atual]
+        for version, sql in pendentes:
+            try:
+                conn.execute(sql)
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, aplicado_em) VALUES (?, ?)",
+                    (version, datetime.now().isoformat(timespec="seconds")),
+                )
+                logger.info("Migração %s aplicada: %s", version, sql[:60])
+            except sqlite3.OperationalError as exc:
+                logger.warning(
+                    "Migração %s ignorada (%s): %s", version, exc, sql[:60]
+                )
 
 
 def pop_interrupted_edicao_ids() -> list[int]:
@@ -518,6 +541,28 @@ def get_publicacoes_por_mes() -> list[dict]:
         return [dict(r) for r in reversed(rows)]
 
 
+def get_timeline_por_mes() -> list[dict]:
+    """Dados para timeline do dashboard — meses com contagem de atos e edições."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+              substr(e.data_publicacao, 1, 7) AS mes,
+              COUNT(DISTINCT e.id)                                              AS edicoes,
+              COUNT(DISTINCT CASE WHEN e.tem_inaja = 1 THEN e.id END)          AS edicoes_inaja,
+              COUNT(p.id)                                                       AS pubs,
+              GROUP_CONCAT(DISTINCT p.tipo)                                     AS tipos
+            FROM edicoes e
+            LEFT JOIN publicacoes p ON p.edicao_id = e.id
+            WHERE e.data_publicacao IS NOT NULL
+            GROUP BY mes
+            ORDER BY mes DESC
+            LIMIT 18
+            """
+        ).fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+
 def get_publicacoes_por_tipo() -> list[dict]:
     """Dados para gráfico de pizza — publicações por tipo de ato."""
     with connect() as conn:
@@ -574,8 +619,6 @@ def delete_hnetsistemas_edicoes() -> int:
 def salvar_arquivos_atos_locais(texto_path: Path | str, publicacoes: list[dict]) -> None:
     """Salva arquivos .atos.json e .atos.md na mesma pasta do PDF contendo apenas os atos daquela edição."""
     try:
-        import json
-        from datetime import datetime
         if not texto_path:
             return
         base_path = Path(texto_path).with_suffix("")
@@ -629,8 +672,7 @@ def salvar_arquivos_atos_locais(texto_path: Path | str, publicacoes: list[dict])
             
         md_path.write_text("\n".join(linhas), encoding="utf-8")
     except Exception:
-        import logging
-        logging.getLogger("database").exception("Falha ao salvar arquivos locais de atos para %s", texto_path)
+        logger.exception("Falha ao salvar arquivos locais de atos para %s", texto_path)
 
 
 

@@ -134,5 +134,13 @@ def listar_edicoes(force_rescan: bool = False) -> list[Edicao]:
         for edicao in edicoes
         if force_rescan or not database.url_exists(edicao.url)
     ]
-    logger.info("Edições encontradas: %s; novas: %s", len(edicoes), len(novas))
+    limite = SETTINGS.max_edicoes_por_ciclo
+    if len(novas) > limite:
+        logger.warning(
+            "Encontradas %s edições novas; limitando a %s por ciclo (MAX_EDICOES_POR_CICLO).",
+            len(novas),
+            limite,
+        )
+        novas = novas[:limite]
+    logger.info("Edições encontradas: %s; novas (após limite): %s", len(edicoes), len(novas))
     return novas

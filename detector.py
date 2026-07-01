@@ -654,10 +654,9 @@ def detectar(
                 publicacoes.append(publicacao)
 
     if publicacoes:
-        import logging as _log
-        _log.getLogger("detector").info("Chamando IA para refinar %s publicacoes...", len(publicacoes))
+        logger.info("Chamando IA para refinar %s publicacoes...", len(publicacoes))
         publicacoes = refinar_publicacoes(publicacoes)
-        _log.getLogger("detector").info("IA concluida. Publicacoes refinadas: %s", sum(1 for p in publicacoes if p.get("resumo_ia")))
+        logger.info("IA concluida. Publicacoes refinadas: %s", sum(1 for p in publicacoes if p.get("resumo_ia")))
 
     return DetectionResult(
         encontrado=bool(trechos or publicacoes),

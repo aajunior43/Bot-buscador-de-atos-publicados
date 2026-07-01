@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -42,9 +42,9 @@ class Settings:
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     check_interval_hours: int = _int_env("CHECK_INTERVAL_HOURS", 6)
     ocr_language: str = os.getenv("OCR_LANGUAGE", "por").strip() or "por"
-    extra_terms: list[str] = None  # type: ignore[assignment]
-    inaja_cep_prefixes: list[str] = None  # type: ignore[assignment]
-    ignore_context_terms: list[str] = None  # type: ignore[assignment]
+    extra_terms: list[str] = field(default_factory=list)
+    inaja_cep_prefixes: list[str] = field(default_factory=list)
+    ignore_context_terms: list[str] = field(default_factory=list)
     download_dir: Path = Path(os.getenv("DOWNLOAD_DIR", "./edicoes"))
     alert_dir: Path = Path(os.getenv("ALERT_DIR", "./alertas"))
     log_dir: Path = Path(os.getenv("LOG_DIR", "./logs"))
@@ -63,6 +63,9 @@ class Settings:
     ocr_fast_timeout_seconds: int = _int_env("OCR_FAST_TIMEOUT_SECONDS", 120)
     ocr_layout_columns: int = _int_env("OCR_LAYOUT_COLUMNS", 3)
     opencode_api_key: str = os.getenv("OPENCODE_API_KEY", "").strip()
+    opencode_api_url: str = os.getenv(
+        "OPENCODE_API_URL", "https://opencode.ai/zen/go/v1/chat/completions"
+    ).strip()
     opencode_model: str = os.getenv("OPENCODE_MODEL", "deepseek-v4-flash").strip()
     ai_refine_publications: bool = _bool_env("AI_REFINE_PUBLICATIONS", True)
     ai_timeout_seconds: int = _int_env("AI_TIMEOUT_SECONDS", 30)
@@ -74,10 +77,13 @@ class Settings:
     smtp_pass: str = os.getenv("SMTP_PASS", "").strip()
     smtp_to: str = os.getenv("SMTP_TO", "").strip()
     smtp_from: str = os.getenv("SMTP_FROM", "").strip()
+    notify_email_always: bool = _bool_env("NOTIFY_EMAIL_ALWAYS", False)
     # Alerta de ausência
     absence_alert_days: int = _int_env("ABSENCE_ALERT_DAYS", 30)
     # Webhook genérico
     webhook_url: str = os.getenv("WEBHOOK_URL", "").strip()
+    # Limite de edições novas processadas por ciclo (evita sobrecarga no primeiro uso)
+    max_edicoes_por_ciclo: int = _int_env("MAX_EDICOES_POR_CICLO", 10)
     # Poppler (para pdf2image no Windows)
     poppler_path: str = os.getenv("POPPLER_PATH", "").strip()
     # Tesseract OCR (para pytesseract no Windows)
@@ -85,25 +91,29 @@ class Settings:
 
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "extra_terms", _csv_env("INAJA_EXTRA_TERMS"))
-        object.__setattr__(self, "inaja_cep_prefixes", _csv_env("INAJA_CEP_PREFIXES"))
-        object.__setattr__(
-            self,
-            "ignore_context_terms",
-            _csv_env("INAJA_IGNORE_CONTEXT_TERMS")
-            or [
-                "distribuição avulsa",
-                "distribuicao avulsa",
-                "auto posto",
-                "panificadora",
-                "farmácia",
-                "farmacia",
-                "loterias",
-                "patrocinadores",
-                "anunciante",
-                "anunciantes",
-            ],
-        )
+        # Campos de lista lidos do ambiente (default_factory já garante [] se não chamado)
+        if not self.extra_terms:
+            object.__setattr__(self, "extra_terms", _csv_env("INAJA_EXTRA_TERMS"))
+        if not self.inaja_cep_prefixes:
+            object.__setattr__(self, "inaja_cep_prefixes", _csv_env("INAJA_CEP_PREFIXES"))
+        if not self.ignore_context_terms:
+            object.__setattr__(
+                self,
+                "ignore_context_terms",
+                _csv_env("INAJA_IGNORE_CONTEXT_TERMS")
+                or [
+                    "distribuição avulsa",
+                    "distribuicao avulsa",
+                    "auto posto",
+                    "panificadora",
+                    "farmácia",
+                    "farmacia",
+                    "loterias",
+                    "patrocinadores",
+                    "anunciante",
+                    "anunciantes",
+                ],
+            )
         for pasta in (self.download_dir, self.alert_dir, self.log_dir):
             pasta.mkdir(parents=True, exist_ok=True)
 
