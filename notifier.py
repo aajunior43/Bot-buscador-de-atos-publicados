@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import re
 import smtplib
 import threading
 import time
@@ -21,6 +22,44 @@ from scraper import Edicao
 
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Telegram — singleton e helpers
+# ---------------------------------------------------------------------------
+
+_bot_instance: Bot | None = None
+_bot_lock = threading.Lock()
+
+_TELEGRAM_MAX = 4096
+
+# Caracteres que precisam de escape no MarkdownV2
+# Nota: a barra invertida deve ser escapada primeiro (antes dos outros chars)
+_MDV2_SPECIAL = re.compile(r"([_*\[\]()~`>#+\-=|{}.!\\])")
+
+
+def _get_bot() -> Bot:
+    """Retorna instância singleton do Bot, reutilizando a sessão HTTP."""
+    global _bot_instance
+    with _bot_lock:
+        if _bot_instance is None:
+            _bot_instance = Bot(token=SETTINGS.telegram_bot_token)
+    return _bot_instance
+
+
+def _escape_mdv2(texto: str) -> str:
+    """Escapa caracteres especiais para o MarkdownV2 do Telegram.
+
+    A barra invertida é tratada primeiro pelo regex para evitar duplo-escape.
+    """
+    return _MDV2_SPECIAL.sub(r"\\\1", str(texto))
+
+
+def _truncar_mensagem(texto: str, limite: int = _TELEGRAM_MAX) -> str:
+    """Trunca a mensagem para o limite do Telegram, quebrando em linha inteira."""
+    if len(texto) <= limite:
+        return texto
+    corte = texto[: limite - 50].rsplit("\n", 1)[0]
+    return corte + "\n\n_\\(mensagem truncada\\)_"
 
 
 def _rodar_async(coro):
@@ -51,18 +90,25 @@ def _tem_publicacao_oficial(resultado: DetectionResult) -> bool:
 
 
 def montar_mensagem(resultado: DetectionResult, edicao: Edicao) -> str:
+    """Monta mensagem formatada em MarkdownV2 para o Telegram."""
     eh_oficial = _tem_publicacao_oficial(resultado)
     if eh_oficial:
-        cabecalho = "🏛️ *Publicação oficial de Inajá detectada!*"
+        cabecalho = "🏛️ *Publicação oficial de Inajá detectada\\!*"
     else:
-        cabecalho = "📢 *Menção a Inajá detectada* _(sem publicação oficial identificada)_"
+        cabecalho = "📢 *Menção a Inajá detectada* _\\(sem publicação oficial identificada\\)_"
+
+    titulo_esc = _escape_mdv2(edicao.titulo or "")
+    data_esc = _escape_mdv2(edicao.data_publicacao or "não informada")
+    paginas_esc = _escape_mdv2(", ".join(map(str, resultado.paginas_com_mencao)))
+    termos_esc = _escape_mdv2(", ".join(resultado.termos_encontrados))
+
     linhas = [
         cabecalho,
         "",
-        f"📰 Edição: {edicao.titulo}",
-        f"📅 Data: {edicao.data_publicacao or 'não informada'}",
-        f"📄 Páginas: {', '.join(map(str, resultado.paginas_com_mencao))}",
-        f"🔍 Termos: {', '.join(resultado.termos_encontrados)}",
+        f"📰 Edição: {titulo_esc}",
+        f"📅 Data: {data_esc}",
+        f"📄 Páginas: {paginas_esc}",
+        f"🔍 Termos: {termos_esc}",
         "",
     ]
     if resultado.publicacoes:
@@ -74,39 +120,56 @@ def montar_mensagem(resultado: DetectionResult, edicao: Edicao) -> str:
                 item.get("tipo"),
                 item.get("numero"),
             ]
-            titulo = " - ".join(str(parte) for parte in partes if parte)
-            linhas.append(f"— Pág. {item['pagina']}: {titulo}")
-            if item.get("data_documento"):
-                linhas.append(f"  Data: {item['data_documento']}")
-            if item.get("valor"):
-                linhas.append(f"  Valor: {item['valor']}")
-            if item.get("assunto"):
-                linhas.append(f"  Assunto: {_resumir(item['assunto'], 180)}")
-            if item.get("resumo_ia"):
-                linhas.append(f"  IA: {_resumir(item['resumo_ia'], 180)}")
-        if len(resultado.publicacoes) > 5:
-            linhas.append(
-                f"— Mais {len(resultado.publicacoes) - 5} publicação(ões) omitida(s)."
+            titulo_pub = " \\- ".join(
+                _escape_mdv2(str(p)) for p in partes if p
             )
+            linhas.append(f"— Pág\\. {_escape_mdv2(item['pagina'])}: {titulo_pub}")
+            if item.get("data_documento"):
+                linhas.append(f"  Data: {_escape_mdv2(item['data_documento'])}")
+            if item.get("valor"):
+                linhas.append(f"  Valor: {_escape_mdv2(item['valor'])}")
+            if item.get("assunto"):
+                linhas.append(f"  Assunto: {_escape_mdv2(_resumir(item['assunto'], 180))}")
+            if item.get("resumo_ia"):
+                linhas.append(f"  IA: {_escape_mdv2(_resumir(item['resumo_ia'], 180))}")
+        if len(resultado.publicacoes) > 5:
+            resto = len(resultado.publicacoes) - 5
+            linhas.append(f"— Mais {resto} publicação\\(ões\\) omitida\\(s\\)\\.")
         linhas.append("")
 
     linhas.append("📝 *Trechos encontrados:*")
     for item in resultado.trechos[:10]:
-        linhas.append(f"— Pág. {item['pagina']}: \"{_resumir(item['trecho'])}\"")
+        trecho_esc = _escape_mdv2(_resumir(item["trecho"]))
+        linhas.append(f'— Pág\\. {_escape_mdv2(item["pagina"])}: "{trecho_esc}"')
     if len(resultado.trechos) > 10:
-        linhas.append(f"— Mais {len(resultado.trechos) - 10} trecho(s) omitido(s).")
-    linhas.extend(["", f"🔗 [Abrir edição]({edicao.url})"])
+        resto = len(resultado.trechos) - 10
+        linhas.append(f"— Mais {resto} trecho\\(s\\) omitido\\(s\\)\\.")
+    url_esc = edicao.url.replace(")", "\\)")
+    linhas.extend(["", f"🔗 [Abrir edição]({url_esc})"])
     return "\n".join(linhas)
 
 
 async def _enviar_telegram(mensagem: str) -> None:
-    bot = Bot(token=SETTINGS.telegram_bot_token)
+    bot = _get_bot()
     await bot.send_message(
         chat_id=SETTINGS.telegram_chat_id,
-        text=mensagem,
-        parse_mode="Markdown",
+        text=_truncar_mensagem(mensagem),
+        parse_mode="MarkdownV2",
         disable_web_page_preview=False,
     )
+
+
+def _enviar_telegram_com_retry(mensagem: str) -> None:
+    """Envia mensagem Telegram com até 2 tentativas (intervalo de 3s). Lança exceção se falhar."""
+    for tentativa in range(1, 3):
+        try:
+            _rodar_async(_enviar_telegram(mensagem))
+            return
+        except Exception as exc:
+            logger.warning("Falha Telegram (tentativa %s/2): %s", tentativa, exc)
+            if tentativa < 2:
+                time.sleep(3)
+    raise RuntimeError("Telegram falhou após 2 tentativas")
 
 
 def _salvar_alerta(mensagem: str) -> Path:
@@ -185,24 +248,14 @@ def notificar(resultado: DetectionResult, edicao: Edicao) -> None:
 
     # 1. Telegram com retry (até 2 tentativas, intervalo de 3s)
     if SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id:
-        for tentativa in range(1, 3):
-            try:
-                _rodar_async(_enviar_telegram(mensagem))
-                database.mark_notified(resultado.edicao_id)
-                logger.info("Notificação Telegram enviada para edição %s", resultado.edicao_id)
-                canal_usado = "telegram"
-                sucesso = True
-                erro_str = None
-                break
-            except Exception as exc:
-                erro_str = str(exc)
-                logger.warning(
-                    "Falha ao enviar Telegram (tentativa %s/2): %s", tentativa, exc
-                )
-                if tentativa < 2:
-                    time.sleep(3)
-
-        if not sucesso:
+        try:
+            _enviar_telegram_com_retry(mensagem)
+            database.mark_notified(resultado.edicao_id)
+            logger.info("Notificação Telegram enviada para edição %s", resultado.edicao_id)
+            canal_usado = "telegram"
+            sucesso = True
+        except Exception as exc:
+            erro_str = str(exc)
             logger.error("Telegram falhou após 2 tentativas; tentando fallback.")
 
     # 2. E-mail: como fallback OU como cópia simultânea se notify_email_always=True
@@ -258,14 +311,14 @@ def verificar_ausencia_publicacao() -> None:
     if not database.get_absence_alert_needed(days):
         return
     mensagem = (
-        f"⚠️ *Alerta de ausência* — Nenhuma publicação oficial de Inajá-PR "
-        f"foi detectada nos últimos {days} dias.\n\n"
-        f"Verifique o sistema ou se o jornal publicou algum ato oficial recentemente."
+        f"⚠️ *Alerta de ausência* — Nenhuma publicação oficial de Inajá\\-PR "
+        f"foi detectada nos últimos {days} dias\\.\n\n"
+        f"Verifique o sistema ou se o jornal publicou algum ato oficial recentemente\\."
     )
     logger.warning("Alerta de ausência: nenhuma publicação em %s dias", days)
     if SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id:
         try:
-            _rodar_async(_enviar_telegram(mensagem))
+            _enviar_telegram_com_retry(mensagem)
         except Exception:
             logger.exception("Falha ao enviar alerta de ausência via Telegram")
     database.insert_notificacao(
