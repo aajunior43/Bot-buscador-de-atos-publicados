@@ -1,70 +1,92 @@
 {% extends "base.html" %}
 {% block title %}Dashboard - Monitor Inajá{% endblock %}
 {% block content %}
-<section class="hero fade-in">
-  <p class="eyebrow">Monitor automático</p>
-  <h1>Publicações sobre Inajá em edições do O Regional.</h1>
-  <p class="hero-copy">OCR por blocos, filtro de patrocinadores e classificação de publicações oficiais com IA.</p>
-  <form class="search-card" method="get" action="/">
-    <label for="q">Buscar publicações</label>
+
+<!-- ── Cabeçalho compacto + busca ─────────────────────────── -->
+<section class="dash-header fade-in">
+  <div class="dash-header-text">
+    <p class="eyebrow">Monitor automático · O Regional Jornal</p>
+    <h1>Publicações de Inajá</h1>
+  </div>
+  <form class="dash-search" method="get" action="/">
     <div class="search-row">
-      <input id="q" name="q" value="{{ q }}" placeholder="Ex: decreto, crédito, Inajá, 2026-01…">
-      <button type="submit">Filtrar</button>
+      <input id="q" name="q" value="{{ q }}" placeholder="Buscar por decreto, crédito, data…" aria-label="Buscar publicações">
+      <button type="submit">Buscar</button>
     </div>
   </form>
 </section>
 
+<!-- ── Stats ──────────────────────────────────────────────── -->
 <section class="stats-grid fade-in">
-  <article>
+  <article class="stat-accent">
+    <div class="stat-icon">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M7 2v4M13 2v4M3 9h14"/></svg>
+    </div>
     <strong>{{ stats.total_edicoes or 0 }}</strong>
     <span>Edições no banco</span>
   </article>
-  <article>
+  <article class="stat-green">
+    <div class="stat-icon">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 7v3l2 2"/></svg>
+    </div>
     <strong>{{ stats.edicoes_inaja or 0 }}</strong>
-    <span>Com Inajá</span>
+    <span>Edições com Inajá</span>
   </article>
-  <article>
+  <article class="stat-amber">
+    <div class="stat-icon">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 4h12v9H4z"/><path d="M8 17h4M10 13v4"/></svg>
+    </div>
     <strong>{{ stats.total_publicacoes or 0 }}</strong>
     <span>Publicações</span>
   </article>
-  <article>
+  <article class="stat-blue">
+    <div class="stat-icon">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 10h14M3 6h14M3 14h8"/></svg>
+    </div>
     <strong>{{ stats.total_mencoes or 0 }}</strong>
     <span>Menções</span>
   </article>
+  <article class="stat-red {% if stats.pendentes_ocr > 0 %}stat-alert{% endif %}">
+    <div class="stat-icon">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 7v4M10 14v.5"/></svg>
+    </div>
+    <strong>{{ stats.pendentes_ocr or 0 }}</strong>
+    <span>Pendentes OCR</span>
+  </article>
 </section>
 
-<!-- Gráficos -->
-<div class="charts-row fade-in">
-  <div class="chart-panel">
-    <h3>Publicações por mês</h3>
-    <canvas id="chart-por-mes" aria-label="Gráfico de publicações por mês"></canvas>
-  </div>
-  <div class="chart-panel">
-    <h3>Tipos de ato</h3>
-    <canvas id="chart-por-tipo" aria-label="Gráfico de tipos de ato"></canvas>
-  </div>
-</div>
-
-<!-- Atividade -->
-<section class="panel activity-panel fade-in" id="activity-panel">
-  <div class="panel-head">
-    <h2>Atividade agora</h2>
-    <span id="activity-refresh">atualizando automaticamente</span>
-  </div>
-  <div class="activity-state {% if atividade.tem_atividade %}is-running{% else %}is-idle{% endif %}" id="activity-state">
-    <div class="activity-orb"><span></span></div>
-    <div>
-      <strong id="activity-title">
-        {% if atividade.tem_atividade %}Executando {{ atividade.rodando|length }} etapa(s){% else %}Sistema aguardando{% endif %}
-      </strong>
-      <p id="activity-message">
-        {% if atividade.tem_atividade %}Acompanhe abaixo o processamento em andamento.{% else %}Aguardando próxima varredura ou análise manual.{% endif %}
-      </p>
+<!-- ── Gráficos + Atividade ───────────────────────────────── -->
+<div class="dash-mid fade-in">
+  <!-- Gráficos -->
+  <div class="dash-charts">
+    <div class="panel chart-panel-sm">
+      <div class="panel-head"><h2>Publicações por mês</h2></div>
+      <div class="chart-wrap"><canvas id="chart-por-mes" aria-label="Gráfico de publicações por mês"></canvas></div>
+    </div>
+    <div class="panel chart-panel-sm">
+      <div class="panel-head"><h2>Tipos de ato</h2></div>
+      <div class="chart-wrap chart-wrap-donut"><canvas id="chart-por-tipo" aria-label="Gráfico de tipos de ato"></canvas></div>
     </div>
   </div>
-  <div class="activity-grid">
-    <div>
-      <h3>Rodando</h3>
+
+  <!-- Atividade -->
+  <section class="panel activity-panel" id="activity-panel">
+    <div class="panel-head">
+      <h2>Atividade</h2>
+      <span id="activity-refresh">ao vivo</span>
+    </div>
+    <div class="activity-state {% if atividade.tem_atividade %}is-running{% else %}is-idle{% endif %}" id="activity-state">
+      <div class="activity-orb"><span></span></div>
+      <div>
+        <strong id="activity-title">
+          {% if atividade.tem_atividade %}Executando {{ atividade.rodando|length }} etapa(s){% else %}Sistema aguardando{% endif %}
+        </strong>
+        <p id="activity-message">
+          {% if atividade.tem_atividade %}Processamento em andamento.{% else %}Aguardando próxima varredura.{% endif %}
+        </p>
+      </div>
+    </div>
+    <div class="activity-single">
       <div class="activity-list" id="running-list">
         {% for job in atividade.rodando %}
         <article class="activity-item status-{{ job.status }}">
@@ -76,192 +98,164 @@
           </div>
         </article>
         {% else %}
-        <p class="empty">Nada rodando neste momento.</p>
+        <p class="empty">Nada rodando agora.</p>
         {% endfor %}
       </div>
     </div>
-    <div>
-      <h3>Últimos eventos</h3>
-      <div class="activity-list" id="recent-list">
-        {% for job in atividade.recentes %}
-        <article class="activity-item status-{{ job.status }}">
-          <span class="status-dot"></span>
-          <div>
-            <strong>{{ job.etapa }}</strong>
-            <small>{% if job.status == "aviso" %}concluído com avisos{% else %}{{ job.status }}{% endif %} · {{ job.atualizado_em }}</small>
-            {% if job.mensagem %}<p>{{ job.mensagem }}</p>{% endif %}
-          </div>
-        </article>
-        {% else %}
-        <p class="empty">Nenhum evento registrado ainda.</p>
-        {% endfor %}
+  </section>
+</div>
+
+<!-- ── Timeline por mês ──────────────────────────────────── -->
+<section class="panel fade-in">
+  <div class="panel-head">
+    <h2>Linha do tempo</h2>
+    <span>últimos 18 meses</span>
+  </div>
+  <div class="timeline">
+    {% for mes in timeline %}
+    {% set tem_atos = mes.pubs > 0 %}
+    <a class="tl-item {% if tem_atos %}tl-active{% endif %}" href="/edicoes-detectadas?mes={{ mes.mes }}" {% if not tem_atos %}tabindex="-1"{% endif %}>
+      <div class="tl-spine">
+        <div class="tl-dot {% if tem_atos %}tl-dot-active{% endif %}"></div>
+        <div class="tl-line"></div>
       </div>
-    </div>
+      <div class="tl-content">
+        <div class="tl-header">
+          <span class="tl-mes">{{ mes.mes | replace('-', '/') }}</span>
+          <span class="tl-chips">
+            <em class="tl-chip">{{ mes.edicoes }} edições</em>
+            {% if mes.edicoes_inaja > 0 %}
+            <em class="tl-chip tl-chip-inaja">{{ mes.edicoes_inaja }} com Inajá</em>
+            {% endif %}
+            {% if mes.pubs > 0 %}
+            <em class="tl-chip tl-chip-pub">{{ mes.pubs }} ato{% if mes.pubs != 1 %}s{% endif %}</em>
+            {% endif %}
+          </span>
+        </div>
+        {% if tem_atos and mes.tipos %}
+        <div class="tl-tipos">
+          {% for tipo in mes.tipos.split(',') | unique | list %}
+          <span class="tl-tipo-tag">{{ tipo.strip() }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
   </div>
 </section>
 
-<div class="split fade-in">
-  <!-- Publicações Recentes -->
-  <div class="panel">
-    <div class="panel-head">
-      <h2>Publicações Recentes</h2>
-      <span>{{ publicacoes|length }} itens</span>
-    </div>
-    <div class="cards">
-      {% for item in publicacoes %}
-      <a class="publication-card" href="/edicoes/{{ item.edicao_id }}">
-        <img class="thumb" src="/paginas/{{ item.edicao_id }}/{{ item.pagina }}.png" alt="Página {{ item.pagina }}" loading="lazy">
-        <span class="badge">{{ item.categoria or "publicação" }}</span>
-        <h3>{{ item.orgao or "Órgão não identificado" }}</h3>
-        <p>{{ item.tipo or "Ato" }}{% if item.numero %} {{ item.numero }}{% endif %}</p>
-        <p class="muted">{{ item.assunto or "Sem assunto extraído" }}</p>
-        <div class="meta">
-          <span>Pág. {{ item.pagina }}</span>
-          <span>{{ item.data_publicacao or "sem data" }}</span>
-          {% if item.valor %}<span>{{ item.valor }}</span>{% endif %}
+<!-- ── Publicações recentes ───────────────────────────────── -->
+<section class="panel fade-in">
+  <div class="panel-head">
+    <h2>Publicações recentes</h2>
+    <span>{{ publicacoes|length }} itens</span>
+  </div>
+  <div class="pub-list">
+    {% for item in publicacoes %}
+    <a class="pub-row cat-{{ (item.categoria_ia or item.categoria or 'outro') | replace(' ', '-') }}" href="/edicoes/{{ item.edicao_id }}">
+      <div class="pub-row-accent"></div>
+      <div class="pub-row-body">
+        <div class="pub-row-top">
+          <span class="pub-tipo">{{ item.tipo or "Ato" }}{% if item.numero %} <strong>{{ item.numero }}</strong>{% endif %}</span>
+          <span class="pub-date">{{ item.data_publicacao or "sem data" }}</span>
         </div>
-      </a>
-      {% else %}
-      <p class="empty">Nenhuma publicação estruturada ainda.<br>Analise uma edição para começar.</p>
-      {% endfor %}
-    </div>
+        <div class="pub-row-middle">
+          <span class="pub-orgao">{{ item.orgao or "Órgão não identificado" }}</span>
+        </div>
+        <div class="pub-row-bottom">
+          <span class="pub-assunto">{{ item.resumo_ia or item.assunto or "Sem descrição" }}</span>
+          <span class="pub-meta">
+            {% if item.valor %}<em class="pub-valor">{{ item.valor }}</em>{% endif %}
+            <em>Pág. {{ item.pagina }}</em>
+          </span>
+        </div>
+      </div>
+    </a>
+    {% else %}
+    <p class="empty" style="padding:1.5rem">Nenhuma publicação estruturada ainda.<br>Analise uma edição para começar.</p>
+    {% endfor %}
   </div>
+</section>
 
-  <!-- Edições -->
-  <div class="panel">
-    <div class="panel-head">
-      <h2>Edições</h2>
-      <span>últimas 100</span>
-    </div>
-    <div class="edition-list">
-      {% for edicao in edicoes %}
-      <a class="edition-row" href="/edicoes/{{ edicao.id }}">
-        <span>
-          <strong>{{ edicao.titulo or ("Edição " ~ edicao.id) }}</strong>
-          <small>{{ edicao.data_publicacao or "data não informada" }}</small>
-        </span>
-        <span class="chips">
-          {% if edicao.tem_inaja %}<em>Inajá</em>{% endif %}
-          <em>{{ edicao.publicacoes_count }} pub.</em>
-          <em>{{ edicao.mencoes_count }} men.</em>
-        </span>
-      </a>
-      {% else %}
-      <p class="empty">Nenhuma edição registrada.<br>Acesse <a href="/edicoes-detectadas">Edições</a> para iniciar.</p>
-      {% endfor %}
-    </div>
+<!-- ── Edições recentes ───────────────────────────────────── -->
+<section class="panel fade-in">
+  <div class="panel-head">
+    <h2>Edições recentes</h2>
+    <a href="/edicoes-detectadas" class="panel-link">Ver todas →</a>
   </div>
-</div>
+  <div class="edition-list edition-list-scroll">
+    {% for edicao in edicoes %}
+    <a class="edition-row" href="/edicoes/{{ edicao.id }}">
+      <span>
+        <strong>{{ edicao.titulo or ("Edição " ~ edicao.id) }}</strong>
+        <small>{{ edicao.data_publicacao or "data não informada" }}</small>
+      </span>
+      <span class="chips">
+        {% if edicao.tem_inaja %}<em class="chip-inaja">Inajá</em>{% endif %}
+        <em>{{ edicao.publicacoes_count }} pub.</em>
+        <em>{{ edicao.mencoes_count }} men.</em>
+      </span>
+    </a>
+    {% else %}
+    <p class="empty" style="padding:1.5rem">Nenhuma edição registrada.<br>Acesse <a href="/edicoes-detectadas">Edições</a> para iniciar.</p>
+    {% endfor %}
+  </div>
+</section>
+
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-// ── Chart defaults ──────────────────────────────────────────
 Chart.defaults.color = '#a0a8c0';
 Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
 Chart.defaults.font.family = "'Inter', sans-serif";
 
-// ── Line chart: publicações por mês ────────────────────────
 async function carregarGraficoPorMes() {
   try {
     const r = await fetch('/api/graficos/por-mes');
     const dados = await r.json();
-    const labels = dados.map(d => d.mes);
-    const totais = dados.map(d => d.total);
-    const inaja  = dados.map(d => d.com_inaja);
     const ctx = document.getElementById('chart-por-mes');
     if (!ctx) return;
     new Chart(ctx, {
       type: 'line',
       data: {
-        labels,
+        labels: dados.map(d => d.mes),
         datasets: [
-          {
-            label: 'Total publicações',
-            data: totais,
-            borderColor: '#6366f1',
-            backgroundColor: 'rgba(99,102,241,0.08)',
-            tension: 0.4,
-            fill: true,
-            pointBackgroundColor: '#6366f1',
-            pointRadius: 4,
-          },
-          {
-            label: 'Com Inajá',
-            data: inaja,
-            borderColor: '#22d3a5',
-            backgroundColor: 'rgba(34,211,165,0.08)',
-            tension: 0.4,
-            fill: true,
-            pointBackgroundColor: '#22d3a5',
-            pointRadius: 4,
-          }
+          { label: 'Total', data: dados.map(d => d.total), borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.08)', tension: 0.4, fill: true, pointBackgroundColor: '#6366f1', pointRadius: 3 },
+          { label: 'Com Inajá', data: dados.map(d => d.com_inaja), borderColor: '#22d3a5', backgroundColor: 'rgba(34,211,165,0.08)', tension: 0.4, fill: true, pointBackgroundColor: '#22d3a5', pointRadius: 3 }
         ]
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 16 } } },
-        scales: {
-          x: { grid: { color: 'rgba(255,255,255,0.04)' } },
-          y: { grid: { color: 'rgba(255,255,255,0.04)' }, beginAtZero: true, ticks: { stepSize: 1 } }
-        }
-      }
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } } }, scales: { x: { ticks: { font: { size: 10 } } }, y: { beginAtZero: true, ticks: { font: { size: 10 } } } } }
     });
-  } catch(e) { console.warn('Gráfico por mês não disponível', e); }
+  } catch(e) { console.warn('Gráfico por mês indisponível', e); }
 }
 
-// ── Doughnut chart: tipos de ato ───────────────────────────
 async function carregarGraficoPorTipo() {
   try {
     const r = await fetch('/api/graficos/por-tipo');
     const dados = await r.json();
-    const labels = dados.map(d => d.tipo);
-    const totais = dados.map(d => d.total);
-    const cores = ['#6366f1','#22d3a5','#fbbf24','#f87171','#38bdf8','#a78bfa','#34d399','#fb923c','#e879f9','#94a3b8'];
     const ctx = document.getElementById('chart-por-tipo');
     if (!ctx) return;
+    const cores = ['#6366f1','#22d3a5','#fbbf24','#f87171','#38bdf8','#a78bfa','#34d399','#fb923c','#e879f9','#94a3b8'];
     new Chart(ctx, {
       type: 'doughnut',
-      data: {
-        labels,
-        datasets: [{ data: totais, backgroundColor: cores, borderColor: '#13161e', borderWidth: 2, hoverOffset: 6 }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: {
-          legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } }
-        },
-        cutout: '68%',
-      }
+      data: { labels: dados.map(d => d.tipo), datasets: [{ data: dados.map(d => d.total), backgroundColor: cores, borderColor: '#13161e', borderWidth: 2, hoverOffset: 6 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } } }, cutout: '68%' }
     });
-  } catch(e) { console.warn('Gráfico por tipo não disponível', e); }
+  } catch(e) { console.warn('Gráfico por tipo indisponível', e); }
 }
 
-// ── SSE activity refresh ────────────────────────────────────
+// SSE
 const statusLabel = { aviso: 'concluído com avisos' };
-
 function escapeHtml(v) {
   return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;");
 }
-
 function renderJob(job, includeTitle) {
-  const title = includeTitle
-    ? (job.edicao_titulo || job.titulo || 'Processo geral')
-    : (statusLabel[job.status] || job.status);
-  return `
-    <article class="activity-item status-${escapeHtml(job.status)}">
-      <span class="status-dot"></span>
-      <div>
-        <strong>${escapeHtml(job.etapa)}</strong>
-        <small>${escapeHtml(title)} · ${escapeHtml(job.atualizado_em)}</small>
-        ${job.mensagem ? `<p>${escapeHtml(job.mensagem)}</p>` : ''}
-      </div>
-    </article>`;
+  const title = includeTitle ? (job.edicao_titulo || job.titulo || 'Processo geral') : (statusLabel[job.status] || job.status);
+  return `<article class="activity-item status-${escapeHtml(job.status)}"><span class="status-dot"></span><div><strong>${escapeHtml(job.etapa)}</strong><small>${escapeHtml(title)} · ${escapeHtml(job.atualizado_em)}</small>${job.mensagem ? `<p>${escapeHtml(job.mensagem)}</p>` : ''}</div></article>`;
 }
-
 function conectarSSE() {
   const source = new EventSource('/api/eventos');
   source.onmessage = function(event) {
@@ -271,22 +265,16 @@ function conectarSSE() {
       const title   = document.getElementById('activity-title');
       const message = document.getElementById('activity-message');
       const running = document.getElementById('running-list');
-      const recent  = document.getElementById('recent-list');
       const refresh = document.getElementById('activity-refresh');
       if (!state) return;
-
       state.className = `activity-state ${data.tem_atividade ? 'is-running' : 'is-idle'}`;
       title.textContent = data.tem_atividade ? `Executando ${data.rodando.length} etapa(s)` : 'Sistema aguardando';
-      message.textContent = data.tem_atividade ? 'Acompanhe abaixo o processamento em andamento.' : 'Aguardando próxima varredura ou análise manual.';
-      running.innerHTML = data.rodando.length ? data.rodando.map(j => renderJob(j, true)).join('') : '<p class="empty">Nada rodando neste momento.</p>';
-      recent.innerHTML  = data.recentes.length ? data.recentes.map(j => renderJob(j, false)).join('') : '<p class="empty">Nenhum evento registrado ainda.</p>';
-      refresh.textContent = 'última atualização: ' + new Date().toLocaleTimeString('pt-BR');
+      message.textContent = data.tem_atividade ? 'Processamento em andamento.' : 'Aguardando próxima varredura.';
+      running.innerHTML = data.rodando.length ? data.rodando.map(j => renderJob(j, true)).join('') : '<p class="empty">Nada rodando agora.</p>';
+      refresh.textContent = new Date().toLocaleTimeString('pt-BR');
     } catch(e) {}
   };
-  source.onerror = function() {
-    const refresh = document.getElementById('activity-refresh');
-    if (refresh) refresh.textContent = 'reconectando…';
-  };
+  source.onerror = () => { const r = document.getElementById('activity-refresh'); if (r) r.textContent = 'reconectando…'; };
 }
 
 carregarGraficoPorMes();

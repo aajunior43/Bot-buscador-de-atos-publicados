@@ -1,0 +1,422 @@
+---
+pid: 1492
+cwd: "A:\Monitor de Atos\Bot-buscador-de-atos-publicados"
+command: "python \"A:\\Monitor de Atos\\Bot-buscador-de-atos-publicados\\_reprocess_weak_batch.py\""
+started_at: 2026-07-01T12:30:55.717Z
+running_for_ms: 38875007 
+---
+2026-07-01 09:30:57,254 INFO [1/13] Iniciando 15-05-2026 (id=35515)
+2026-07-01 09:30:57,255 INFO Cache removido: edicoes\2026\05\Jornal-O-Regional-15-05-2026.ocr.json
+2026-07-01 09:30:57,372 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-15-05-2026.pdf
+2026-07-01 09:30:57,382 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\05\Jornal-O-Regional-15-05-2026.pdf
+2026-07-01 09:31:16,782 INFO OCR rápido na página 3 (psm 6) com pouco texto (117 chars); tentando próxima estratégia
+2026-07-01 09:31:17,248 INFO OCR rápido na página 3 (resolução reduzida + psm 6) com pouco texto (25 chars); tentando próxima estratégia
+2026-07-01 09:31:18,315 INFO OCR rápido na página 3 (binarização + psm 6) com pouco texto (120 chars); tentando próxima estratégia
+2026-07-01 09:31:18,753 INFO OCR rápido na página 3 (binarização reduzida + psm 6) com pouco texto (47 chars); tentando próxima estratégia
+2026-07-01 09:31:18,753 INFO OCR rápido insuficiente na página 3; aplicando OCR estruturado
+2026-07-01 09:31:19,623 INFO Página 3: 5 coluna(s) detectada(s)
+2026-07-01 09:31:34,886 INFO OCR rápido na página 4 (resolução reduzida + psm 6) com pouco texto (105 chars); tentando próxima estratégia
+2026-07-01 09:31:35,710 INFO OCR rápido na página 4 (binarização + psm 6) com pouco texto (127 chars); tentando próxima estratégia
+2026-07-01 09:31:36,056 INFO OCR rápido na página 4 (binarização reduzida + psm 6) com pouco texto (13 chars); tentando próxima estratégia
+2026-07-01 09:31:36,056 INFO OCR rápido insuficiente na página 4; aplicando OCR estruturado
+2026-07-01 09:31:36,931 INFO Página 4: 3 coluna(s) detectada(s)
+2026-07-01 09:31:46,940 INFO OCR rápido na página 6 (psm 6) com pouco texto (173 chars); tentando próxima estratégia
+2026-07-01 09:31:47,463 INFO OCR rápido na página 6 (resolução reduzida + psm 6) com pouco texto (50 chars); tentando próxima estratégia
+2026-07-01 09:31:48,964 INFO OCR rápido na página 6 (binarização + psm 6) com pouco texto (223 chars); tentando próxima estratégia
+2026-07-01 09:31:49,676 INFO OCR rápido na página 6 (binarização reduzida + psm 6) com pouco texto (113 chars); tentando próxima estratégia
+2026-07-01 09:31:49,676 INFO OCR rápido insuficiente na página 6; aplicando OCR estruturado
+2026-07-01 09:31:50,542 INFO Página 6: 6 coluna(s) detectada(s)
+2026-07-01 09:31:58,110 INFO [1/13] Concluído 15-05-2026 em 61s
+2026-07-01 09:31:58,110 INFO [2/13] Iniciando 17-05-2026 (id=35514)
+2026-07-01 09:31:58,110 INFO Cache removido: edicoes\2026\05\Jornal-O-Regional-17-05-2026.ocr.json
+2026-07-01 09:31:58,858 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-17-05-2026.pdf
+2026-07-01 09:31:58,866 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\05\Jornal-O-Regional-17-05-2026.pdf
+2026-07-01 09:32:42,342 INFO OCR rápido na página 6 (psm 6) com pouco texto (235 chars); tentando próxima estratégia
+2026-07-01 09:32:42,954 INFO OCR rápido na página 6 (resolução reduzida + psm 6) com pouco texto (56 chars); tentando próxima estratégia
+2026-07-01 09:32:44,257 INFO OCR rápido na página 6 (binarização + psm 6) com pouco texto (138 chars); tentando próxima estratégia
+2026-07-01 09:32:44,738 INFO OCR rápido na página 6 (binarização reduzida + psm 6) com pouco texto (57 chars); tentando próxima estratégia
+2026-07-01 09:32:44,738 INFO OCR rápido insuficiente na página 6; aplicando OCR estruturado
+2026-07-01 09:32:45,612 INFO Página 6: 5 coluna(s) detectada(s)
+2026-07-01 09:33:37,746 INFO OCR rápido na página 11 (psm 6) com pouco texto (280 chars); tentando próxima estratégia
+2026-07-01 09:33:38,791 INFO OCR rápido na página 11 (resolução reduzida + psm 6) com pouco texto (170 chars); tentando próxima estratégia
+2026-07-01 09:33:39,186 INFO OCR rápido na página 11 (resolução reduzida + psm 3) com pouco texto (27 chars); tentando próxima estratégia
+2026-07-01 09:33:39,639 INFO OCR rápido na página 11 (binarização + psm 6) com pouco texto (5 chars); tentando próxima estratégia
+2026-07-01 09:33:39,852 INFO OCR rápido insuficiente na página 11; aplicando OCR estruturado
+2026-07-01 09:33:40,722 INFO Página 11: 7 coluna(s) detectada(s)
+2026-07-01 09:33:43,913 INFO OCR na página 11 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:33:44,922 INFO OCR na página 11 coluna 7 recuperado (binarização + psm 6)
+2026-07-01 09:34:00,336 INFO Páginas candidatas para OCR estruturado: [7]
+2026-07-01 09:34:02,131 INFO Página 7: 4 coluna(s) detectada(s)
+2026-07-01 09:34:15,194 INFO SMTP não configurado — ignorando envio de e-mail.
+2026-07-01 09:34:15,194 INFO Alerta salvo em alertas\2026-07-01.log
+2026-07-01 09:34:15,202 INFO [2/13] Concluído 17-05-2026 em 137s
+2026-07-01 09:34:15,202 INFO [3/13] Iniciando 19-05-2026 (id=35513)
+2026-07-01 09:34:15,203 INFO Cache removido: edicoes\2026\05\Jornal-O-Regional-19-05-2026.ocr.json
+2026-07-01 09:34:15,650 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-19-05-2026.pdf
+2026-07-01 09:34:15,658 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\05\Jornal-O-Regional-19-05-2026.pdf
+2026-07-01 09:35:00,382 INFO OCR rápido na página 5 (psm 6) com pouco texto (296 chars); tentando próxima estratégia
+2026-07-01 09:35:00,756 INFO OCR rápido na página 5 (resolução reduzida + psm 6) com pouco texto (42 chars); tentando próxima estratégia
+2026-07-01 09:35:01,667 INFO OCR rápido na página 5 (binarização + psm 6) com pouco texto (135 chars); tentando próxima estratégia
+2026-07-01 09:35:01,983 INFO OCR rápido na página 5 (binarização reduzida + psm 6) com pouco texto (20 chars); tentando próxima estratégia
+2026-07-01 09:35:01,983 INFO OCR rápido insuficiente na página 5; aplicando OCR estruturado
+2026-07-01 09:35:02,839 INFO Página 5: 4 coluna(s) detectada(s)
+2026-07-01 09:35:48,335 INFO [3/13] Concluído 19-05-2026 em 93s
+2026-07-01 09:35:48,335 INFO [4/13] Iniciando 22-05-2026 (id=35511)
+2026-07-01 09:35:48,335 INFO Cache removido: edicoes\2026\05\Jornal-O-Regional-22-05-2026.ocr.json
+2026-07-01 09:35:48,946 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-22-05-2026.pdf
+2026-07-01 09:35:48,953 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\05\Jornal-O-Regional-22-05-2026.pdf
+2026-07-01 09:37:01,004 INFO OCR rápido na página 6 (psm 6) com pouco texto (291 chars); tentando próxima estratégia
+2026-07-01 09:37:01,396 INFO OCR rápido na página 6 (resolução reduzida + psm 6) com pouco texto (15 chars); tentando próxima estratégia
+2026-07-01 09:37:01,729 INFO OCR rápido na página 6 (resolução reduzida + psm 3) com pouco texto (9 chars); tentando próxima estratégia
+2026-07-01 09:37:02,367 INFO OCR rápido na página 6 (binarização + psm 6) com pouco texto (29 chars); tentando próxima estratégia
+2026-07-01 09:37:02,790 INFO OCR rápido na página 6 (binarização reduzida + psm 6) com pouco texto (31 chars); tentando próxima estratégia
+2026-07-01 09:37:02,790 INFO OCR rápido insuficiente na página 6; aplicando OCR estruturado
+2026-07-01 09:37:03,661 INFO Página 6: 7 coluna(s) detectada(s)
+2026-07-01 09:37:04,197 INFO OCR na página 6 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:37:04,747 INFO OCR na página 6 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 09:37:06,004 INFO OCR na página 6 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:37:07,182 INFO OCR na página 6 coluna 7 recuperado (resolução reduzida + psm 6)
+2026-07-01 09:37:14,541 INFO OCR rápido na página 8 (psm 6) com pouco texto (167 chars); tentando próxima estratégia
+2026-07-01 09:37:15,073 INFO OCR rápido na página 8 (resolução reduzida + psm 6) com pouco texto (40 chars); tentando próxima estratégia
+2026-07-01 09:37:16,910 INFO OCR rápido na página 8 (binarização + psm 6) com pouco texto (216 chars); tentando próxima estratégia
+2026-07-01 09:37:17,390 INFO OCR rápido na página 8 (binarização reduzida + psm 6) com pouco texto (55 chars); tentando próxima estratégia
+2026-07-01 09:37:17,390 INFO OCR rápido insuficiente na página 8; aplicando OCR estruturado
+2026-07-01 09:37:18,262 INFO Página 8: 5 coluna(s) detectada(s)
+2026-07-01 09:37:18,774 INFO OCR na página 8 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:37:46,554 INFO [4/13] Concluído 22-05-2026 em 118s
+2026-07-01 09:37:46,554 INFO [5/13] Iniciando 24-05-2026 (id=35510)
+2026-07-01 09:37:46,554 INFO Cache removido: edicoes\2026\05\Jornal-O-Regional-24-05-2026.ocr.json
+2026-07-01 09:37:47,191 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-24-05-2026.pdf
+2026-07-01 09:37:47,199 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\05\Jornal-O-Regional-24-05-2026.pdf
+2026-07-01 09:38:12,504 INFO OCR rápido na página 6 (psm 6) com pouco texto (64 chars); tentando próxima estratégia
+2026-07-01 09:38:12,840 INFO OCR rápido na página 6 (resolução reduzida + psm 6) com pouco texto (7 chars); tentando próxima estratégia
+2026-07-01 09:38:14,074 INFO OCR rápido na página 6 (binarização + psm 6) com pouco texto (117 chars); tentando próxima estratégia
+2026-07-01 09:38:14,686 INFO OCR rápido na página 6 (binarização reduzida + psm 6) com pouco texto (77 chars); tentando próxima estratégia
+2026-07-01 09:38:14,686 INFO OCR rápido insuficiente na página 6; aplicando OCR estruturado
+2026-07-01 09:38:15,546 INFO Página 6: 5 coluna(s) detectada(s)
+2026-07-01 09:38:17,941 INFO OCR na página 6 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 09:38:59,814 INFO OCR rápido na página 11 (psm 6) com pouco texto (202 chars); tentando próxima estratégia
+2026-07-01 09:39:00,411 INFO OCR rápido na página 11 (resolução reduzida + psm 6) com pouco texto (56 chars); tentando próxima estratégia
+2026-07-01 09:39:01,544 INFO OCR rápido na página 11 (binarização + psm 6) com pouco texto (110 chars); tentando próxima estratégia
+2026-07-01 09:39:02,061 INFO OCR rápido na página 11 (binarização reduzida + psm 6) com pouco texto (66 chars); tentando próxima estratégia
+2026-07-01 09:39:02,061 INFO OCR rápido insuficiente na página 11; aplicando OCR estruturado
+2026-07-01 09:39:02,922 INFO Página 11: 3 coluna(s) detectada(s)
+2026-07-01 09:39:09,702 INFO Páginas candidatas para OCR estruturado: [2]
+2026-07-01 09:39:11,498 INFO Página 2: 5 coluna(s) detectada(s)
+2026-07-01 09:39:22,157 INFO SMTP não configurado — ignorando envio de e-mail.
+2026-07-01 09:39:22,157 INFO Alerta salvo em alertas\2026-07-01.log
+2026-07-01 09:39:22,165 INFO [5/13] Concluído 24-05-2026 em 96s
+2026-07-01 09:39:22,165 INFO [6/13] Iniciando 26-05-2026 (id=35509)
+2026-07-01 09:39:22,165 INFO Cache removido: edicoes\2026\05\Jornal-O-Regional-26-05-2026.ocr.json
+2026-07-01 09:39:22,708 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-26-05-2026.pdf
+2026-07-01 09:39:22,716 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\05\Jornal-O-Regional-26-05-2026.pdf
+2026-07-01 09:40:17,185 INFO OCR rápido na página 7 (psm 6) com pouco texto (230 chars); tentando próxima estratégia
+2026-07-01 09:40:18,003 INFO OCR rápido na página 7 (resolução reduzida + psm 6) com pouco texto (99 chars); tentando próxima estratégia
+2026-07-01 09:40:19,634 INFO OCR rápido na página 7 (binarização + psm 6) com pouco texto (212 chars); tentando próxima estratégia
+2026-07-01 09:40:19,922 INFO OCR rápido insuficiente na página 7; aplicando OCR estruturado
+2026-07-01 09:40:20,781 INFO Página 7: 5 coluna(s) detectada(s)
+2026-07-01 09:40:21,360 INFO OCR na página 7 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:40:21,944 INFO OCR na página 7 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 09:40:22,444 INFO OCR na página 7 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 09:40:25,472 INFO OCR rápido na página 8 (psm 6) com pouco texto (183 chars); tentando próxima estratégia
+2026-07-01 09:40:25,876 INFO OCR rápido na página 8 (resolução reduzida + psm 6) com pouco texto (22 chars); tentando próxima estratégia
+2026-07-01 09:40:27,373 INFO OCR rápido na página 8 (binarização + psm 6) com pouco texto (157 chars); tentando próxima estratégia
+2026-07-01 09:40:27,776 INFO OCR rápido na página 8 (binarização reduzida + psm 6) com pouco texto (25 chars); tentando próxima estratégia
+2026-07-01 09:40:27,776 INFO OCR rápido insuficiente na página 8; aplicando OCR estruturado
+2026-07-01 09:40:28,640 INFO Página 8: 3 coluna(s) detectada(s)
+2026-07-01 09:40:29,128 INFO OCR na página 8 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:40:29,720 INFO OCR na página 8 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 09:40:52,332 INFO Páginas candidatas para OCR estruturado: [2]
+2026-07-01 09:40:54,136 INFO Página 2: 5 coluna(s) detectada(s)
+2026-07-01 09:41:08,105 INFO Chamando IA para refinar 1 publicacoes...
+2026-07-01 09:41:08,115 INFO Iniciando refinamento IA de 1 publicacoes (model=deepseek-v4-flash, max_tokens=16000, timeout=120s)
+2026-07-01 09:41:59,719 INFO Resposta IA: finish=stop, tokens=5439, content_len=814, content_preview={
+  "texto_corrigido": "EDITAL DE PROCESSO SELETIVO SIMPLIFICADO - ANEXO I - RESULTADO. PREFEITURA MUNICIPAL DE INAJÁ. Cargos: Fonoaudiólogo (40h), Assistente Social (30h), Educador Social (40h), Farm
+2026-07-01 09:41:59,721 INFO IA refinou 1 de 1 publicações (mantidas: 1)
+2026-07-01 09:41:59,721 INFO IA concluida. Publicacoes refinadas: 1
+2026-07-01 09:41:59,754 INFO SMTP não configurado — ignorando envio de e-mail.
+2026-07-01 09:41:59,754 INFO Alerta salvo em alertas\2026-07-01.log
+2026-07-01 09:41:59,762 INFO [6/13] Concluído 26-05-2026 em 158s
+2026-07-01 09:41:59,762 INFO [7/13] Iniciando 30-05-2026 (id=33638)
+2026-07-01 09:41:59,763 INFO Cache removido: edicoes\2026\05\Jornal-O-Regional-30-05-2026.ocr.json
+2026-07-01 09:41:59,763 INFO Cache removido: edicoes\2026\05\Jornal-O-Regional-30-05-2026.txt
+2026-07-01 09:41:59,990 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-30-05-2026.pdf
+2026-07-01 09:41:59,998 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\05\Jornal-O-Regional-30-05-2026.pdf
+2026-07-01 09:42:29,198 INFO OCR rápido na página 3 (psm 6) com pouco texto (22 chars); tentando próxima estratégia
+2026-07-01 09:42:29,700 INFO OCR rápido na página 3 (resolução reduzida + psm 6) com pouco texto (44 chars); tentando próxima estratégia
+2026-07-01 09:42:30,066 INFO OCR rápido na página 3 (resolução reduzida + psm 3) com pouco texto (32 chars); tentando próxima estratégia
+2026-07-01 09:42:30,638 INFO OCR rápido na página 3 (binarização + psm 6) com pouco texto (24 chars); tentando próxima estratégia
+2026-07-01 09:42:31,079 INFO OCR rápido na página 3 (binarização reduzida + psm 6) com pouco texto (50 chars); tentando próxima estratégia
+2026-07-01 09:42:31,079 INFO OCR rápido insuficiente na página 3; aplicando OCR estruturado
+2026-07-01 09:42:31,955 INFO Página 3: 7 coluna(s) detectada(s)
+2026-07-01 09:42:32,498 INFO OCR na página 3 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:42:33,050 INFO OCR na página 3 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 09:42:34,114 INFO OCR na página 3 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:42:35,898 INFO OCR rápido na página 4 (psm 6) com pouco texto (102 chars); tentando próxima estratégia
+2026-07-01 09:42:36,261 INFO OCR rápido na página 4 (resolução reduzida + psm 6) com pouco texto (13 chars); tentando próxima estratégia
+2026-07-01 09:42:37,419 INFO OCR rápido na página 4 (binarização + psm 6) com pouco texto (180 chars); tentando próxima estratégia
+2026-07-01 09:42:37,773 INFO OCR rápido na página 4 (binarização reduzida + psm 6) com pouco texto (19 chars); tentando próxima estratégia
+2026-07-01 09:42:37,773 INFO OCR rápido insuficiente na página 4; aplicando OCR estruturado
+2026-07-01 09:42:38,645 INFO Página 4: 6 coluna(s) detectada(s)
+2026-07-01 09:42:52,051 INFO OCR rápido na página 6 (psm 6) com pouco texto (218 chars); tentando próxima estratégia
+2026-07-01 09:42:52,429 INFO OCR rápido na página 6 (resolução reduzida + psm 6) com pouco texto (9 chars); tentando próxima estratégia
+2026-07-01 09:42:52,801 INFO OCR rápido na página 6 (resolução reduzida + psm 3) com pouco texto (7 chars); tentando próxima estratégia
+2026-07-01 09:42:53,742 INFO OCR rápido na página 6 (binarização reduzida + psm 6) com pouco texto (2 chars); tentando próxima estratégia
+2026-07-01 09:42:53,742 INFO OCR rápido insuficiente na página 6; aplicando OCR estruturado
+2026-07-01 09:42:54,626 INFO Página 6: 3 coluna(s) detectada(s)
+2026-07-01 09:42:55,431 INFO OCR na página 6 coluna 1 recuperado (psm 6)
+2026-07-01 09:42:57,817 INFO OCR na página 6 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 09:42:58,906 INFO OCR rápido na página 7 (psm 6) com pouco texto (156 chars); tentando próxima estratégia
+2026-07-01 09:43:01,630 INFO OCR rápido na página 7 recuperado (resolução reduzida + psm 6)
+2026-07-01 09:43:05,395 INFO OCR rápido na página 9 (psm 6) com pouco texto (178 chars); tentando próxima estratégia
+2026-07-01 09:43:07,242 INFO OCR rápido na página 9 (binarização + psm 6) com pouco texto (125 chars); tentando próxima estratégia
+2026-07-01 09:43:07,820 INFO OCR rápido na página 9 (binarização reduzida + psm 6) com pouco texto (53 chars); tentando próxima estratégia
+2026-07-01 09:43:07,820 INFO OCR rápido insuficiente na página 9; aplicando OCR estruturado
+2026-07-01 09:43:08,763 INFO Página 9: 6 coluna(s) detectada(s)
+2026-07-01 09:43:09,579 INFO OCR na página 9 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 09:43:12,994 INFO OCR rápido na página 10 (psm 6) com pouco texto (163 chars); tentando próxima estratégia
+2026-07-01 09:43:13,730 INFO OCR rápido na página 10 (resolução reduzida + psm 6) com pouco texto (70 chars); tentando próxima estratégia
+2026-07-01 09:43:14,941 INFO OCR rápido na página 10 (binarização + psm 6) com pouco texto (56 chars); tentando próxima estratégia
+2026-07-01 09:43:15,467 INFO OCR rápido na página 10 (binarização reduzida + psm 6) com pouco texto (52 chars); tentando próxima estratégia
+2026-07-01 09:43:15,467 INFO OCR rápido insuficiente na página 10; aplicando OCR estruturado
+2026-07-01 09:43:16,368 INFO Página 10: 7 coluna(s) detectada(s)
+2026-07-01 09:43:17,996 INFO OCR na página 10 coluna 3 recuperado (resolução reduzida + psm 6)
+2026-07-01 09:43:19,256 INFO OCR na página 10 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 09:43:21,114 INFO OCR rápido na página 11 (psm 6) com pouco texto (153 chars); tentando próxima estratégia
+2026-07-01 09:43:21,824 INFO OCR rápido na página 11 (resolução reduzida + psm 6) com pouco texto (72 chars); tentando próxima estratégia
+2026-07-01 09:43:23,027 INFO OCR rápido na página 11 (binarização + psm 6) com pouco texto (72 chars); tentando próxima estratégia
+2026-07-01 09:43:23,343 INFO OCR rápido na página 11 (binarização reduzida + psm 6) com pouco texto (13 chars); tentando próxima estratégia
+2026-07-01 09:43:23,343 INFO OCR rápido insuficiente na página 11; aplicando OCR estruturado
+2026-07-01 09:43:24,229 INFO Página 11: 4 coluna(s) detectada(s)
+2026-07-01 09:43:24,847 INFO OCR na página 11 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:43:25,898 INFO OCR na página 11 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 09:43:26,436 INFO OCR na página 11 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 09:43:28,778 INFO OCR rápido na página 12 (psm 6) com pouco texto (218 chars); tentando próxima estratégia
+2026-07-01 09:43:29,831 INFO OCR rápido na página 12 (resolução reduzida + psm 6) com pouco texto (98 chars); tentando próxima estratégia
+2026-07-01 09:43:30,382 INFO OCR rápido na página 12 (resolução reduzida + psm 3) com pouco texto (21 chars); tentando próxima estratégia
+2026-07-01 09:43:31,286 INFO OCR rápido na página 12 (binarização + psm 6) com pouco texto (71 chars); tentando próxima estratégia
+2026-07-01 09:43:31,834 INFO OCR rápido na página 12 (binarização reduzida + psm 6) com pouco texto (50 chars); tentando próxima estratégia
+2026-07-01 09:43:31,834 INFO OCR rápido insuficiente na página 12; aplicando OCR estruturado
+2026-07-01 09:43:32,783 INFO Página 12: 6 coluna(s) detectada(s)
+2026-07-01 09:43:33,467 INFO OCR na página 12 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:43:36,819 INFO OCR rápido na página 13 (resolução reduzida + psm 6) com pouco texto (15 chars); tentando próxima estratégia
+2026-07-01 09:43:38,017 INFO OCR rápido na página 13 (binarização + psm 6) com pouco texto (91 chars); tentando próxima estratégia
+2026-07-01 09:43:38,395 INFO OCR rápido na página 13 (binarização reduzida + psm 6) com pouco texto (36 chars); tentando próxima estratégia
+2026-07-01 09:43:38,395 INFO OCR rápido insuficiente na página 13; aplicando OCR estruturado
+2026-07-01 09:43:39,261 INFO Página 13: 4 coluna(s) detectada(s)
+2026-07-01 09:43:40,604 INFO OCR na página 13 coluna 2 recuperado (binarização reduzida + psm 6)
+2026-07-01 09:43:42,567 INFO OCR rápido na página 14 (psm 6) com pouco texto (41 chars); tentando próxima estratégia
+2026-07-01 09:43:43,138 INFO OCR rápido na página 14 (resolução reduzida + psm 6) com pouco texto (69 chars); tentando próxima estratégia
+2026-07-01 09:43:44,550 INFO OCR rápido na página 14 (binarização + psm 6) com pouco texto (131 chars); tentando próxima estratégia
+2026-07-01 09:43:45,203 INFO OCR rápido na página 14 (binarização reduzida + psm 6) com pouco texto (75 chars); tentando próxima estratégia
+2026-07-01 09:43:45,203 INFO OCR rápido insuficiente na página 14; aplicando OCR estruturado
+2026-07-01 09:43:48,118 INFO OCR rápido na página 15 (psm 6) com pouco texto (108 chars); tentando próxima estratégia
+2026-07-01 09:43:49,090 INFO OCR rápido na página 15 (resolução reduzida + psm 6) com pouco texto (113 chars); tentando próxima estratégia
+2026-07-01 09:43:49,448 INFO OCR rápido na página 15 (resolução reduzida + psm 3) com pouco texto (18 chars); tentando próxima estratégia
+2026-07-01 09:43:50,666 INFO OCR rápido na página 15 (binarização + psm 6) com pouco texto (113 chars); tentando próxima estratégia
+2026-07-01 09:43:51,136 INFO OCR rápido na página 15 (binarização reduzida + psm 6) com pouco texto (39 chars); tentando próxima estratégia
+2026-07-01 09:43:51,136 INFO OCR rápido insuficiente na página 15; aplicando OCR estruturado
+2026-07-01 09:43:52,012 INFO Página 15: 4 coluna(s) detectada(s)
+2026-07-01 09:43:53,363 INFO OCR na página 15 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:43:54,466 INFO OCR na página 15 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 09:43:54,975 INFO OCR na página 15 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 09:43:56,443 INFO OCR rápido na página 16 (psm 6) com pouco texto (100 chars); tentando próxima estratégia
+2026-07-01 09:43:56,787 INFO OCR rápido na página 16 (resolução reduzida + psm 6) com pouco texto (12 chars); tentando próxima estratégia
+2026-07-01 09:43:57,849 INFO OCR rápido na página 16 (binarização + psm 6) com pouco texto (47 chars); tentando próxima estratégia
+2026-07-01 09:43:58,156 INFO OCR rápido na página 16 (binarização reduzida + psm 6) com pouco texto (20 chars); tentando próxima estratégia
+2026-07-01 09:43:58,156 INFO OCR rápido insuficiente na página 16; aplicando OCR estruturado
+2026-07-01 09:43:59,027 INFO Página 16: 7 coluna(s) detectada(s)
+2026-07-01 09:44:00,291 INFO OCR na página 16 coluna 1 recuperado (binarização reduzida + psm 6)
+2026-07-01 09:44:01,215 INFO OCR na página 16 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 09:44:02,229 INFO OCR na página 16 coluna 5 recuperado (psm 6)
+2026-07-01 09:44:03,361 INFO OCR na página 16 coluna 7 recuperado (resolução reduzida + psm 6)
+2026-07-01 09:44:04,709 INFO OCR rápido na página 17 (psm 6) com pouco texto (106 chars); tentando próxima estratégia
+2026-07-01 09:44:05,135 INFO OCR rápido na página 17 (resolução reduzida + psm 6) com pouco texto (28 chars); tentando próxima estratégia
+2026-07-01 09:44:05,611 INFO OCR rápido na página 17 (resolução reduzida + psm 3) com pouco texto (29 chars); tentando próxima estratégia
+2026-07-01 09:44:06,265 INFO OCR rápido na página 17 (binarização + psm 6) com pouco texto (62 chars); tentando próxima estratégia
+2026-07-01 09:44:06,515 INFO OCR rápido insuficiente na página 17; aplicando OCR estruturado
+2026-07-01 09:44:07,383 INFO Página 17: 5 coluna(s) detectada(s)
+2026-07-01 09:44:08,035 INFO OCR na página 17 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:44:09,571 INFO OCR na página 17 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:44:10,854 INFO OCR rápido na página 18 (psm 6) com pouco texto (132 chars); tentando próxima estratégia
+2026-07-01 09:44:11,753 INFO OCR rápido na página 18 (resolução reduzida + psm 6) com pouco texto (101 chars); tentando próxima estratégia
+2026-07-01 09:44:13,298 INFO OCR rápido na página 18 (binarização + psm 6) com pouco texto (166 chars); tentando próxima estratégia
+2026-07-01 09:44:13,860 INFO OCR rápido na página 18 (binarização reduzida + psm 6) com pouco texto (73 chars); tentando próxima estratégia
+2026-07-01 09:44:13,860 INFO OCR rápido insuficiente na página 18; aplicando OCR estruturado
+2026-07-01 09:44:14,727 INFO Página 18: 6 coluna(s) detectada(s)
+2026-07-01 09:44:15,230 INFO OCR na página 18 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:44:16,302 INFO OCR na página 18 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 09:44:17,326 INFO OCR na página 18 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:44:18,037 INFO OCR na página 18 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 09:44:19,496 INFO OCR rápido na página 19 (psm 6) com pouco texto (141 chars); tentando próxima estratégia
+2026-07-01 09:44:20,091 INFO OCR rápido na página 19 (resolução reduzida + psm 6) com pouco texto (55 chars); tentando próxima estratégia
+2026-07-01 09:44:21,370 INFO OCR rápido na página 19 (binarização + psm 6) com pouco texto (70 chars); tentando próxima estratégia
+2026-07-01 09:44:21,792 INFO OCR rápido na página 19 (binarização reduzida + psm 6) com pouco texto (30 chars); tentando próxima estratégia
+2026-07-01 09:44:21,792 INFO OCR rápido insuficiente na página 19; aplicando OCR estruturado
+2026-07-01 09:44:22,657 INFO Página 19: 7 coluna(s) detectada(s)
+2026-07-01 09:44:23,170 INFO OCR na página 19 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:44:23,873 INFO OCR na página 19 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 09:44:25,208 INFO OCR na página 19 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:44:29,738 INFO OCR rápido na página 21 (psm 6) com pouco texto (69 chars); tentando próxima estratégia
+2026-07-01 09:44:30,083 INFO OCR rápido na página 21 (resolução reduzida + psm 6) com pouco texto (7 chars); tentando próxima estratégia
+2026-07-01 09:44:31,302 INFO OCR rápido na página 21 (binarização + psm 6) com pouco texto (83 chars); tentando próxima estratégia
+2026-07-01 09:44:31,922 INFO OCR rápido na página 21 (binarização reduzida + psm 6) com pouco texto (86 chars); tentando próxima estratégia
+2026-07-01 09:44:31,922 INFO OCR rápido insuficiente na página 21; aplicando OCR estruturado
+2026-07-01 09:44:32,790 INFO Página 21: 4 coluna(s) detectada(s)
+2026-07-01 09:44:37,269 INFO OCR rápido na página 22 (psm 6) com pouco texto (219 chars); tentando próxima estratégia
+2026-07-01 09:44:38,045 INFO OCR rápido na página 22 (resolução reduzida + psm 6) com pouco texto (55 chars); tentando próxima estratégia
+2026-07-01 09:44:38,626 INFO OCR rápido na página 22 (resolução reduzida + psm 3) com pouco texto (39 chars); tentando próxima estratégia
+2026-07-01 09:44:39,327 INFO OCR rápido na página 22 (binarização + psm 6) com pouco texto (21 chars); tentando próxima estratégia
+2026-07-01 09:44:39,818 INFO OCR rápido na página 22 (binarização reduzida + psm 6) com pouco texto (75 chars); tentando próxima estratégia
+2026-07-01 09:44:39,818 INFO OCR rápido insuficiente na página 22; aplicando OCR estruturado
+2026-07-01 09:44:40,687 INFO Página 22: 6 coluna(s) detectada(s)
+2026-07-01 09:44:41,183 INFO OCR na página 22 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:44:42,776 INFO OCR na página 22 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:44:43,330 INFO OCR na página 22 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 09:44:45,018 INFO OCR rápido na página 23 (psm 6) com pouco texto (162 chars); tentando próxima estratégia
+2026-07-01 09:44:45,411 INFO OCR rápido na página 23 (resolução reduzida + psm 6) com pouco texto (15 chars); tentando próxima estratégia
+2026-07-01 09:44:46,429 INFO OCR rápido na página 23 (binarização + psm 6) com pouco texto (82 chars); tentando próxima estratégia
+2026-07-01 09:44:46,839 INFO OCR rápido na página 23 (binarização reduzida + psm 6) com pouco texto (22 chars); tentando próxima estratégia
+2026-07-01 09:44:46,839 INFO OCR rápido insuficiente na página 23; aplicando OCR estruturado
+2026-07-01 09:44:47,702 INFO Página 23: 6 coluna(s) detectada(s)
+2026-07-01 09:44:48,624 INFO OCR na página 23 coluna 2 recuperado (psm 6)
+2026-07-01 09:44:52,407 INFO OCR rápido na página 24 (psm 6) com pouco texto (124 chars); tentando próxima estratégia
+2026-07-01 09:44:53,239 INFO OCR rápido na página 24 (resolução reduzida + psm 6) com pouco texto (109 chars); tentando próxima estratégia
+2026-07-01 09:44:54,378 INFO OCR rápido na página 24 (binarização + psm 6) com pouco texto (46 chars); tentando próxima estratégia
+2026-07-01 09:44:54,845 INFO OCR rápido na página 24 (binarização reduzida + psm 6) com pouco texto (43 chars); tentando próxima estratégia
+2026-07-01 09:44:54,845 INFO OCR rápido insuficiente na página 24; aplicando OCR estruturado
+2026-07-01 09:44:55,709 INFO Página 24: 6 coluna(s) detectada(s)
+2026-07-01 09:44:57,129 INFO OCR na página 24 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 09:44:58,645 INFO OCR rápido na página 25 (psm 6) com pouco texto (33 chars); tentando próxima estratégia
+2026-07-01 09:44:59,456 INFO OCR rápido na página 25 (resolução reduzida + psm 6) com pouco texto (113 chars); tentando próxima estratégia
+2026-07-01 09:44:59,957 INFO OCR rápido na página 25 (resolução reduzida + psm 3) com pouco texto (2 chars); tentando próxima estratégia
+2026-07-01 09:45:00,567 INFO OCR rápido na página 25 (binarização + psm 6) com pouco texto (35 chars); tentando próxima estratégia
+2026-07-01 09:45:00,892 INFO OCR rápido na página 25 (binarização reduzida + psm 6) com pouco texto (18 chars); tentando próxima estratégia
+2026-07-01 09:45:00,892 INFO OCR rápido insuficiente na página 25; aplicando OCR estruturado
+2026-07-01 09:45:01,754 INFO Página 25: 4 coluna(s) detectada(s)
+2026-07-01 09:45:06,881 INFO OCR rápido na página 26 (psm 6) com pouco texto (198 chars); tentando próxima estratégia
+2026-07-01 09:45:07,172 INFO OCR rápido na página 26 (resolução reduzida + psm 6) com pouco texto (2 chars); tentando próxima estratégia
+2026-07-01 09:45:08,190 INFO OCR rápido na página 26 (binarização + psm 6) com pouco texto (27 chars); tentando próxima estratégia
+2026-07-01 09:45:08,592 INFO OCR rápido na página 26 (binarização reduzida + psm 6) com pouco texto (22 chars); tentando próxima estratégia
+2026-07-01 09:45:08,592 INFO OCR rápido insuficiente na página 26; aplicando OCR estruturado
+2026-07-01 09:45:09,459 INFO Página 26: 4 coluna(s) detectada(s)
+2026-07-01 09:45:14,375 INFO OCR rápido na página 27 (psm 6) com pouco texto (79 chars); tentando próxima estratégia
+2026-07-01 09:45:14,710 INFO OCR rápido na página 27 (resolução reduzida + psm 6) com pouco texto (12 chars); tentando próxima estratégia
+2026-07-01 09:45:15,609 INFO OCR rápido na página 27 (binarização + psm 6) com pouco texto (16 chars); tentando próxima estratégia
+2026-07-01 09:45:16,040 INFO OCR rápido na página 27 (binarização reduzida + psm 6) com pouco texto (31 chars); tentando próxima estratégia
+2026-07-01 09:45:16,040 INFO OCR rápido insuficiente na página 27; aplicando OCR estruturado
+2026-07-01 09:45:16,901 INFO Página 27: 6 coluna(s) detectada(s)
+2026-07-01 09:45:17,388 INFO OCR na página 27 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:45:18,148 INFO OCR na página 27 coluna 2 recuperado (psm 6)
+2026-07-01 09:45:37,238 INFO Páginas candidatas para OCR estruturado: [4, 21]
+2026-07-01 09:45:53,698 INFO Página 4: 5 coluna(s) detectada(s)
+2026-07-01 09:45:58,719 INFO Página 21: 4 coluna(s) detectada(s)
+2026-07-01 09:45:59,333 INFO OCR na página 21 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:46:02,854 INFO OCR na página 21 coluna 3 recuperado (psm 6)
+2026-07-01 09:46:03,446 INFO OCR na página 21 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 09:46:03,606 INFO SMTP não configurado — ignorando envio de e-mail.
+2026-07-01 09:46:03,606 INFO Alerta salvo em alertas\2026-07-01.log
+2026-07-01 09:46:03,613 INFO [7/13] Concluído 30-05-2026 em 244s
+2026-07-01 09:46:03,614 INFO [8/13] Iniciando 02-06-2026 (id=33448)
+2026-07-01 09:46:03,614 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-02-06-2026.ocr.json
+2026-07-01 09:46:03,614 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-02-06-2026.txt
+2026-07-01 09:46:03,889 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-02-06-2026.pdf
+2026-07-01 09:46:03,898 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\06\Jornal-O-Regional-02-06-2026.pdf
+2026-07-01 09:46:57,947 INFO Páginas candidatas para OCR estruturado: [3]
+2026-07-01 09:46:59,794 INFO Página 3: 5 coluna(s) detectada(s)
+2026-07-01 09:47:10,678 INFO Chamando IA para refinar 1 publicacoes...
+2026-07-01 09:47:10,685 INFO Iniciando refinamento IA de 1 publicacoes (model=deepseek-v4-flash, max_tokens=16000, timeout=120s)
+2026-07-01 09:47:22,526 INFO Resposta IA: finish=stop, tokens=1043, content_len=672, content_preview={
+  "texto_corrigido": "PREFEITURA MUNICIPAL DE INAJÁ\nDECRETO Nº 06/2006, DE 1º DE JUNHO DE 2026.\nJOÃO EDER AGUILAR, Prefeito Municipal de Inajá, no uso de suas atribuições legais, considerando o pr
+2026-07-01 09:47:22,528 INFO IA refinou 1 de 1 publicações (mantidas: 1)
+2026-07-01 09:47:22,528 INFO IA concluida. Publicacoes refinadas: 1
+2026-07-01 09:47:22,565 INFO SMTP não configurado — ignorando envio de e-mail.
+2026-07-01 09:47:22,566 INFO Alerta salvo em alertas\2026-07-01.log
+2026-07-01 09:47:22,574 INFO [8/13] Concluído 02-06-2026 em 79s
+2026-07-01 09:47:22,574 INFO [9/13] Iniciando 04-06-2026 (id=33447)
+2026-07-01 09:47:22,574 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-04-06-2026.ocr.json
+2026-07-01 09:47:22,575 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-04-06-2026.txt
+2026-07-01 09:47:23,224 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-04-06-2026.pdf
+2026-07-01 09:47:23,232 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\06\Jornal-O-Regional-04-06-2026.pdf
+2026-07-01 09:48:36,808 INFO OCR rápido na página 9 (psm 6) com pouco texto (143 chars); tentando próxima estratégia
+2026-07-01 09:48:37,661 INFO OCR rápido na página 9 (resolução reduzida + psm 6) com pouco texto (84 chars); tentando próxima estratégia
+2026-07-01 09:48:39,035 INFO OCR rápido na página 9 (binarização + psm 6) com pouco texto (146 chars); tentando próxima estratégia
+2026-07-01 09:48:39,818 INFO OCR rápido na página 9 (binarização reduzida + psm 6) com pouco texto (117 chars); tentando próxima estratégia
+2026-07-01 09:48:39,818 INFO OCR rápido insuficiente na página 9; aplicando OCR estruturado
+2026-07-01 09:48:40,673 INFO Página 9: 6 coluna(s) detectada(s)
+2026-07-01 09:48:41,747 INFO OCR na página 9 coluna 1 recuperado (psm 6)
+2026-07-01 09:49:09,966 INFO OCR rápido na página 14 (psm 6) com pouco texto (273 chars); tentando próxima estratégia
+2026-07-01 09:49:10,868 INFO OCR rápido na página 14 (resolução reduzida + psm 6) com pouco texto (120 chars); tentando próxima estratégia
+2026-07-01 09:49:12,025 INFO OCR rápido na página 14 (binarização reduzida + psm 6) com pouco texto (28 chars); tentando próxima estratégia
+2026-07-01 09:49:12,025 INFO OCR rápido insuficiente na página 14; aplicando OCR estruturado
+2026-07-01 09:49:12,877 INFO Página 14: 6 coluna(s) detectada(s)
+2026-07-01 09:49:16,308 INFO OCR na página 14 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 09:49:16,921 INFO OCR na página 14 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:49:17,574 INFO OCR na página 14 coluna 6 recuperado (psm 6)
+2026-07-01 09:49:20,872 INFO OCR rápido na página 16 (psm 6) com pouco texto (47 chars); tentando próxima estratégia
+2026-07-01 09:49:21,267 INFO OCR rápido na página 16 (resolução reduzida + psm 6) com pouco texto (25 chars); tentando próxima estratégia
+2026-07-01 09:49:22,153 INFO OCR rápido na página 16 (binarização + psm 6) com pouco texto (54 chars); tentando próxima estratégia
+2026-07-01 09:49:22,700 INFO OCR rápido na página 16 (binarização reduzida + psm 6) com pouco texto (74 chars); tentando próxima estratégia
+2026-07-01 09:49:22,700 INFO OCR rápido insuficiente na página 16; aplicando OCR estruturado
+2026-07-01 09:49:23,560 INFO Página 16: 5 coluna(s) detectada(s)
+2026-07-01 09:49:24,051 INFO OCR na página 16 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:49:29,998 INFO [9/13] Concluído 04-06-2026 em 127s
+2026-07-01 09:49:29,998 INFO [10/13] Iniciando 07-06-2026 (id=33446)
+2026-07-01 09:49:29,999 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-07-06-2026.ocr.json
+2026-07-01 09:49:29,999 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-07-06-2026.txt
+2026-07-01 09:49:30,081 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-07-06-2026.pdf
+2026-07-01 09:49:30,092 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\06\Jornal-O-Regional-07-06-2026.pdf
+2026-07-01 09:50:06,033 INFO OCR rápido na página 6 (psm 6) com pouco texto (182 chars); tentando próxima estratégia
+2026-07-01 09:50:06,761 INFO OCR rápido na página 6 (resolução reduzida + psm 6) com pouco texto (99 chars); tentando próxima estratégia
+2026-07-01 09:50:07,673 INFO OCR rápido na página 6 (binarização + psm 6) com pouco texto (58 chars); tentando próxima estratégia
+2026-07-01 09:50:08,024 INFO OCR rápido na página 6 (binarização reduzida + psm 6) com pouco texto (29 chars); tentando próxima estratégia
+2026-07-01 09:50:08,024 INFO OCR rápido insuficiente na página 6; aplicando OCR estruturado
+2026-07-01 09:50:08,890 INFO Página 6: 8 coluna(s) detectada(s)
+2026-07-01 09:50:09,401 INFO OCR na página 6 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:50:10,359 INFO OCR na página 6 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 09:50:11,300 INFO OCR na página 6 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:50:12,411 INFO [10/13] Concluído 07-06-2026 em 42s
+2026-07-01 09:50:12,411 INFO [11/13] Iniciando 09-06-2026 (id=33445)
+2026-07-01 09:50:12,411 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-09-06-2026.ocr.json
+2026-07-01 09:50:12,412 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-09-06-2026.txt
+2026-07-01 09:50:12,488 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-09-06-2026.pdf
+2026-07-01 09:50:12,495 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\06\Jornal-O-Regional-09-06-2026.pdf
+2026-07-01 09:50:36,100 INFO OCR rápido na página 4 (psm 6) com pouco texto (165 chars); tentando próxima estratégia
+2026-07-01 09:50:36,753 INFO OCR rápido na página 4 (resolução reduzida + psm 6) com pouco texto (60 chars); tentando próxima estratégia
+2026-07-01 09:50:38,366 INFO OCR rápido na página 4 (binarização + psm 6) com pouco texto (215 chars); tentando próxima estratégia
+2026-07-01 09:50:39,166 INFO OCR rápido na página 4 (binarização reduzida + psm 6) com pouco texto (88 chars); tentando próxima estratégia
+2026-07-01 09:50:39,166 INFO OCR rápido insuficiente na página 4; aplicando OCR estruturado
+2026-07-01 09:50:40,026 INFO Página 4: 5 coluna(s) detectada(s)
+2026-07-01 09:51:00,446 INFO [11/13] Concluído 09-06-2026 em 48s
+2026-07-01 09:51:00,447 INFO [12/13] Iniciando 11-06-2026 (id=33444)
+2026-07-01 09:51:00,447 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-11-06-2026.ocr.json
+2026-07-01 09:51:00,447 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-11-06-2026.txt
+2026-07-01 09:51:00,613 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-11-06-2026.pdf
+2026-07-01 09:51:00,626 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\06\Jornal-O-Regional-11-06-2026.pdf
+2026-07-01 09:51:35,538 INFO OCR rápido na página 4 (psm 6) com pouco texto (218 chars); tentando próxima estratégia
+2026-07-01 09:51:36,341 INFO OCR rápido na página 4 (resolução reduzida + psm 6) com pouco texto (106 chars); tentando próxima estratégia
+2026-07-01 09:51:38,164 INFO OCR rápido na página 4 (binarização + psm 6) com pouco texto (173 chars); tentando próxima estratégia
+2026-07-01 09:51:38,920 INFO OCR rápido na página 4 (binarização reduzida + psm 6) com pouco texto (144 chars); tentando próxima estratégia
+2026-07-01 09:51:38,920 INFO OCR rápido insuficiente na página 4; aplicando OCR estruturado
+2026-07-01 09:51:39,776 INFO Página 4: 7 coluna(s) detectada(s)
+2026-07-01 09:54:06,746 INFO OCR rápido na página 13 (psm 6) com pouco texto (189 chars); tentando próxima estratégia
+2026-07-01 09:54:07,474 INFO OCR rápido na página 13 (resolução reduzida + psm 6) com pouco texto (89 chars); tentando próxima estratégia
+2026-07-01 09:54:08,772 INFO OCR rápido na página 13 (binarização + psm 6) com pouco texto (137 chars); tentando próxima estratégia
+2026-07-01 09:54:09,723 INFO OCR rápido na página 13 (binarização reduzida + psm 6) com pouco texto (169 chars); tentando próxima estratégia
+2026-07-01 09:54:09,723 INFO OCR rápido insuficiente na página 13; aplicando OCR estruturado
+2026-07-01 09:54:10,593 INFO Página 13: 6 coluna(s) detectada(s)
+2026-07-01 09:54:12,323 INFO OCR na página 13 coluna 2 recuperado (binarização reduzida + psm 6)
+2026-07-01 09:54:27,832 INFO [12/13] Concluído 11-06-2026 em 207s
+2026-07-01 09:54:27,832 INFO [13/13] Iniciando 19-06-2026 (id=33440)
+2026-07-01 09:54:27,833 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-19-06-2026.ocr.json
+2026-07-01 09:54:27,833 INFO Cache removido: edicoes\2026\06\Jornal-O-Regional-19-06-2026.txt
+2026-07-01 09:54:27,905 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-19-06-2026.pdf
+2026-07-01 09:54:27,913 INFO Executando OCR rápido com estruturação só em páginas candidatas: edicoes\2026\06\Jornal-O-Regional-19-06-2026.pdf
+2026-07-01 09:54:49,651 INFO OCR rápido na página 4 (psm 6) com pouco texto (40 chars); tentando próxima estratégia
+2026-07-01 09:54:50,293 INFO OCR rápido na página 4 (resolução reduzida + psm 6) com pouco texto (76 chars); tentando próxima estratégia
+2026-07-01 09:54:51,520 INFO OCR rápido na página 4 (binarização + psm 6) com pouco texto (122 chars); tentando próxima estratégia
+2026-07-01 09:54:52,289 INFO OCR rápido na página 4 (binarização reduzida + psm 6) com pouco texto (123 chars); tentando próxima estratégia
+2026-07-01 09:54:52,289 INFO OCR rápido insuficiente na página 4; aplicando OCR estruturado
+2026-07-01 09:54:53,148 INFO Página 4: 8 coluna(s) detectada(s)
+2026-07-01 09:54:57,982 INFO [13/13] Concluído 19-06-2026 em 30s
+2026-07-01 09:54:57,982 INFO === LOTE FINALIZADO: 13/13 ok, 0 erros ===

@@ -1,0 +1,402 @@
+---
+pid: 1068
+cwd: "A:\Monitor de Atos\Bot-buscador-de-atos-publicados"
+command: "python \"A:\\Monitor de Atos\\Bot-buscador-de-atos-publicados\\_reprocess_force_batch.py\""
+started_at: 2026-07-01T12:55:09.694Z
+running_for_ms: 37419983 
+---
+2026-07-01 09:55:10,759 INFO [1/9] OCR completo: 22-05-2026 (id=35511)
+2026-07-01 09:55:10,896 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-22-05-2026.pdf
+2026-07-01 09:55:10,897 INFO Extraindo texto de edicoes\2026\05\Jornal-O-Regional-22-05-2026.pdf
+2026-07-01 09:55:10,897 INFO OCR forçado ativado; aplicando Tesseract em todas as páginas.
+2026-07-01 09:55:25,126 INFO   OCR estruturado completo: Página 1/10 processada
+2026-07-01 09:55:26,131 INFO Página 2: 4 coluna(s) detectada(s)
+2026-07-01 09:55:38,383 INFO   OCR estruturado completo: Página 2/10 processada
+2026-07-01 09:55:39,386 INFO Página 3: 3 coluna(s) detectada(s)
+2026-07-01 09:56:07,506 INFO   OCR estruturado completo: Página 3/10 processada
+2026-07-01 09:56:08,505 INFO Página 4: 4 coluna(s) detectada(s)
+2026-07-01 09:56:17,677 INFO   OCR estruturado completo: Página 4/10 processada
+2026-07-01 09:56:18,676 INFO Página 5: 6 coluna(s) detectada(s)
+2026-07-01 09:56:25,467 INFO   OCR estruturado completo: Página 5/10 processada
+2026-07-01 09:56:26,472 INFO Página 6: 5 coluna(s) detectada(s)
+2026-07-01 09:56:26,965 INFO OCR na página 6 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:56:28,080 INFO OCR na página 6 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 09:56:29,566 INFO OCR na página 6 coluna 3 recuperado (psm 6)
+2026-07-01 09:56:30,090 INFO OCR na página 6 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 09:56:30,573 INFO OCR na página 6 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:56:30,575 INFO   OCR estruturado completo: Página 6/10 processada
+2026-07-01 09:56:31,579 INFO Página 7: 4 coluna(s) detectada(s)
+2026-07-01 09:56:32,271 INFO OCR na página 7 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:56:36,964 INFO   OCR estruturado completo: Página 7/10 processada
+2026-07-01 09:56:37,967 INFO Página 8: 3 coluna(s) detectada(s)
+2026-07-01 09:56:43,610 INFO   OCR estruturado completo: Página 8/10 processada
+2026-07-01 09:56:44,621 INFO Página 9: 6 coluna(s) detectada(s)
+2026-07-01 09:56:45,293 INFO OCR na página 9 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:56:48,506 INFO OCR na página 9 coluna 2 recuperado (psm 6)
+2026-07-01 09:56:50,162 INFO   OCR estruturado completo: Página 9/10 processada
+2026-07-01 09:56:51,177 INFO Página 10: 6 coluna(s) detectada(s)
+2026-07-01 09:56:55,243 INFO   OCR estruturado completo: Página 10/10 processada
+2026-07-01 09:56:55,405 INFO [1/9] Concluído 22-05-2026: 10 págs, 64659 chars, avisos=0, 105s
+2026-07-01 09:56:55,405 INFO [2/9] OCR completo: 26-05-2026 (id=35509)
+2026-07-01 09:56:55,495 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-26-05-2026.pdf
+2026-07-01 09:56:55,496 INFO Extraindo texto de edicoes\2026\05\Jornal-O-Regional-26-05-2026.pdf
+2026-07-01 09:56:55,496 INFO OCR forçado ativado; aplicando Tesseract em todas as páginas.
+2026-07-01 09:57:13,130 INFO   OCR estruturado completo: Página 1/10 processada
+2026-07-01 09:57:14,125 INFO Página 2: 5 coluna(s) detectada(s)
+2026-07-01 09:57:28,183 INFO   OCR estruturado completo: Página 2/10 processada
+2026-07-01 09:57:29,207 INFO Página 3: 6 coluna(s) detectada(s)
+2026-07-01 09:57:40,051 INFO   OCR estruturado completo: Página 3/10 processada
+2026-07-01 09:57:41,041 INFO Página 4: 3 coluna(s) detectada(s)
+2026-07-01 09:57:47,378 INFO   OCR estruturado completo: Página 4/10 processada
+2026-07-01 09:57:48,378 INFO Página 5: 4 coluna(s) detectada(s)
+2026-07-01 09:57:53,883 INFO   OCR estruturado completo: Página 5/10 processada
+2026-07-01 09:57:54,882 INFO Página 6: 5 coluna(s) detectada(s)
+2026-07-01 09:58:00,639 INFO   OCR estruturado completo: Página 6/10 processada
+2026-07-01 09:58:01,632 INFO Página 7: 6 coluna(s) detectada(s)
+2026-07-01 09:58:02,222 INFO OCR na página 7 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:58:02,768 INFO OCR na página 7 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 09:58:03,452 INFO OCR na página 7 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 09:58:04,034 INFO OCR na página 7 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 09:58:05,040 INFO OCR na página 7 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 09:58:05,042 INFO   OCR estruturado completo: Página 7/10 processada
+2026-07-01 09:58:06,034 INFO Página 8: 3 coluna(s) detectada(s)
+2026-07-01 09:58:06,520 INFO OCR na página 8 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:58:08,014 WARNING Falha de OCR na página 8 coluna 2 após todas as estratégias
+2026-07-01 09:58:08,705 INFO OCR na página 8 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 09:58:08,707 INFO   OCR estruturado completo: Página 8/10 processada
+2026-07-01 09:58:09,710 INFO Página 9: 5 coluna(s) detectada(s)
+2026-07-01 09:58:10,197 INFO OCR na página 9 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 09:58:27,990 INFO   OCR estruturado completo: Página 9/10 processada
+2026-07-01 09:58:28,991 INFO Página 10: 5 coluna(s) detectada(s)
+2026-07-01 09:58:30,505 INFO OCR na página 10 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 09:58:34,799 INFO OCR na página 10 coluna 4 recuperado (psm 6)
+2026-07-01 09:58:35,731 INFO OCR na página 10 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 09:58:35,733 INFO   OCR estruturado completo: Página 10/10 processada
+2026-07-01 09:58:35,890 INFO Chamando IA para refinar 2 publicacoes...
+2026-07-01 09:58:35,892 INFO Iniciando refinamento IA de 2 publicacoes (model=deepseek-v4-flash, max_tokens=16000, timeout=120s)
+2026-07-01 09:58:45,687 INFO Resposta IA: finish=stop, tokens=1115, content_len=2501, content_preview={
+  "texto_corrigido": "PORTARIA Nº 046/2026, de 25 de maio de 2026. JOÃO EDER AGUILAR, Prefeito do Município de Inajá, estado do Paraná, no uso de suas atribuições. CONSIDERANDO, o aumento significat
+2026-07-01 09:59:27,229 INFO Resposta IA: finish=stop, tokens=6115, content_len=1464, content_preview={
+  "texto_corrigido": "EDITAL DE PROCESSO SELETIVO SIMPLIFICADO ANEXO I - RESULTADO\nINFORMÁTICA LTDA\nCARGO: FONOAUDIÓLOGO (A) 20H\n...\nCARGO: ASSISTENTE SOCIAL 30H\n...\nPORTARIA Nº .../2026\nMUNI
+2026-07-01 09:59:27,231 INFO IA refinou 2 de 2 publicações (mantidas: 2)
+2026-07-01 09:59:27,231 INFO IA concluida. Publicacoes refinadas: 2
+2026-07-01 09:59:27,249 INFO [2/9] Concluído 26-05-2026: 10 págs, 51697 chars, avisos=1, 152s
+2026-07-01 09:59:27,249 INFO [3/9] OCR completo: 30-05-2026 (id=33638)
+2026-07-01 09:59:27,470 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-30-05-2026.pdf
+2026-07-01 09:59:27,471 INFO Extraindo texto de edicoes\2026\05\Jornal-O-Regional-30-05-2026.pdf
+2026-07-01 09:59:27,471 INFO OCR forçado ativado; aplicando Tesseract em todas as páginas.
+2026-07-01 09:59:57,352 INFO   OCR estruturado completo: Página 1/28 processada
+2026-07-01 09:59:58,351 INFO Página 2: 4 coluna(s) detectada(s)
+2026-07-01 10:00:12,389 INFO   OCR estruturado completo: Página 2/28 processada
+2026-07-01 10:00:13,386 INFO Página 3: 7 coluna(s) detectada(s)
+2026-07-01 10:00:14,701 INFO OCR na página 3 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 10:00:15,405 INFO OCR na página 3 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 10:00:15,847 INFO OCR na página 3 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 10:00:17,145 INFO OCR na página 3 coluna 7 recuperado (resolução reduzida + psm 6)
+2026-07-01 10:00:17,147 INFO   OCR estruturado completo: Página 3/28 processada
+2026-07-01 10:00:18,157 INFO Página 4: 5 coluna(s) detectada(s)
+2026-07-01 10:00:22,188 INFO   OCR estruturado completo: Página 4/28 processada
+2026-07-01 10:00:23,193 INFO Página 5: 9 coluna(s) detectada(s)
+2026-07-01 10:00:24,763 INFO OCR na página 5 coluna 3 recuperado (psm 6)
+2026-07-01 10:00:25,655 INFO OCR na página 5 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 10:00:26,140 INFO OCR na página 5 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 10:00:26,701 INFO OCR na página 5 coluna 7 recuperado (binarização + psm 6)
+2026-07-01 10:00:27,279 INFO OCR na página 5 coluna 8 recuperado (binarização + psm 6)
+2026-07-01 10:00:28,639 WARNING Falha de OCR na página 5 coluna 9 após todas as estratégias
+2026-07-01 10:00:28,641 INFO   OCR estruturado completo: Página 5/28 processada
+2026-07-01 10:00:29,656 INFO Página 6: 5 coluna(s) detectada(s)
+2026-07-01 10:00:34,041 INFO OCR na página 6 coluna 4 recuperado (psm 6)
+2026-07-01 10:00:34,570 INFO OCR na página 6 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 10:00:34,572 INFO   OCR estruturado completo: Página 6/28 processada
+2026-07-01 10:00:35,579 INFO Página 7: 7 coluna(s) detectada(s)
+2026-07-01 10:00:37,054 INFO OCR na página 7 coluna 2 recuperado (psm 6)
+2026-07-01 10:00:38,069 INFO OCR na página 7 coluna 3 recuperado (resolução reduzida + psm 6)
+2026-07-01 10:00:40,324 INFO OCR na página 7 coluna 6 recuperado (psm 6)
+2026-07-01 10:00:40,894 INFO   OCR estruturado completo: Página 7/28 processada
+2026-07-01 10:00:41,894 INFO Página 8: 5 coluna(s) detectada(s)
+2026-07-01 10:00:44,044 INFO   OCR estruturado completo: Página 8/28 processada
+2026-07-01 10:00:45,035 INFO Página 9: 6 coluna(s) detectada(s)
+2026-07-01 10:00:45,562 INFO OCR na página 9 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:00:46,035 INFO OCR na página 9 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:00:47,776 INFO   OCR estruturado completo: Página 9/28 processada
+2026-07-01 10:00:48,775 INFO Página 10: 7 coluna(s) detectada(s)
+2026-07-01 10:00:49,450 INFO OCR na página 10 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:00:49,970 INFO OCR na página 10 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:00:50,516 INFO OCR na página 10 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 10:00:51,773 INFO OCR na página 10 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 10:00:52,705 INFO OCR na página 10 coluna 7 recuperado (psm 6)
+2026-07-01 10:00:52,708 INFO   OCR estruturado completo: Página 10/28 processada
+2026-07-01 10:00:53,705 INFO Página 11: 4 coluna(s) detectada(s)
+2026-07-01 10:00:54,294 INFO OCR na página 11 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:00:54,998 INFO OCR na página 11 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:00:55,829 INFO OCR na página 11 coluna 3 recuperado (psm 6)
+2026-07-01 10:00:57,031 INFO OCR na página 11 coluna 4 recuperado (binarização reduzida + psm 6)
+2026-07-01 10:00:57,033 INFO   OCR estruturado completo: Página 11/28 processada
+2026-07-01 10:00:58,029 INFO Página 12: 7 coluna(s) detectada(s)
+2026-07-01 10:00:58,959 INFO OCR na página 12 coluna 1 recuperado (psm 6)
+2026-07-01 10:01:02,061 INFO OCR na página 12 coluna 7 recuperado (resolução reduzida + psm 6)
+2026-07-01 10:01:02,064 INFO   OCR estruturado completo: Página 12/28 processada
+2026-07-01 10:01:03,053 INFO Página 13: 4 coluna(s) detectada(s)
+2026-07-01 10:01:03,797 INFO OCR na página 13 coluna 1 recuperado (psm 6)
+2026-07-01 10:01:04,426 INFO OCR na página 13 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:01:04,982 INFO OCR na página 13 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 10:01:05,281 INFO   OCR estruturado completo: Página 13/28 processada
+2026-07-01 10:01:07,032 INFO   OCR estruturado completo: Página 14/28 processada
+2026-07-01 10:01:08,029 INFO Página 15: 4 coluna(s) detectada(s)
+2026-07-01 10:01:08,931 INFO OCR na página 15 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:01:10,027 INFO OCR na página 15 coluna 3 recuperado (psm 6)
+2026-07-01 10:01:10,778 INFO OCR na página 15 coluna 4 recuperado (psm 6)
+2026-07-01 10:01:10,780 INFO   OCR estruturado completo: Página 15/28 processada
+2026-07-01 10:01:11,790 INFO Página 16: 5 coluna(s) detectada(s)
+2026-07-01 10:01:12,381 INFO OCR na página 16 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:01:13,378 INFO OCR na página 16 coluna 2 recuperado (psm 6)
+2026-07-01 10:01:14,652 INFO OCR na página 16 coluna 3 recuperado (psm 6)
+2026-07-01 10:01:15,575 INFO OCR na página 16 coluna 4 recuperado (psm 6)
+2026-07-01 10:01:16,060 INFO   OCR estruturado completo: Página 16/28 processada
+2026-07-01 10:01:17,054 INFO Página 17: 5 coluna(s) detectada(s)
+2026-07-01 10:01:17,659 INFO OCR na página 17 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:01:18,302 INFO OCR na página 17 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:01:18,807 INFO OCR na página 17 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 10:01:19,350 INFO OCR na página 17 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 10:01:19,781 INFO   OCR estruturado completo: Página 17/28 processada
+2026-07-01 10:01:20,769 INFO Página 18: 6 coluna(s) detectada(s)
+2026-07-01 10:01:22,591 INFO OCR na página 18 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 10:01:23,394 INFO OCR na página 18 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 10:01:23,916 INFO OCR na página 18 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 10:01:24,846 INFO OCR na página 18 coluna 6 recuperado (psm 6)
+2026-07-01 10:01:24,849 INFO   OCR estruturado completo: Página 18/28 processada
+2026-07-01 10:01:25,863 INFO Página 19: 5 coluna(s) detectada(s)
+2026-07-01 10:01:26,450 INFO OCR na página 19 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:01:27,123 INFO OCR na página 19 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:01:27,815 INFO OCR na página 19 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 10:01:28,338 INFO OCR na página 19 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 10:01:28,790 INFO OCR na página 19 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 10:01:28,792 INFO   OCR estruturado completo: Página 19/28 processada
+2026-07-01 10:01:29,792 INFO Página 20: 7 coluna(s) detectada(s)
+2026-07-01 10:01:30,614 INFO OCR na página 20 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:01:31,140 INFO OCR na página 20 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 10:01:31,711 INFO OCR na página 20 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 10:01:32,453 INFO OCR na página 20 coluna 5 recuperado (psm 6)
+2026-07-01 10:01:33,204 INFO OCR na página 20 coluna 6 recuperado (psm 6)
+2026-07-01 10:01:33,671 INFO OCR na página 20 coluna 7 recuperado (binarização + psm 6)
+2026-07-01 10:01:33,673 INFO   OCR estruturado completo: Página 20/28 processada
+2026-07-01 10:01:34,672 INFO Página 21: 4 coluna(s) detectada(s)
+2026-07-01 10:01:35,288 INFO OCR na página 21 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:01:38,778 INFO OCR na página 21 coluna 3 recuperado (psm 6)
+2026-07-01 10:01:39,349 INFO OCR na página 21 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 10:01:39,351 INFO   OCR estruturado completo: Página 21/28 processada
+2026-07-01 10:01:40,344 INFO Página 22: 5 coluna(s) detectada(s)
+2026-07-01 10:01:40,817 INFO OCR na página 22 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:01:42,284 INFO   OCR estruturado completo: Página 22/28 processada
+2026-07-01 10:01:43,282 INFO Página 23: 7 coluna(s) detectada(s)
+2026-07-01 10:01:43,803 INFO OCR na página 23 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:01:44,481 INFO OCR na página 23 coluna 2 recuperado (psm 6)
+2026-07-01 10:01:44,963 INFO OCR na página 23 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 10:01:46,939 INFO   OCR estruturado completo: Página 23/28 processada
+2026-07-01 10:01:47,939 INFO Página 24: 5 coluna(s) detectada(s)
+2026-07-01 10:01:49,058 INFO OCR na página 24 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:01:50,406 INFO   OCR estruturado completo: Página 24/28 processada
+2026-07-01 10:01:51,407 INFO Página 25: 5 coluna(s) detectada(s)
+2026-07-01 10:01:56,523 INFO OCR na página 25 coluna 5 recuperado (psm 6)
+2026-07-01 10:01:56,525 INFO   OCR estruturado completo: Página 25/28 processada
+2026-07-01 10:01:57,519 INFO Página 26: 3 coluna(s) detectada(s)
+2026-07-01 10:02:00,979 INFO   OCR estruturado completo: Página 26/28 processada
+2026-07-01 10:02:01,993 INFO Página 27: 5 coluna(s) detectada(s)
+2026-07-01 10:02:02,600 INFO OCR na página 27 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:02:03,968 INFO   OCR estruturado completo: Página 27/28 processada
+2026-07-01 10:02:04,974 INFO Página 28: 7 coluna(s) detectada(s)
+2026-07-01 10:02:08,265 INFO OCR na página 28 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 10:02:08,787 INFO OCR na página 28 coluna 7 recuperado (binarização + psm 6)
+2026-07-01 10:02:08,789 INFO   OCR estruturado completo: Página 28/28 processada
+2026-07-01 10:02:08,968 INFO [3/9] Concluído 30-05-2026: 28 págs, 27545 chars, avisos=1, 162s
+2026-07-01 10:02:08,968 INFO [4/9] OCR completo: 02-06-2026 (id=33448)
+2026-07-01 10:02:09,039 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-02-06-2026.pdf
+2026-07-01 10:02:09,039 INFO Extraindo texto de edicoes\2026\06\Jornal-O-Regional-02-06-2026.pdf
+2026-07-01 10:02:09,039 INFO OCR forçado ativado; aplicando Tesseract em todas as páginas.
+2026-07-01 10:02:22,258 INFO   OCR estruturado completo: Página 1/6 processada
+2026-07-01 10:02:23,263 INFO Página 2: 4 coluna(s) detectada(s)
+2026-07-01 10:02:38,918 INFO   OCR estruturado completo: Página 2/6 processada
+2026-07-01 10:02:39,921 INFO Página 3: 5 coluna(s) detectada(s)
+2026-07-01 10:02:50,723 INFO   OCR estruturado completo: Página 3/6 processada
+2026-07-01 10:02:51,716 INFO Página 4: 6 coluna(s) detectada(s)
+2026-07-01 10:02:58,595 INFO OCR na página 4 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 10:02:59,012 INFO OCR na página 4 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 10:02:59,014 INFO   OCR estruturado completo: Página 4/6 processada
+2026-07-01 10:03:00,024 INFO Página 5: 4 coluna(s) detectada(s)
+2026-07-01 10:03:00,593 INFO OCR na página 5 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:03:05,786 INFO   OCR estruturado completo: Página 5/6 processada
+2026-07-01 10:03:06,784 INFO Página 6: 7 coluna(s) detectada(s)
+2026-07-01 10:03:08,481 INFO OCR na página 6 coluna 3 recuperado (psm 6)
+2026-07-01 10:03:09,077 INFO OCR na página 6 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 10:03:11,564 INFO   OCR estruturado completo: Página 6/6 processada
+2026-07-01 10:03:11,650 INFO Chamando IA para refinar 1 publicacoes...
+2026-07-01 10:03:11,652 INFO Iniciando refinamento IA de 1 publicacoes (model=deepseek-v4-flash, max_tokens=16000, timeout=120s)
+2026-07-01 10:03:35,822 INFO Resposta IA: finish=stop, tokens=2664, content_len=570, content_preview={
+  "texto_corrigido": "PREFEITURA MUNICIPAL DE INAJÁ DECRETO Nº 06/2026, DE [DIA] DE JUNHO DE 2026. JOÃO EDER AGUILAR, PREFEITO MUNICIPAL DE INAJÁ, ...",
+  "orgao": "Prefeitura Municipal de Inajá",
+ 
+2026-07-01 10:03:35,824 INFO IA refinou 1 de 1 publicações (mantidas: 1)
+2026-07-01 10:03:35,824 INFO IA concluida. Publicacoes refinadas: 1
+2026-07-01 10:03:35,848 INFO [4/9] Concluído 02-06-2026: 6 págs, 32631 chars, avisos=0, 87s
+2026-07-01 10:03:35,848 INFO [5/9] OCR completo: 04-06-2026 (id=33447)
+2026-07-01 10:03:35,980 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-04-06-2026.pdf
+2026-07-01 10:03:35,980 INFO Extraindo texto de edicoes\2026\06\Jornal-O-Regional-04-06-2026.pdf
+2026-07-01 10:03:35,980 INFO OCR forçado ativado; aplicando Tesseract em todas as páginas.
+2026-07-01 10:03:55,825 INFO   OCR estruturado completo: Página 1/16 processada
+2026-07-01 10:03:56,814 INFO Página 2: 3 coluna(s) detectada(s)
+2026-07-01 10:04:05,872 INFO   OCR estruturado completo: Página 2/16 processada
+2026-07-01 10:04:17,237 INFO   OCR estruturado completo: Página 3/16 processada
+2026-07-01 10:04:18,240 INFO Página 4: 4 coluna(s) detectada(s)
+2026-07-01 10:04:23,737 INFO   OCR estruturado completo: Página 4/16 processada
+2026-07-01 10:04:24,756 INFO Página 5: 6 coluna(s) detectada(s)
+2026-07-01 10:04:33,376 INFO   OCR estruturado completo: Página 5/16 processada
+2026-07-01 10:04:34,369 INFO Página 6: 2 coluna(s) detectada(s)
+2026-07-01 10:04:45,413 INFO   OCR estruturado completo: Página 6/16 processada
+2026-07-01 10:04:46,405 INFO Página 7: 3 coluna(s) detectada(s)
+2026-07-01 10:04:54,120 INFO   OCR estruturado completo: Página 7/16 processada
+2026-07-01 10:04:55,117 INFO Página 8: 4 coluna(s) detectada(s)
+2026-07-01 10:05:09,909 INFO   OCR estruturado completo: Página 8/16 processada
+2026-07-01 10:05:10,906 INFO Página 9: 4 coluna(s) detectada(s)
+2026-07-01 10:05:11,681 INFO OCR na página 9 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:05:17,075 INFO   OCR estruturado completo: Página 9/16 processada
+2026-07-01 10:05:18,076 INFO Página 10: 5 coluna(s) detectada(s)
+2026-07-01 10:05:21,164 INFO OCR na página 10 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 10:05:21,707 INFO   OCR estruturado completo: Página 10/16 processada
+2026-07-01 10:05:22,709 INFO Página 11: 4 coluna(s) detectada(s)
+2026-07-01 10:05:25,036 INFO   OCR estruturado completo: Página 11/16 processada
+2026-07-01 10:05:26,044 INFO Página 12: 7 coluna(s) detectada(s)
+2026-07-01 10:05:31,452 INFO   OCR estruturado completo: Página 12/16 processada
+2026-07-01 10:05:32,460 INFO Página 13: 4 coluna(s) detectada(s)
+2026-07-01 10:05:44,279 INFO   OCR estruturado completo: Página 13/16 processada
+2026-07-01 10:05:45,270 INFO Página 14: 6 coluna(s) detectada(s)
+2026-07-01 10:05:45,810 INFO OCR na página 14 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:05:49,242 INFO OCR na página 14 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 10:05:49,506 INFO   OCR estruturado completo: Página 14/16 processada
+2026-07-01 10:05:50,494 INFO Página 15: 5 coluna(s) detectada(s)
+2026-07-01 10:05:51,124 INFO OCR na página 15 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:05:52,760 INFO   OCR estruturado completo: Página 15/16 processada
+2026-07-01 10:05:53,751 INFO Página 16: 4 coluna(s) detectada(s)
+2026-07-01 10:05:54,232 INFO OCR na página 16 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:05:58,715 INFO   OCR estruturado completo: Página 16/16 processada
+2026-07-01 10:05:58,923 INFO Chamando IA para refinar 1 publicacoes...
+2026-07-01 10:05:58,924 INFO Iniciando refinamento IA de 1 publicacoes (model=deepseek-v4-flash, max_tokens=16000, timeout=120s)
+2026-07-01 10:06:38,565 INFO Resposta IA: finish=stop, tokens=4804, content_len=1031, content_preview={
+  "texto_corrigido": "EXTRATO DE TERMO DE RESCISÃO E EXTRATO DE CONTRATO. O presente Termo de Rescisão, datado de 02 de junho de 2026, referente ao processo nº 197, e o Extrato de Contrato, da Prefe
+2026-07-01 10:06:38,570 INFO IA refinou 1 de 1 publicações (mantidas: 1)
+2026-07-01 10:06:38,570 INFO IA concluida. Publicacoes refinadas: 1
+2026-07-01 10:06:38,597 INFO [5/9] Concluído 04-06-2026: 16 págs, 71036 chars, avisos=0, 183s
+2026-07-01 10:06:38,597 INFO [6/9] OCR completo: 07-06-2026 (id=33446)
+2026-07-01 10:06:38,664 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-07-06-2026.pdf
+2026-07-01 10:06:38,664 INFO Extraindo texto de edicoes\2026\06\Jornal-O-Regional-07-06-2026.pdf
+2026-07-01 10:06:38,665 INFO OCR forçado ativado; aplicando Tesseract em todas as páginas.
+2026-07-01 10:06:48,793 INFO   OCR estruturado completo: Página 1/6 processada
+2026-07-01 10:06:49,792 INFO Página 2: 4 coluna(s) detectada(s)
+2026-07-01 10:07:04,599 INFO   OCR estruturado completo: Página 2/6 processada
+2026-07-01 10:07:05,610 INFO Página 3: 5 coluna(s) detectada(s)
+2026-07-01 10:07:08,790 INFO OCR na página 3 coluna 5 recuperado (resolução reduzida + psm 6)
+2026-07-01 10:07:08,793 INFO   OCR estruturado completo: Página 3/6 processada
+2026-07-01 10:07:09,796 INFO Página 4: 5 coluna(s) detectada(s)
+2026-07-01 10:07:12,101 INFO OCR na página 4 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 10:07:12,104 INFO   OCR estruturado completo: Página 4/6 processada
+2026-07-01 10:07:13,123 INFO Página 5: 5 coluna(s) detectada(s)
+2026-07-01 10:07:14,192 INFO OCR na página 5 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:07:16,611 INFO   OCR estruturado completo: Página 5/6 processada
+2026-07-01 10:07:17,613 INFO Página 6: 6 coluna(s) detectada(s)
+2026-07-01 10:07:19,158 INFO OCR na página 6 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 10:07:20,246 INFO OCR na página 6 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 10:07:20,249 INFO   OCR estruturado completo: Página 6/6 processada
+2026-07-01 10:07:20,308 INFO Chamando IA para refinar 1 publicacoes...
+2026-07-01 10:07:20,310 INFO Iniciando refinamento IA de 1 publicacoes (model=deepseek-v4-flash, max_tokens=16000, timeout=120s)
+2026-07-01 10:07:41,834 INFO Resposta IA: finish=stop, tokens=2814, content_len=1523, content_preview={
+  "texto_corrigido": "PREFEITURA MUNICIPAL DE INAJÁ - CNPJ 76.970.318/0001-67, Av. Antônio Veiga Martins, 86/83 - CEP 87670-000 - CENTRO. PROGRAMA MUNICIPAL DE APOIO TEMPORÁRIO À INCLUSÃO PRODUTIVA 
+2026-07-01 10:07:41,835 INFO IA refinou 1 de 1 publicações (mantidas: 1)
+2026-07-01 10:07:41,835 INFO IA concluida. Publicacoes refinadas: 1
+2026-07-01 10:07:41,850 INFO [6/9] Concluído 07-06-2026: 6 págs, 17569 chars, avisos=0, 63s
+2026-07-01 10:07:41,850 INFO [7/9] OCR completo: 09-06-2026 (id=33445)
+2026-07-01 10:07:41,910 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-09-06-2026.pdf
+2026-07-01 10:07:41,910 INFO Extraindo texto de edicoes\2026\06\Jornal-O-Regional-09-06-2026.pdf
+2026-07-01 10:07:41,910 INFO OCR forçado ativado; aplicando Tesseract em todas as páginas.
+2026-07-01 10:07:55,572 INFO   OCR estruturado completo: Página 1/6 processada
+2026-07-01 10:07:56,566 INFO Página 2: 3 coluna(s) detectada(s)
+2026-07-01 10:08:10,482 INFO   OCR estruturado completo: Página 2/6 processada
+2026-07-01 10:08:11,494 INFO Página 3: 4 coluna(s) detectada(s)
+2026-07-01 10:08:16,623 INFO   OCR estruturado completo: Página 3/6 processada
+2026-07-01 10:08:17,649 INFO Página 4: 6 coluna(s) detectada(s)
+2026-07-01 10:08:24,119 INFO   OCR estruturado completo: Página 4/6 processada
+2026-07-01 10:08:25,126 INFO Página 5: 3 coluna(s) detectada(s)
+2026-07-01 10:08:37,559 INFO   OCR estruturado completo: Página 5/6 processada
+2026-07-01 10:08:38,579 INFO Página 6: 5 coluna(s) detectada(s)
+2026-07-01 10:08:44,977 INFO   OCR estruturado completo: Página 6/6 processada
+2026-07-01 10:08:45,078 INFO Chamando IA para refinar 1 publicacoes...
+2026-07-01 10:08:45,080 INFO Iniciando refinamento IA de 1 publicacoes (model=deepseek-v4-flash, max_tokens=16000, timeout=120s)
+2026-07-01 10:09:05,849 INFO Resposta IA: finish=stop, tokens=2206, content_len=488, content_preview={
+  "texto_corrigido": "PREFEITURA MUNICIPAL DE INAJÁ PORTARIA Nº 051/2026, DE JUNHO DE 2026.",
+  "orgao": "Prefeitura Municipal de Inajá",
+  "tipo": "Portaria",
+  "numero": "051/2026",
+  "data_docume
+2026-07-01 10:09:05,850 INFO IA refinou 1 de 1 publicações (mantidas: 1)
+2026-07-01 10:09:05,850 INFO IA concluida. Publicacoes refinadas: 1
+2026-07-01 10:09:05,871 INFO [7/9] Concluído 09-06-2026: 6 págs, 33655 chars, avisos=0, 84s
+2026-07-01 10:09:05,871 INFO [8/9] OCR completo: 11-06-2026 (id=33444)
+2026-07-01 10:09:06,018 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-11-06-2026.pdf
+2026-07-01 10:09:06,019 INFO Extraindo texto de edicoes\2026\06\Jornal-O-Regional-11-06-2026.pdf
+2026-07-01 10:09:06,019 INFO OCR forçado ativado; aplicando Tesseract em todas as páginas.
+2026-07-01 10:09:26,319 INFO   OCR estruturado completo: Página 1/16 processada
+2026-07-01 10:09:27,310 INFO Página 2: 5 coluna(s) detectada(s)
+2026-07-01 10:09:40,491 INFO   OCR estruturado completo: Página 2/16 processada
+2026-07-01 10:09:41,486 INFO Página 3: 2 coluna(s) detectada(s)
+2026-07-01 10:09:49,893 INFO   OCR estruturado completo: Página 3/16 processada
+2026-07-01 10:09:50,896 INFO Página 4: 6 coluna(s) detectada(s)
+2026-07-01 10:09:59,007 INFO   OCR estruturado completo: Página 4/16 processada
+2026-07-01 10:10:00,013 INFO Página 5: 7 coluna(s) detectada(s)
+2026-07-01 10:10:00,478 INFO OCR na página 5 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:10:05,670 INFO   OCR estruturado completo: Página 5/16 processada
+2026-07-01 10:10:16,386 INFO   OCR estruturado completo: Página 6/16 processada
+2026-07-01 10:10:17,376 INFO Página 7: 5 coluna(s) detectada(s)
+2026-07-01 10:10:28,085 INFO   OCR estruturado completo: Página 7/16 processada
+2026-07-01 10:10:37,411 INFO   OCR estruturado completo: Página 8/16 processada
+2026-07-01 10:10:38,405 INFO Página 9: 3 coluna(s) detectada(s)
+2026-07-01 10:10:55,602 INFO   OCR estruturado completo: Página 9/16 processada
+2026-07-01 10:10:56,605 INFO Página 10: 6 coluna(s) detectada(s)
+2026-07-01 10:11:13,089 INFO   OCR estruturado completo: Página 10/16 processada
+2026-07-01 10:11:14,087 INFO Página 11: 7 coluna(s) detectada(s)
+2026-07-01 10:11:15,129 INFO OCR na página 11 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:11:16,492 INFO OCR na página 11 coluna 3 recuperado (binarização + psm 6)
+2026-07-01 10:11:17,779 INFO   OCR estruturado completo: Página 11/16 processada
+2026-07-01 10:11:18,777 INFO Página 12: 6 coluna(s) detectada(s)
+2026-07-01 10:11:36,960 INFO   OCR estruturado completo: Página 12/16 processada
+2026-07-01 10:11:37,958 INFO Página 13: 5 coluna(s) detectada(s)
+2026-07-01 10:11:38,573 INFO OCR na página 13 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:11:43,024 INFO   OCR estruturado completo: Página 13/16 processada
+2026-07-01 10:11:44,023 INFO Página 14: 6 coluna(s) detectada(s)
+2026-07-01 10:11:45,012 INFO OCR na página 14 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:11:49,611 INFO OCR na página 14 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 10:11:49,613 INFO   OCR estruturado completo: Página 14/16 processada
+2026-07-01 10:11:50,613 INFO Página 15: 5 coluna(s) detectada(s)
+2026-07-01 10:11:51,296 INFO OCR na página 15 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:12:00,953 INFO   OCR estruturado completo: Página 15/16 processada
+2026-07-01 10:12:01,941 INFO Página 16: 7 coluna(s) detectada(s)
+2026-07-01 10:12:02,438 INFO OCR na página 16 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:12:04,039 INFO OCR na página 16 coluna 4 recuperado (binarização + psm 6)
+2026-07-01 10:12:04,709 INFO OCR na página 16 coluna 5 recuperado (binarização + psm 6)
+2026-07-01 10:12:05,509 INFO OCR na página 16 coluna 6 recuperado (binarização + psm 6)
+2026-07-01 10:12:06,090 INFO OCR na página 16 coluna 7 recuperado (binarização + psm 6)
+2026-07-01 10:12:06,092 INFO   OCR estruturado completo: Página 16/16 processada
+2026-07-01 10:12:06,356 INFO [8/9] Concluído 11-06-2026: 16 págs, 89930 chars, avisos=0, 180s
+2026-07-01 10:12:06,356 INFO [9/9] OCR completo: 19-06-2026 (id=33440)
+2026-07-01 10:12:06,407 INFO PDF já existente, download pulado: edicoes\2026\06\Jornal-O-Regional-19-06-2026.pdf
+2026-07-01 10:12:06,407 INFO Extraindo texto de edicoes\2026\06\Jornal-O-Regional-19-06-2026.pdf
+2026-07-01 10:12:06,407 INFO OCR forçado ativado; aplicando Tesseract em todas as páginas.
+2026-07-01 10:12:15,802 INFO   OCR estruturado completo: Página 1/4 processada
+2026-07-01 10:12:16,798 INFO Página 2: 4 coluna(s) detectada(s)
+2026-07-01 10:12:25,204 INFO   OCR estruturado completo: Página 2/4 processada
+2026-07-01 10:12:26,238 INFO Página 3: 6 coluna(s) detectada(s)
+2026-07-01 10:12:28,495 INFO OCR na página 3 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:12:34,389 INFO   OCR estruturado completo: Página 3/4 processada
+2026-07-01 10:12:35,392 INFO Página 4: 7 coluna(s) detectada(s)
+2026-07-01 10:12:35,908 INFO OCR na página 4 coluna 1 recuperado (binarização + psm 6)
+2026-07-01 10:12:36,367 INFO OCR na página 4 coluna 2 recuperado (binarização + psm 6)
+2026-07-01 10:12:40,318 INFO   OCR estruturado completo: Página 4/4 processada
+2026-07-01 10:12:40,380 INFO [9/9] Concluído 19-06-2026: 4 págs, 17613 chars, avisos=0, 34s
+2026-07-01 10:12:40,485 INFO === FORCE OCR FINALIZADO: 9/9 ===

@@ -299,6 +299,7 @@ def dashboard(
             SELECT
               COUNT(*) AS total_edicoes,
               SUM(CASE WHEN tem_inaja = 1 THEN 1 ELSE 0 END) AS edicoes_inaja,
+              SUM(CASE WHEN ocr_processado = 0 THEN 1 ELSE 0 END) AS pendentes_ocr,
               (SELECT COUNT(*) FROM publicacoes) AS total_publicacoes,
               (SELECT COUNT(*) FROM mencoes) AS total_mencoes
             FROM edicoes
@@ -346,6 +347,8 @@ def dashboard(
         ).fetchall()
         atividade = _atividade_atual(conn)
 
+    timeline = database.get_timeline_por_mes()
+
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -354,6 +357,7 @@ def dashboard(
             "edicoes": edicoes,
             "publicacoes": publicacoes,
             "atividade": atividade,
+            "timeline": timeline,
             "q": q,
         },
     )
@@ -364,7 +368,10 @@ def dashboard(
 # ---------------------------------------------------------------------------
 
 @app.get("/edicoes-detectadas", response_class=HTMLResponse)
-def edicoes_detectadas(request: Request) -> HTMLResponse:
+def edicoes_detectadas(
+    request: Request,
+    mes: str = Query("", description="Filtrar por mês YYYY-MM"),
+) -> HTMLResponse:
     with _conn() as conn:
         stats = conn.execute(
             """
@@ -376,29 +383,34 @@ def edicoes_detectadas(request: Request) -> HTMLResponse:
             FROM edicoes
             """
         ).fetchone()
-        edicoes = conn.execute(
-            """
-            SELECT e.*,
-              (SELECT COUNT(*) FROM publicacoes p WHERE p.edicao_id = e.id) AS publicacoes_count,
-              (SELECT COUNT(*) FROM mencoes m WHERE m.edicao_id = e.id) AS mencoes_count,
-              (
-                SELECT j.status
-                FROM jobs j
-                WHERE j.edicao_id = e.id
-                ORDER BY j.id DESC
-                LIMIT 1
-              ) AS ultimo_status,
-              (
-                SELECT j.etapa
-                FROM jobs j
-                WHERE j.edicao_id = e.id
-                ORDER BY j.id DESC
-                LIMIT 1
-              ) AS ultima_etapa
-            FROM edicoes e
-            ORDER BY e.data_publicacao DESC, e.id DESC
-            """
-        ).fetchall()
+
+        if mes.strip():
+            edicoes = conn.execute(
+                """
+                SELECT e.*,
+                  (SELECT COUNT(*) FROM publicacoes p WHERE p.edicao_id = e.id) AS publicacoes_count,
+                  (SELECT COUNT(*) FROM mencoes m WHERE m.edicao_id = e.id) AS mencoes_count,
+                  (SELECT j.status FROM jobs j WHERE j.edicao_id = e.id ORDER BY j.id DESC LIMIT 1) AS ultimo_status,
+                  (SELECT j.etapa  FROM jobs j WHERE j.edicao_id = e.id ORDER BY j.id DESC LIMIT 1) AS ultima_etapa
+                FROM edicoes e
+                WHERE substr(e.data_publicacao, 1, 7) = ?
+                ORDER BY e.data_publicacao DESC, e.id DESC
+                """,
+                (mes.strip(),),
+            ).fetchall()
+        else:
+            edicoes = conn.execute(
+                """
+                SELECT e.*,
+                  (SELECT COUNT(*) FROM publicacoes p WHERE p.edicao_id = e.id) AS publicacoes_count,
+                  (SELECT COUNT(*) FROM mencoes m WHERE m.edicao_id = e.id) AS mencoes_count,
+                  (SELECT j.status FROM jobs j WHERE j.edicao_id = e.id ORDER BY j.id DESC LIMIT 1) AS ultimo_status,
+                  (SELECT j.etapa  FROM jobs j WHERE j.edicao_id = e.id ORDER BY j.id DESC LIMIT 1) AS ultima_etapa
+                FROM edicoes e
+                ORDER BY e.data_publicacao DESC, e.id DESC
+                """
+            ).fetchall()
+
         ultimo_detector = conn.execute(
             """
             SELECT *
@@ -441,6 +453,7 @@ def edicoes_detectadas(request: Request) -> HTMLResponse:
             "edicoes": edicoes,
             "grupos_mes": grupos_mes,
             "ultimo_detector": ultimo_detector,
+            "mes_filtro": mes.strip(),
         },
     )
 
