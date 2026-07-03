@@ -54,6 +54,20 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Monitor O Regional - Inajá", lifespan=lifespan)
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+# Autenticação HTTP Basic para toda a interface. Ativa quando WEBAPP_USER e
+# WEBAPP_PASSWORD estão configurados; caso contrário emite aviso no log.
+from auth_middleware import BasicAuthMiddleware
+
+app.add_middleware(BasicAuthMiddleware)
+if SETTINGS.webapp_user and SETTINGS.webapp_password:
+    logger.info("Autenticação da interface web ATIVADA (usuário: %s).", SETTINGS.webapp_user)
+else:
+    logger.warning(
+        "Autenticação da interface web DESATIVADA — defina WEBAPP_USER e "
+        "WEBAPP_PASSWORD no .env para proteger /admin e as rotas de ação."
+    )
+
 _detector_lock = threading.Lock()
 _analise_lock = threading.Lock()
 _scheduler_started = False

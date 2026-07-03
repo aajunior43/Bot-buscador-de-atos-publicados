@@ -3,7 +3,7 @@ pid: 7672
 cwd: "A:\Monitor de Atos\Bot-buscador-de-atos-publicados"
 command: "python \"A:\\Monitor de Atos\\Bot-buscador-de-atos-publicados\\_reprocess_hq.py\""
 started_at: 2026-07-01T13:19:57.949Z
-running_for_ms: 35934999 
+running_for_ms: 36205014 
 ---
 
 [1/3] Reprocessando 35509...

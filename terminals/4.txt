@@ -3,7 +3,7 @@ pid: 1068
 cwd: "A:\Monitor de Atos\Bot-buscador-de-atos-publicados"
 command: "python \"A:\\Monitor de Atos\\Bot-buscador-de-atos-publicados\\_reprocess_force_batch.py\""
 started_at: 2026-07-01T12:55:09.694Z
-running_for_ms: 37419983 
+running_for_ms: 37689991 
 ---
 2026-07-01 09:55:10,759 INFO [1/9] OCR completo: 22-05-2026 (id=35511)
 2026-07-01 09:55:10,896 INFO PDF já existente, download pulado: edicoes\2026\05\Jornal-O-Regional-22-05-2026.pdf

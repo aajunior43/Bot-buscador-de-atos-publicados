@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -7,6 +8,9 @@ from dataclasses import dataclass
 from config import SETTINGS, MUNICIPIOS_VIZINHOS
 from ocr_processor import PageText, TextBlock
 from ai_processor import refinar_publicacoes
+
+
+logger = logging.getLogger(__name__)
 
 
 BASE_TERMS = [

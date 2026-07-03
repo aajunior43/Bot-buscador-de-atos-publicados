@@ -6,6 +6,12 @@ edicoes/
 alertas/
 logs/
 jornal_monitor.db
+jornal_monitor.db-shm
+jornal_monitor.db-wal
 .pytest_cache/
 .mypy_cache/
 =
+ciclo
+polling
+terminals/
+agent-tools/

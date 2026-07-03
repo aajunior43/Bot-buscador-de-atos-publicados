@@ -69,6 +69,20 @@ def _validar_pdf(path: Path) -> None:
         header = fp.read(5)
     if header != b"%PDF-":
         raise ValueError(f"Arquivo baixado não parece PDF válido: {path}")
+    # Validação estrutural: tenta abrir o PDF para detectar corrupção (EOF inesperado,
+    # xref inválido etc.). Se falhar, remove o arquivo para forçar novo download.
+    try:
+        import pdfplumber
+        with pdfplumber.open(str(path)):
+            pass
+    except Exception as exc:
+        logger.warning(
+            "PDF corrompido detectado (%s); removendo para forçar novo download: %s",
+            exc,
+            path,
+        )
+        path.unlink(missing_ok=True)
+        raise ValueError(f"PDF corrompido (estrutura inválida): {path}") from exc
 
 
 def _resolver_pdf_url(url: str, session: requests.Session) -> str:

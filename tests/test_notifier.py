@@ -133,3 +133,58 @@ class TestNotificar:
             time.sleep(0.2)
             # Verifica se foi chamado
             mock_post.assert_called()
+
+
+class TestEscapeMarkdownV2:
+    def test_escapa_caracteres_especiais(self):
+        from notifier import _escape_mdv2
+        entrada = "Lei_1.000-A [teste] (x)!"
+        saida = _escape_mdv2(entrada)
+        # Cada caractere especial deve estar precedido de barra invertida
+        for ch in ["_", ".", "-", "[", "]", "(", ")", "!"]:
+            assert "\\" + ch in saida
+
+    def test_mensagem_com_titulo_especial_escapada(self):
+        from notifier import montar_mensagem
+        resultado = _make_resultado()
+        edicao = Edicao(
+            url="https://example.com/ed.pdf",
+            titulo="Edicao_25.06-2026 [oficial]",
+            data_publicacao="2026-06-25",
+        )
+        msg = montar_mensagem(resultado, edicao)
+        # Titulo deve aparecer escapado, sem sublinhado/ponto crus do titulo
+        assert r"Edicao\_25\.06\-2026" in msg
+
+
+class TestFallbackNotificacao:
+    def test_fallback_para_email_quando_telegram_falha(self, db, mock_settings):
+        import database
+        import notifier
+        database.init_db()
+        object.__setattr__(mock_settings, "telegram_bot_token", "token")
+        object.__setattr__(mock_settings, "telegram_chat_id", "123")
+        resultado = _make_resultado(encontrado=True)
+        with patch("notifier.SETTINGS", mock_settings), \
+             patch("notifier._enviar_telegram_com_retry", side_effect=RuntimeError("falha tg")), \
+             patch("notifier._enviar_email", return_value=True) as mock_email, \
+             patch("notifier._disparar_webhooks"):
+            notifier.notificar(resultado, _make_edicao())
+        mock_email.assert_called_once()
+        notifs = database.get_notificacoes()
+        assert notifs[0]["canal"] == "email"
+
+    def test_fallback_para_arquivo_quando_tudo_falha(self, db, mock_settings):
+        import database
+        import notifier
+        database.init_db()
+        object.__setattr__(mock_settings, "telegram_bot_token", "token")
+        object.__setattr__(mock_settings, "telegram_chat_id", "123")
+        resultado = _make_resultado(encontrado=True)
+        with patch("notifier.SETTINGS", mock_settings), \
+             patch("notifier._enviar_telegram_com_retry", side_effect=RuntimeError("falha tg")), \
+             patch("notifier._enviar_email", return_value=False), \
+             patch("notifier._disparar_webhooks"):
+            notifier.notificar(resultado, _make_edicao())
+        notifs = database.get_notificacoes()
+        assert notifs[0]["canal"] == "arquivo"

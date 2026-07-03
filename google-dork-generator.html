@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gerador de Google Dorks</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #171e2e;
+    --panel-2: #1e2740;
+    --border: #2a3552;
+    --text: #e6ebf5;
+    --muted: #8b96b0;
+    --accent: #4f8cff;
+    --accent-2: #6be3c0;
+    --danger: #ff6b6b;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  header {
+    padding: 28px 20px 20px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0 0 6px; font-size: 1.6rem; }
+  header p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+  .wrap {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+  }
+  .card h2 { margin: 0 0 14px; font-size: 1.05rem; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .field label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .field label .op { color: var(--accent-2); font-family: monospace; }
+  .field input, .field select {
+    width: 100%;
+    padding: 9px 10px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.9rem;
+  }
+  .field input:focus, .field select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .output {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 0.95rem;
+    word-break: break-all;
+    min-height: 48px;
+    color: var(--accent-2);
+  }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  button {
+    padding: 9px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #3d78e6; }
+  button.ghost { background: transparent; }
+  .templates { display: flex; flex-wrap: wrap; gap: 8px; }
+  .templates button { font-size: 0.82rem; }
+  .note {
+    font-size: 0.8rem;
+    color: var(--muted);
+    background: rgba(255,107,107,0.08);
+    border: 1px solid rgba(255,107,107,0.25);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-top: 4px;
+  }
+  .note b { color: var(--danger); }
+  footer { text-align: center; padding: 18px; color: var(--muted); font-size: 0.8rem; }
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--accent-2);
+    color: #0f1420;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    opacity: 0;
+    transition: all 0.25s;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔍 Gerador de Google Dorks</h1>
+  <p>Monte buscas avançadas com operadores do Google para pesquisa e OSINT</p>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Modelos rápidos</h2>
+    <div class="templates" id="templates"></div>
+  </div>
+
+  <div class="card">
+    <h2>Parâmetros da busca</h2>
+    <div class="grid" id="fields">
+      <div class="field">
+        <label>Termos exatos <span class="op">"..."</span></label>
+        <input type="text" id="exact" placeholder="ex.: relatório confidencial">
+      </div>
+      <div class="field">
+        <label>Palavras-chave (texto livre)</label>
+        <input type="text" id="keywords" placeholder="ex.: login admin">
+      </div>
+      <div class="field">
+        <label>Site / domínio <span class="op">site:</span></label>
+        <input type="text" id="site" placeholder="ex.: exemplo.gov.br">
+      </div>
+      <div class="field">
+        <label>Tipo de arquivo <span class="op">filetype:</span></label>
+        <select id="filetype">
+          <option value="">— qualquer —</option>
+          <option value="pdf">pdf</option>
+          <option value="doc">doc</option>
+          <option value="docx">docx</option>
+          <option value="xls">xls</option>
+          <option value="xlsx">xlsx</option>
+          <option value="csv">csv</option>
+          <option value="txt">txt</option>
+          <option value="log">log</option>
+          <option value="sql">sql</option>
+          <option value="env">env</option>
+          <option value="json">json</option>
+          <option value="xml">xml</option>
+          <option value="conf">conf</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>No título <span class="op">intitle:</span></label>
+        <input type="text" id="intitle" placeholder="ex.: index of">
+      </div>
+      <div class="field">
+        <label>Na URL <span class="op">inurl:</span></label>
+        <input type="text" id="inurl" placeholder="ex.: admin/login">
+      </div>
+      <div class="field">
+        <label>No texto <span class="op">intext:</span></label>
+        <input type="text" id="intext" placeholder="ex.: senha">
+      </div>
+      <div class="field">
+        <label>Excluir termo <span class="op">-</span></label>
+        <input type="text" id="exclude" placeholder="ex.: exemplo">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="ghost" id="clearBtn">Limpar tudo</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Dork gerado</h2>
+    <div class="output" id="output">—</div>
+    <div class="actions">
+      <button class="primary" id="copyBtn">Copiar</button>
+      <button id="searchBtn">Abrir no Google</button>
+    </div>
+    <p class="note"><b>Uso responsável:</b> esta ferramenta apenas monta URLs de busca pública do Google. Use para pesquisa, aprendizado e testes em sistemas que você tem autorização para avaliar. Não use para acessar dados de terceiros sem permissão.</p>
+  </div>
+</div>
+
+<footer>Gerador de Google Dorks · funciona 100% no navegador, sem enviar dados a lugar nenhum</footer>
+
+<div class="toast" id="toast">Copiado!</div>
+
+<script>
+  const els = {
+    exact: document.getElementById('exact'),
+    keywords: document.getElementById('keywords'),
+    site: document.getElementById('site'),
+    filetype: document.getElementById('filetype'),
+    intitle: document.getElementById('intitle'),
+    inurl: document.getElementById('inurl'),
+    intext: document.getElementById('intext'),
+    exclude: document.getElementById('exclude'),
+  };
+  const output = document.getElementById('output');
+
+  // wraps a value in quotes if it contains spaces
+  function q(v) {
+    v = v.trim();
+    if (!v) return '';
+    return /\s/.test(v) ? '"' + v + '"' : v;
+  }
+
+  function buildDork() {
+    const parts = [];
+    if (els.exact.value.trim()) parts.push('"' + els.exact.value.trim() + '"');
+    if (els.keywords.value.trim()) parts.push(els.keywords.value.trim());
+    if (els.site.value.trim()) parts.push('site:' + els.site.value.trim());
+    if (els.filetype.value) parts.push('filetype:' + els.filetype.value);
+    if (els.intitle.value.trim()) parts.push('intitle:' + q(els.intitle.value));
+    if (els.inurl.value.trim()) parts.push('inurl:' + q(els.inurl.value));
+    if (els.intext.value.trim()) parts.push('intext:' + q(els.intext.value));
+    if (els.exclude.value.trim()) {
+      els.exclude.value.trim().split(/\s+/).forEach(t => parts.push('-' + t));
+    }
+    return parts.join(' ');
+  }
+
+  function refresh() {
+    const dork = buildDork();
+    output.textContent = dork || '—';
+    return dork;
+  }
+
+  Object.values(els).forEach(el => el.addEventListener('input', refresh));
+
+  // Templates
+  const templates = [
+    { name: 'Arquivos expostos', fn: () => set({ intitle: 'index of', keywords: 'backup OR config' }) },
+    { name: 'Documentos PDF de um site', fn: () => set({ filetype: 'pdf', site: 'exemplo.gov.br' }) },
+    { name: 'Páginas de login', fn: () => set({ inurl: 'login', intitle: 'admin' }) },
+    { name: 'Planilhas públicas', fn: () => set({ filetype: 'xlsx', intext: 'email' }) },
+    { name: 'Arquivos de log', fn: () => set({ filetype: 'log', keywords: 'error OR password' }) },
+    { name: 'Câmeras / painéis', fn: () => set({ inurl: 'view/index.shtml' }) },
+    { name: 'Bancos SQL expostos', fn: () => set({ filetype: 'sql', intext: 'INSERT INTO' }) },
+    { name: 'Diretórios abertos', fn: () => set({ intitle: 'index of', inurl: 'ftp' }) },
+  ];
+
+  function set(values) {
+    clearAll();
+    for (const [k, v] of Object.entries(values)) {
+      if (els[k]) els[k].value = v;
+    }
+    refresh();
+  }
+
+  function clearAll() {
+    Object.values(els).forEach(el => el.value = '');
+    refresh();
+  }
+
+  const tplWrap = document.getElementById('templates');
+  templates.forEach(t => {
+    const b = document.createElement('button');
+    b.textContent = t.name;
+    b.onclick = t.fn;
+    tplWrap.appendChild(b);
+  });
+
+  // Actions
+  document.getElementById('clearBtn').onclick = clearAll;
+
+  const toast = document.getElementById('toast');
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1500);
+  }
+
+  document.getElementById('copyBtn').onclick = async () => {
+    const dork = refresh();
+    if (!dork) return showToast('Nada para copiar');
+    try {
+      await navigator.clipboard.writeText(dork);
+      showToast('Copiado!');
+    } catch {
+      showToast('Não foi possível copiar');
+    }
+  };
+
+  document.getElementById('searchBtn').onclick = () => {
+    const dork = refresh();
+    if (!dork) return showToast('Preencha algum campo');
+    window.open('https://www.google.com/search?q=' + encodeURIComponent(dork), '_blank');
+  };
+
+  refresh();
+</script>
+</body>
+</html>

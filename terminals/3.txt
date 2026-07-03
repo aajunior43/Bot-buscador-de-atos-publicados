@@ -3,7 +3,7 @@ pid: 1492
 cwd: "A:\Monitor de Atos\Bot-buscador-de-atos-publicados"
 command: "python \"A:\\Monitor de Atos\\Bot-buscador-de-atos-publicados\\_reprocess_weak_batch.py\""
 started_at: 2026-07-01T12:30:55.717Z
-running_for_ms: 38875007 
+running_for_ms: 39145009 
 ---
 2026-07-01 09:30:57,254 INFO [1/13] Iniciando 15-05-2026 (id=35515)
 2026-07-01 09:30:57,255 INFO Cache removido: edicoes\2026\05\Jornal-O-Regional-15-05-2026.ocr.json

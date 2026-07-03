@@ -60,6 +60,10 @@ def mock_settings(tmp_path):
     object.__setattr__(settings, "smtp_from", "")
     object.__setattr__(settings, "absence_alert_days", 30)
     object.__setattr__(settings, "webhook_url", "")
+    object.__setattr__(settings, "max_edicoes_por_ciclo", 20)
+    object.__setattr__(settings, "notify_email_always", False)
+    object.__setattr__(settings, "webapp_user", "")
+    object.__setattr__(settings, "webapp_password", "")
     for pasta in (settings.download_dir, settings.alert_dir, settings.log_dir):
         pasta.mkdir(parents=True, exist_ok=True)
 

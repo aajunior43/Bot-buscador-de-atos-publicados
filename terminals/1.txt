@@ -3,7 +3,7 @@ pid: 7964
 cwd: "A:\Monitor de Atos\Bot-buscador-de-atos-publicados"
 command: "Set-Location \"A:\\Monitor de Atos\\Bot-buscador-de-atos-publicados\"; python -m pytest tests -q"
 started_at: 2026-07-01T12:04:23.696Z
-running_for_ms: 40455005 
+running_for_ms: 40725000 
 ---
 ........................................................................ [ 61%]
 .............................................                            [100%]

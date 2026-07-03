@@ -3,7 +3,7 @@ pid: 4944
 cwd: "A:\Monitor de Atos\Bot-buscador-de-atos-publicados"
 command: "python \"A:\\Monitor de Atos\\Bot-buscador-de-atos-publicados\\_reprocess_33435.py\""
 started_at: 2026-07-01T12:25:42.384Z
-running_for_ms: 39190002 
+running_for_ms: 39459991 
 ---
 removido: edicoes\2026\06\Jornal-O-Regional-30-06-2026-.txt
 reprocessando edição 33435...
