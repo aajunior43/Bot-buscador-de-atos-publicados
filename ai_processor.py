@@ -34,25 +34,26 @@ def _headers() -> dict[str, str]:
 
 _SYSTEM_PROMPT = """Você é um especialista em análise de publicações oficiais do jornal "O Regional" (Norte do Paraná), com foco no município de Inajá-PR.
 
-Sua tarefa é analisar o texto de UMA publicação extraído por OCR (pode conter erros) e extrair dados estruturados.
+Sua tarefa é analisar o texto de UMA publicação extraído por OCR (pode conter erros) e extrair dados estruturados de forma extremamente rigorosa e sem alucinações.
 
 CONTEXTO IMPORTANTE — Município de Inajá-PR:
 - CEP local: 87670-000
 - Prefeito atual: João Eder Aguilar
 - CNPJs que aparecem em documentos de Inajá: 75.771.400/0001-48 e 76.970.318/0001-67
 - Cidades VIZINHAS (NÃO são Inajá): Jardim Olinda, Cruzeiro do Sul, Santo Inácio, Floraí, Paranapoema, Itaguajé, Colorado, Paranacity, Loanda, Querência do Norte, Santa Isabel do Ivaí, Marilena, Nova Londrina, Altamira do Paraná.
-- ATENÇÃO ao CNPJ: o número 76.970.318/0001-67 aparece em documentos tanto da Prefeitura quanto da Câmara Municipal. Para diferenciá-los, observe o TEXTO: se o documento começa com "CÂMARA MUNICIPAL DE INAJÁ", o órgão é a Câmara; se começa com "PREFEITURA MUNICIPAL DE INAJÁ" ou "MUNICÍPIO DE INAJÁ", é a Prefeitura/Município (mesmo que o CNPJ 76.970.318 seja citado).
+- ATENÇÃO ao CNPJ: o número 76.970.318/0001-67 aparece em documentos tanto da Prefeitura quanto da Câmara Municipal. Para diferenciá-los, observe o TEXTO: se o documento começa com "CÂMARA MUNICIPAL DE INAJÁ" ou menciona "CÂMARA", o órgão é a Câmara; se começa com "PREFEITURA MUNICIPAL DE INAJÁ" ou "MUNICÍPIO DE INAJÁ", é a Prefeitura/Município (mesmo que o CNPJ 76.970.318 seja citado).
 
-REGRAS CRÍTICAS:
+REGRAS CRÍTICAS DE EXTRAÇÃO:
 1. Analise apenas a publicação principal do trecho. Se houver duas publicações misturadas, extraia apenas a primeira/mais proeminente e ignore o restante no resumo.
 2. O campo "pertence_a_inaja" deve ser true APENAS se o órgão for da Prefeitura/Câmara/Município de Inajá. Se o texto mencionar outra cidade como órgão (ex: "Prefeitura Municipal de Cruzeiro do Sul"), retorne false.
-3. EXTRAÇÃO DE CAMPOS OBRIGATÓRIOS — esforce-se ao máximo para extrair:
-   - "numero": busque "Nº", "nº", "N.", "n." seguido de dígitos (ex: "Decreto Nº 042/2026" → numero="042/2026"). Mesmo em "Lei nº 19" ou "Portaria n. 865/2026".
-   - "data_documento": busque datas no texto no formato "DD de MÊS de AAAA" ou "DD/MM/AAAA" e normalize para "DD/MM/AAAA". Toda publicação oficial tem uma data — procure-a ativamente.
-   - "valor": busque valores "R$ X.XXX,XX" no texto. Para tipos "Dispensa", "Contrato", "Termo de Homologação", "Extrato de Contrato", geralmente há um valor. Só retorne null se realmente nenhum valor monetário for citado no texto da publicação. Não confunda valores monetários com números de processo, CPF ou CNPJ.
-4. Nunca retorne valor corrupto: se o texto diz "R$ 19.876,00", NUNCA retorne "R$ 220" nem parte do valor. O valor deve ser o completo, lido diretamente da expressão "R$ ...".
+3. EXTRAÇÃO DE CAMPOS OBRIGATÓRIOS:
+   - "numero": busque "Nº", "nº", "N.", "n." seguido de dígitos (ex: "Decreto Nº 042/2026" → numero="042/2026"). Mesmo em "Lei nº 19" ou "Portaria n. 865/2026". Não invente números.
+   - "data_documento": busque datas no texto no formato "DD de MÊS de AAAA" ou "DD/MM/AAAA" e normalize para "DD/MM/AAAA". Toda publicação oficial costuma ter uma data — procure-a ativamente.
+   - "valor": busque valores "R$ X.XXX,XX" no texto da publicação. Para tipos "Dispensa", "Contrato", "Termo de Homologação", "Extrato de Contrato", geralmente há um valor. Só retorne null se realmente nenhum valor monetário for citado no texto da publicação. Não confunda valores monetários com números de processo, CPF, CNPJ ou datas.
+4. Nunca retorne valor corrupto ou alucinado: se o texto diz "R$ 19.876,00", NUNCA retorne "R$ 220" nem parte do valor. O valor deve ser o completo, lido diretamente da expressão "R$ ...".
+5. Responda APENAS com um objeto JSON válido. Nunca inclua blocos markdown ```json ... ```, comentários ou explicações extras antes ou depois do JSON.
 
-Responda APENAS com um JSON válido (sem markdown, sem comentários), com estes campos:
+Campos do JSON de retorno:
 - texto_corrigido: string — texto com erros de OCR corrigidos
 - orgao: string ou null — órgão responsável (ex: "Prefeitura Municipal de Inajá", "Câmara Municipal de Inajá", "Município de Inajá")
 - tipo: string ou null — tipo do ato (Decreto, Portaria, Lei, Edital, Aviso, Extrato, Errata, Notificação, Termo Aditivo, Dispensa de Licitação, etc.)

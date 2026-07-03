@@ -88,6 +88,12 @@ class Settings:
     poppler_path: str = os.getenv("POPPLER_PATH", "").strip()
     # Tesseract OCR (para pytesseract no Windows)
     tesseract_path: str = os.getenv("TESSERACT_PATH", "").strip()
+    # Limite máximo de workers para processamento paralelo do OCR (padrão: metade dos cores disponíveis, min 1)
+    ocr_max_workers: int = _int_env("OCR_MAX_WORKERS", max(1, (os.cpu_count() or 2) // 2))
+    # Autenticação da interface web (HTTP Basic). Se ambos vazios, o webapp
+    # fica aberto e um aviso é emitido no log de inicialização.
+    webapp_user: str = os.getenv("WEBAPP_USER", "").strip()
+    webapp_password: str = os.getenv("WEBAPP_PASSWORD", "").strip()
 
 
     def __post_init__(self) -> None:

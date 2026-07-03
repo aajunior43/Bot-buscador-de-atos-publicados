@@ -173,3 +173,22 @@ class TestAgruparDataTesseract:
         assert len(result) == 1
         bbox = result[0].bbox
         assert bbox[0] == 510  # left + x_offset
+
+
+# ── _detectar_faixas_colunas ──────────────────────────────
+class TestDetectarFaixasColunas:
+    def test_detecta_sem_numpy_ou_com_numpy(self):
+        # Cria imagem com duas colunas brancas nítidas separadas por uma faixa escura
+        img = Image.new("RGB", (800, 600), color=(0, 0, 0))
+        # Desenha duas colunas brancas
+        for x in range(10, 350):
+            for y in range(600):
+                img.putpixel((x, y), (255, 255, 255))
+        for x in range(450, 790):
+            for y in range(600):
+                img.putpixel((x, y), (255, 255, 255))
+        
+        from ocr_processor import _detectar_faixas_colunas
+        faixas = _detectar_faixas_colunas(img)
+        # Deve detectar duas faixas distintas (colunas)
+        assert len(faixas) >= 1

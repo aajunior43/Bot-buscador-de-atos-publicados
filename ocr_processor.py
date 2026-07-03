@@ -17,7 +17,7 @@ import os
 os.environ["OMP_THREAD_LIMIT"] = "1"
 
 logger = logging.getLogger(__name__)
-_WORKERS = 1
+_WORKERS = SETTINGS.ocr_max_workers
 _TESSERACT_OEM = "--oem 1"
 
 
@@ -210,16 +210,21 @@ def _detectar_faixas_colunas(imagem: Image.Image) -> list[tuple[int, int]]:
         try:
             import numpy as np
             arr = np.array(img_analise)          # shape: (altura, largura)
-            profile = arr.mean(axis=0).tolist()  # média por coluna — muito mais rápido
+            profile = arr.mean(axis=0)           # média por coluna
+            
+            # Convolução 1D simples para suavização rápida
+            kernel = np.ones(7) / 7
+            # padding para manter o mesmo tamanho
+            suave_arr = np.convolve(profile, kernel, mode='same')
+            suave = suave_arr.tolist()
         except ImportError:
             profile = [sum(img_analise.getpixel((x, y)) for y in range(altura)) / altura for x in range(largura)]
-
-        janela = 3
-        suave = []
-        for i in range(largura):
-            start = max(0, i - janela)
-            end = min(largura, i + janela + 1)
-            suave.append(sum(profile[start:end]) / (end - start))
+            janela = 3
+            suave = []
+            for i in range(largura):
+                start = max(0, i - janela)
+                end = min(largura, i + janela + 1)
+                suave.append(sum(profile[start:end]) / (end - start))
 
         threshold_branco = 220
         largura_min_gutter = max(4, largura // 50)
@@ -626,8 +631,8 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
         Image.LANCZOS,
     )
 
-    timeout_curto = max(30, SETTINGS.ocr_fast_timeout_seconds // 2)
     timeout_base = SETTINGS.ocr_fast_timeout_seconds
+    timeout_curto = timeout_base  # usa o mesmo timeout na 1ª tentativa para evitar falhas prematuras em páginas densas
     timeout_longo = max(90, timeout_base * 2)
 
     tentativas: list[tuple[str, Image.Image, int, int]] = [
@@ -799,7 +804,7 @@ def _carregar_cache_ocr(pdf_path: Path) -> OCRResult | None:
             )
         
         return OCRResult(
-            texto_completo=data["texto_completo"],
+            texto_completo=data.get("texto_completo", ""),
             paginas=paginas,
             texto_path=pdf_path.with_suffix(".txt"),
             avisos=data.get("avisos", [])
@@ -810,34 +815,85 @@ def _carregar_cache_ocr(pdf_path: Path) -> OCRResult | None:
 
 
 def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path, on_progress=None) -> OCRResult:
-    if not SETTINGS.force_ocr:
-        cache = _carregar_cache_ocr(pdf_path)
-        if cache:
-            logger.info("OCR recuperado do cache com sucesso para %s", pdf_path)
-            return cache
+    cache = _carregar_cache_ocr(pdf_path)
+    if cache and not SETTINGS.force_ocr:
+        logger.info("OCR recuperado do cache com sucesso para %s", pdf_path)
+        return cache
 
     logger.info("Executando OCR rápido com estruturação só em páginas candidatas: %s", pdf_path)
     avisos: list[str] = []
-    paginas = _texto_ocr_rapido_pdf(pdf_path, avisos, on_progress=on_progress)
+    
+    # Se houver um cache parcial (ex: com parte das páginas feitas e salvas no .ocr.json), podemos reaproveitar
+    paginas_prontas = {}
+    if cache:
+        paginas_prontas = {p.pagina: p for p in cache.paginas if p.texto.strip()}
+
+    # Carrega imagens
+    imagens = convert_from_path(
+        str(pdf_path),
+        dpi=SETTINGS.ocr_fast_dpi,
+        poppler_path=SETTINGS.poppler_path or None,
+        thread_count=min(4, os.cpu_count() or 1),
+    )
+    
+    paginas: list[PageText | None] = [None] * len(imagens)
+    total = len(imagens)
+    processadas = 0
+    import threading
+    lock = threading.Lock()
+
+    # Filtra quais imagens realmente precisam de processamento rápido
+    candidatas_ocr = []
+    for idx, imagem in enumerate(imagens, start=1):
+        if idx in paginas_prontas:
+            paginas[idx - 1] = paginas_prontas[idx - 1]
+            processadas += 1
+        else:
+            candidatas_ocr.append((idx, imagem))
+
+    if candidatas_ocr:
+        with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+            futures = {
+                pool.submit(_ocr_rapido_pagina, idx, imagem, avisos): idx
+                for idx, imagem in candidatas_ocr
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                paginas[idx - 1] = future.result()
+                with lock:
+                    processadas += 1
+                    if on_progress:
+                        on_progress(f"OCR rápido: Página {processadas}/{total} processada")
+    
+    # Filtra páginas candidatas a OCR estruturado
     paginas_candidatas = [
-        pagina.pagina for pagina in paginas if _texto_tem_candidato_inaja(pagina.texto)
+        pagina.pagina for pagina in paginas if pagina is not None and _texto_tem_candidato_inaja(pagina.texto)
     ]
+    
+    # Se a página já estava estruturada (ex: no cache como ocr-hq ou ocr), não precisa rodar de novo
+    paginas_candidatas = [
+        p for p in paginas_candidatas 
+        if paginas[p - 1] is None or paginas[p - 1].metodo not in ("ocr", "ocr-hq", "ocr-hq-string")
+    ]
+
     if paginas_candidatas:
         logger.info("Páginas candidatas para OCR estruturado: %s", paginas_candidatas)
         if on_progress:
             on_progress(f"Encontradas {len(paginas_candidatas)} páginas candidatas a OCR estruturado")
         estruturadas = _texto_ocr_paginas(pdf_path, paginas_candidatas, avisos, on_progress=on_progress)
-        paginas = [estruturadas.get(pagina.pagina, pagina) for pagina in paginas]
+        paginas = [estruturadas.get(pagina.pagina, pagina) if pagina is not None else None for pagina in paginas]
+
+    paginas_finais = [p for p in paginas if p is not None]
 
     texto_completo = "\n\n".join(
         f"--- Página {pagina.pagina} ({pagina.metodo}) ---\n{pagina.texto}"
-        for pagina in paginas
+        for pagina in paginas_finais
     )
     texto_path = pdf_path.with_suffix(".txt")
     texto_path.write_text(texto_completo, encoding="utf-8")
     result = OCRResult(
         texto_completo=texto_completo,
-        paginas=paginas,
+        paginas=paginas_finais,
         texto_path=texto_path,
         avisos=avisos,
     )
