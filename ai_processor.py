@@ -56,7 +56,7 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
 Campos do JSON de retorno:
 - texto_corrigido: string — texto com erros de OCR corrigidos
 - orgao: string ou null — órgão responsável (ex: "Prefeitura Municipal de Inajá", "Câmara Municipal de Inajá", "Município de Inajá")
-- tipo: string ou null — tipo do ato (Decreto, Portaria, Lei, Edital, Aviso, Extrato, Errata, Notificação, Termo Aditivo, Dispensa de Licitação, etc.)
+- tipo: string ou null — tipo do ato (Decreto, Portaria, Lei, Edital, Aviso, Extrato, Errata, Notificação, Termo Aditivo, Dispensa de Licitação, Demonstrativo, Relatório Fiscal, RGF, RREO, Balanço, etc.)
 - numero: string ou null — número do documento (ex: "042/2026")
 - data_documento: string ou null — data do documento no formato DD/MM/AAAA
 - assunto: string ou null — assunto/objeto em 1-2 frases

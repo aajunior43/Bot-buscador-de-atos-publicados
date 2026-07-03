@@ -341,3 +341,26 @@ class TestMencaoGenericaBoundary:
         idx = texto.find("Inaj")
         fim = idx + len("Inajá")
         assert _mencao_generica_sem_palavra_isolada(texto, idx, fim) is False
+
+
+# ── Detecção LRF ───────────────────────────────────────────
+class TestLrfDetection:
+    def test_relatorio_lrf_inaja_e_detectado(self, db):
+        import database
+        from detector import _publicacao_do_segmento
+        from ocr_processor import TextBlock
+        database.init_db()
+        bloco = TextBlock(
+            pagina=12,
+            bloco=1,
+            texto=(
+                "MUNICIPIO DE INAJÁ - PR\n"
+                "RELATÓRIO RESUMIDO DA EXECUÇÃO ORÇAMENTÁRIA\n"
+                "DEMONSTRATIVO DOS RESULTADOS PRIMÁRIO E NOMINAL\n"
+                "Exercício de 2025"
+            ),
+        )
+        pub = _publicacao_do_segmento(bloco, {"Inajá"})
+        assert pub is not None
+        assert pub["categoria"] == "publicacao_oficial"
+        assert "INAJÁ" in pub["orgao"].upper()

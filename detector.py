@@ -53,6 +53,11 @@ TIPOS_ATO = [
     "RESOLUÇÃO",
     "ERRATA",
     "NOTIFICAÇÃO",
+    "DEMONSTRATIVO",
+    "RELATÓRIO",
+    "BALANÇO",
+    "RGF",
+    "RREO",
 ]
 TIPO_ATO_RE = re.compile(
     r"\b("
@@ -548,21 +553,27 @@ def _publicacao_do_segmento(segmento: TextBlock, termos: set[str]) -> dict | Non
     orgao = _extrair_orgao(segmento.texto)
     tipo, numero = _extrair_tipo_numero(segmento.texto)
     tem_cabecalho = _tem_cabecalho_ato(segmento.texto)
+    
+    # Se o segmento pertencer a Inajá (por órgão ou menção direta) e contiver palavras indicativas de relatório orçamentário/balanço
+    texto_clean = _sem_acentos(segmento.texto).casefold()
+    eh_lrf = any(t in texto_clean for t in ["relatorio", "demonstrativo", "balanco", "lrf", "rgf", "rreo"])
+    per_inaja = orgao is not None or any(t in termos for t in termos)
+    
     if not (orgao or termos):
         return None
     if _parece_fragmento_continuacao(segmento.texto, tipo, orgao):
         return None
-    if categoria == "publicacao_oficial" and not (orgao or tipo):
+    if categoria == "publicacao_oficial" and not (orgao or tipo or eh_lrf):
         return None
-    if orgao and not tipo and not LINHA_ASSUNTO_RE.search(segmento.texto):
+    if orgao and not tipo and not LINHA_ASSUNTO_RE.search(segmento.texto) and not eh_lrf:
         assunto_tentativo = _extrair_assunto(segmento.texto)
         if not assunto_tentativo or _parece_linha_de_rodape_ou_assinatura(assunto_tentativo):
             return None
-    if categoria == "publicacao_oficial" and orgao and not (tipo or LINHA_ASSUNTO_RE.search(segmento.texto)):
+    if categoria == "publicacao_oficial" and orgao and not (tipo or LINHA_ASSUNTO_RE.search(segmento.texto) or eh_lrf):
         return None
-    if categoria == "materia_jornalistica" and not (orgao or tipo or tem_cabecalho):
+    if categoria == "materia_jornalistica" and not (orgao or tipo or tem_cabecalho or eh_lrf):
         return None
-    if categoria == "materia_jornalistica" and (tipo or tem_cabecalho):
+    if categoria == "materia_jornalistica" and (tipo or tem_cabecalho or eh_lrf):
         categoria = "publicacao_oficial"
 
     trecho = _corrigir_ocr_basico(segmento.texto)
