@@ -81,6 +81,16 @@ class TestExtrairOrgao:
         texto = "Art. 1º — fica autorizado..."
         assert _extrair_orgao(texto) is None
 
+    def test_conselho_municipal_saude(self):
+        texto = "Conselho Municipal de Saúde de Inajá - PR\nRESOLUÇÃO Nº 001/2026"
+        assert _extrair_orgao(texto) == "Conselho Municipal de Saúde de Inajá"
+
+    def test_conselho_municipal_saude_sem_cidade(self):
+        # Sem menção explícita a Inajá no início, deve ser None (não inferir)
+        texto = "Conselho Municipal de Saúde\nRESOLUÇÃO Nº 001/2026"
+        # sem "inaja" no início, cai no fallback e retorna None
+        assert _extrair_orgao(texto) is None
+
 
 # ── _extrair_tipo_numero ─────────────────────────────────────
 

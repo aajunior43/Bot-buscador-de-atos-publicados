@@ -301,6 +301,19 @@ def _extrair_orgao(texto: str) -> str | None:
         return "Câmara Municipal de Inajá"
     if re.match(r"^municipio de inaja\b", inicio_norm):
         return "Município de Inajá"
+    # Conselho Municipal de Saúde de Inajá — exige "inaja" no texto para confirmar
+    if re.match(r"^conselho municipal de saude\b", inicio_norm):
+        if "inaja" in _sem_acentos(texto).casefold():
+            return "Conselho Municipal de Saúde de Inajá"
+    # Fundo Municipal (saúde, assistência, etc.) — exige "inaja" no texto
+    if re.match(r"^fundo municipal\b", inicio_norm):
+        if "inaja" in _sem_acentos(texto).casefold():
+            return "Fundo Municipal de Inajá"
+    # Outros órgãos colegiados (CMAS, CMDCA, etc.) — exige "inaja" no texto
+    if re.match(r"^(conselho municipal|comite municipal|comissao municipal)\b", inicio_norm):
+        texto_norm_full = _sem_acentos(texto).casefold()
+        if "inaja" in texto_norm_full:
+            return "Conselho Municipal de Inajá"
     # Fallback por CNPJ: o CNPJ 76.970.318 aparece em documentos tanto da
     # Prefeitura quanto da Câmara, então só atribuir à Câmara se houver
     # menção explícita a "câmara" no texto. Caso contrário, é neutro
