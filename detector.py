@@ -589,6 +589,11 @@ def _publicacao_do_segmento(segmento: TextBlock, termos: set[str]) -> dict | Non
     if categoria == "materia_jornalistica" and (tipo or tem_cabecalho or eh_lrf):
         categoria = "publicacao_oficial"
 
+    # Guarda final: não gerar publicação se tanto o órgão quanto o tipo forem
+    # desconhecidos — seria apenas ruído (fragmento de cabeçalho ou rodapé).
+    if orgao is None and tipo is None and not eh_lrf:
+        return None
+
     trecho = _corrigir_ocr_basico(segmento.texto)
     assunto = _resumir_assunto(_extrair_assunto(segmento.texto))
 
