@@ -846,7 +846,7 @@ def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path, on_progress=N
     candidatas_ocr = []
     for idx, imagem in enumerate(imagens, start=1):
         if idx in paginas_prontas:
-            paginas[idx - 1] = paginas_prontas[idx - 1]
+            paginas[idx - 1] = paginas_prontas[idx]
             processadas += 1
         else:
             candidatas_ocr.append((idx, imagem))
