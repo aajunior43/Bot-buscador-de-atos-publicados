@@ -279,6 +279,8 @@ async def cmd_desconhecido(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 # Main
 # ---------------------------------------------------------------------------
 
+import asyncio
+
 def main() -> None:
     token = SETTINGS.telegram_bot_token
     if not token:
@@ -298,6 +300,15 @@ def main() -> None:
     app.add_handler(CommandHandler("teste", cmd_teste))
     # Captura qualquer mensagem que não seja comando
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_desconhecido))
+
+    # No Python 3.12+ (especialmente 3.14), asyncio.get_event_loop() pode falhar 
+    # se não houver um loop ativo no thread principal. 
+    # Usar loop explicitamente ou criar um se run_polling() reclamar.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
