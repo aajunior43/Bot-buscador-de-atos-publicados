@@ -53,6 +53,13 @@
     <strong>{{ stats.pendentes_ocr or 0 }}</strong>
     <span>Pendentes OCR</span>
   </article>
+  <article class="stat-purple">
+    <div class="stat-icon">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    </div>
+    <strong>{{ stats.total_valor_licitado or "R$ 0,00" }}</strong>
+    <span>Valor Contratado</span>
+  </article>
 </section>
 
 <!-- ── Gráficos + Atividade ───────────────────────────────── -->
@@ -153,7 +160,27 @@
   </div>
   <div class="pub-list">
     {% for item in publicacoes %}
-    <a class="pub-row cat-{{ (item.categoria_ia or item.categoria or 'outro') | replace(' ', '-') }}" href="/edicoes/{{ item.edicao_id }}">
+    {% set cat_class = 'outro' %}
+    {% set item_tipo_norm = _sem_acentos(item.tipo or '').casefold() %}
+    {% set item_orgao_norm = _sem_acentos(item.orgao or '').casefold() %}
+    
+    {% if 'rgf' in item_tipo_norm or 'rreo' in item_tipo_norm or 'lrf' in item_tipo_norm or 'fiscal' in item_tipo_norm or 'demonstrativo' in item_tipo_norm or 'balanco' in item_tipo_norm %}
+      {% set cat_class = 'fiscal' %}
+    {% elif 'conselho' in item_orgao_norm or 'comissao' in item_orgao_norm %}
+      {% set cat_class = 'conselho' %}
+    {% elif 'contrato' in item_tipo_norm %}
+      {% set cat_class = 'contrato' %}
+    {% elif 'licitacao' in item_tipo_norm or 'pregao' in item_tipo_norm or 'concorrencia' in item_tipo_norm %}
+      {% set cat_class = 'licitacao' %}
+    {% elif 'decreto' in item_tipo_norm %}
+      {% set cat_class = 'decreto' %}
+    {% elif 'portaria' in item_tipo_norm %}
+      {% set cat_class = 'portaria' %}
+    {% elif 'publicacao' in (item.categoria_ia or item.categoria or '') %}
+      {% set cat_class = 'publicacao_oficial' %}
+    {% endif %}
+    
+    <a class="pub-row cat-{{ cat_class }}" href="/edicoes/{{ item.edicao_id }}">
       <div class="pub-row-accent"></div>
       <div class="pub-row-body">
         <div class="pub-row-top">

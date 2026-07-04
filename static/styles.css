@@ -246,6 +246,9 @@ main {
 .stat-red   .stat-icon { background: rgba(248,113,113,.15); color: #f87171; }
 .stat-red   strong { background: linear-gradient(135deg, var(--text-1), #f87171); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 
+.stat-purple .stat-icon { background: rgba(167,139,250,.15); color: #c084fc; }
+.stat-purple strong { background: linear-gradient(135deg, var(--text-1), #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
 .stat-alert {
   border-color: rgba(248,113,113,.3) !important;
   background: rgba(248,113,113,.05) !important;
@@ -712,6 +715,9 @@ main {
 .pub-row.cat-licitacao            .pub-row-accent { background: var(--amber); }
 .pub-row.cat-decreto              .pub-row-accent { background: var(--blue); }
 .pub-row.cat-portaria             .pub-row-accent { background: #a78bfa; }
+.pub-row.cat-fiscal               .pub-row-accent { background: #f472b6; }
+.pub-row.cat-lrf                  .pub-row-accent { background: #f472b6; }
+.pub-row.cat-conselho             .pub-row-accent { background: #fb923c; }
 
 .pub-row-body {
   flex: 1;

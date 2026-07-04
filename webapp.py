@@ -308,7 +308,7 @@ def dashboard(
 ) -> HTMLResponse:
     termo = f"%{q.strip()}%"
     with _conn() as conn:
-        stats = conn.execute(
+        stats_db = conn.execute(
             """
             SELECT
               COUNT(*) AS total_edicoes,
@@ -319,6 +319,28 @@ def dashboard(
             FROM edicoes
             """
         ).fetchone()
+        
+        # Consolida valor financeiro total sob monitoramento
+        rows_valores = conn.execute("SELECT valor FROM publicacoes WHERE valor IS NOT NULL AND valor != ''").fetchall()
+        total_acumulado = 0.0
+        for r in rows_valores:
+            val_str = r["valor"].replace("R$", "").replace(".", "").replace(",", ".").strip()
+            try:
+                total_acumulado += float(val_str)
+            except ValueError:
+                pass
+        
+        # Converte para formato legível (Ex: R$ 12,4M ou R$ 450.230,00)
+        if total_acumulado >= 1_000_000.0:
+            valor_formatado = f"R$ {total_acumulado / 1_000_000.0:.2f}M"
+        elif total_acumulado > 0:
+            valor_formatado = f"R$ {total_acumulado:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        else:
+            valor_formatado = "R$ 0,00"
+            
+        stats = dict(stats_db)
+        stats["total_valor_licitado"] = valor_formatado
+
 
         if q.strip():
             edicoes = conn.execute(
