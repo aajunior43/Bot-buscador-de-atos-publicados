@@ -327,3 +327,43 @@ def refinar_publicacoes(publicacoes: list[dict]) -> list[dict]:
     logger.info("IA refinou %s de %s publicações (mantidas: %s)",
                 sum(1 for r in resultado_final if r.get("resumo_ia")), len(publicacoes), len(resultado_final))
     return resultado_final
+
+
+def retry_pending_ia() -> int:
+    """Tenta refinar com IA as publicações que ainda não foram processadas.
+
+    Publicações com ``ia_processado=0`` (ou ``resumo_ia`` nulo) são buscadas no
+    banco, reagrupadas pela edição de origem e enviadas novamente à API.
+    Retorna o número de publicações atualizadas com sucesso.
+    """
+    if not _api_key():
+        logger.debug("retry_pending_ia: API key ausente, pulando.")
+        return 0
+
+    pendentes = db.get_publicacoes_sem_ia()
+    if not pendentes:
+        return 0
+
+    logger.info("retry_pending_ia: %d publicação(ões) pendente(s) de refinamento IA.", len(pendentes))
+
+    # Agrupa por edicao_id para chamar a IA em lote por edição
+    from collections import defaultdict
+    por_edicao: dict[int, list[dict]] = defaultdict(list)
+    for pub in pendentes:
+        por_edicao[pub["edicao_id"]].append(dict(pub))
+
+    total_atualizadas = 0
+    for edicao_id, pubs in por_edicao.items():
+        try:
+            refinadas = refinar_publicacoes(pubs)
+            for pub in refinadas:
+                if pub.get("resumo_ia") or pub.get("tipo"):
+                    db.update_publicacao_ia(pub)
+                    total_atualizadas += 1
+        except Exception:
+            logger.exception("retry_pending_ia: falha ao refinar edicao_id=%s", edicao_id)
+            continue
+
+    logger.info("retry_pending_ia: %d publicação(ões) atualizadas.", total_atualizadas)
+    return total_atualizadas
+

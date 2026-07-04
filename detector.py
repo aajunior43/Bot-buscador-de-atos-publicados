@@ -594,6 +594,23 @@ def _publicacao_do_segmento(segmento: TextBlock, termos: set[str]) -> dict | Non
     if orgao is None and tipo is None and not eh_lrf:
         return None
 
+    # Guarda para fragmentos de cabeçalho puro: o segmento tem órgão mas não tem
+    # tipo e o texto é curto demais para ser uma publicação real (só o nome do órgão
+    # e/ou endereço, sem corpo de ato).
+    if orgao and tipo is None and not eh_lrf:
+        linhas_uteis = [l for l in segmento.texto.splitlines() if _limpar(l)]
+        if len(linhas_uteis) <= 3:
+            # Texto muito curto (≤3 linhas) sem tipo identificado → cabeçalho isolado
+            return None
+        assunto_tentativo = _extrair_assunto(segmento.texto)
+        if assunto_tentativo:
+            orgao_norm = _sem_acentos(orgao).casefold()
+            assunto_norm = _sem_acentos(assunto_tentativo).casefold()
+            # Se o assunto for apenas variação do nome do órgão, é ruído
+            if orgao_norm[:20] in assunto_norm or assunto_norm in orgao_norm:
+                return None
+
+
     trecho = _corrigir_ocr_basico(segmento.texto)
     assunto = _resumir_assunto(_extrair_assunto(segmento.texto))
 

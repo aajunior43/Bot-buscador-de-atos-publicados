@@ -675,4 +675,62 @@ def salvar_arquivos_atos_locais(texto_path: Path | str, publicacoes: list[dict])
         logger.exception("Falha ao salvar arquivos locais de atos para %s", texto_path)
 
 
+def get_publicacoes_sem_ia(limit: int = 100) -> list[sqlite3.Row]:
+    """Retorna publicações que ainda não foram refinadas pela IA.
+
+    Considera pendentes aquelas com ``ia_processado = 0`` OU com
+    ``resumo_ia`` nulo e ``tipo`` nulo (falha silenciosa).
+    """
+    with connect() as conn:
+        conn.row_factory = sqlite3.Row
+        return conn.execute(
+            """
+            SELECT p.id, p.edicao_id, p.pagina, p.bloco, p.categoria, p.orgao,
+                   p.tipo, p.numero, p.data_documento, p.assunto, p.valor,
+                   p.trecho, p.resumo_ia, p.categoria_ia, p.texto_corrigido,
+                   p.ia_processado
+            FROM publicacoes p
+            WHERE p.ia_processado = 0
+               OR (p.resumo_ia IS NULL AND p.tipo IS NULL)
+            ORDER BY p.edicao_id, p.id
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+
+def update_publicacao_ia(pub: dict) -> None:
+    """Atualiza os campos refinados pela IA em uma publicação existente."""
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE publicacoes
+            SET orgao           = COALESCE(?, orgao),
+                tipo            = COALESCE(?, tipo),
+                numero          = COALESCE(?, numero),
+                data_documento  = COALESCE(?, data_documento),
+                assunto         = COALESCE(?, assunto),
+                valor           = COALESCE(?, valor),
+                resumo_ia       = ?,
+                categoria_ia    = COALESCE(?, categoria_ia),
+                texto_corrigido = COALESCE(?, texto_corrigido),
+                ia_processado   = 1
+            WHERE id = ?
+            """,
+            (
+                pub.get("orgao"),
+                pub.get("tipo"),
+                pub.get("numero"),
+                pub.get("data_documento"),
+                pub.get("assunto"),
+                pub.get("valor"),
+                pub.get("resumo_ia"),
+                pub.get("categoria_ia"),
+                pub.get("texto_corrigido"),
+                pub["id"],
+            ),
+        )
+
+
+
 

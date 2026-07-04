@@ -13,7 +13,9 @@ import database
 from config import SETTINGS
 from detector import detectar
 from downloader import baixar_edicao
+from ai_processor import retry_pending_ia
 from notifier import enviar_teste, notificar
+
 from ocr_processor import extrair_texto, extrair_texto_rapido_com_estruturado_candidato
 from scraper import Edicao, listar_edicoes
 
@@ -140,6 +142,13 @@ def executar_ciclo(
     fast_ocr: bool = True,
 ) -> None:
     database.init_db()
+
+    # Retentar refinamento de IA em publicações que falharam em ciclos anteriores
+    try:
+        retry_pending_ia()
+    except Exception:
+        logger.warning("Falha no retry de IA pendente — continuando ciclo normal.")
+
     if force_rescan:
         logger.warning("Reprocessamento forçado ativado; limpando status anterior.")
         database.reset_processing()
