@@ -9,14 +9,17 @@
     {% if edicao.caminho_local %}<a href="/edicoes/{{ edicao.id }}/pdf" target="_blank" class="btn btn-secondary">📄 Abrir PDF</a>{% endif %}
     {% if edicao.texto_extraido_path %}<a href="/edicoes/{{ edicao.id }}/texto" target="_blank" class="btn btn-secondary">📝 Ver texto OCR</a>{% endif %}
     <a href="{{ edicao.url }}" target="_blank" class="btn btn-secondary">🔗 Original</a>
-    <form method="post" action="/edicoes/{{ edicao.id }}/ia" style="display:inline;">
+    <form method="post" action="/edicoes/{{ edicao.id }}/ia" style="display:inline;" onsubmit="return startProcessing(this, 'Refinando com IA...', {{ edicao.id }})">
       <button type="submit" class="btn">✨ Refinar com IA</button>
     </form>
-    <form method="post" action="/edicoes/{{ edicao.id }}/analisar" style="display:inline;">
+    <form method="post" action="/edicoes/{{ edicao.id }}/analisar" style="display:inline;" onsubmit="return startProcessing(this, 'Reanalisando edição...', {{ edicao.id }})">
       <button type="submit" class="btn btn-secondary">🔄 Reanalisar</button>
     </form>
   </div>
 </section>
+
+<!-- Live monitor placeholder (populated by startProcessing or on load if running) -->
+<div id="live-monitor-{{ edicao.id }}"></div>
 
 <!-- Debug OCR: navegação por página -->
 {% if num_paginas > 0 %}
@@ -192,6 +195,7 @@
   });
 })();
 </script>
+
 <script>
 // Debug OCR: carrega imagem + texto ao clicar
 const pgSelect = document.getElementById('pg-select');
@@ -223,7 +227,7 @@ if (pgLoadBtn) {
         let emPagina = false;
         const blocoTexto = [];
         for (const linha of linhas) {
-          if (/página\s*0*${pagina}\b/i.test(linha.replace('${pagina}', pagina))) {
+          if (new RegExp(`página\\s*0*${pagina}\\b`, 'i').test(linha)) {
             emPagina = true;
           } else if (emPagina && /página\s*\d+/i.test(linha)) {
             break;
@@ -300,5 +304,18 @@ function copiarPublicacao(button) {
     alert('Erro ao copiar para o clipboard.');
   });
 }
+
+// Auto-mount live monitor if there is running job for this edition (on page load)
+document.addEventListener('DOMContentLoaded', () => {
+  const eid = {{ edicao.id }};
+  const container = document.getElementById('live-monitor-' + eid);
+  if (container && window.fetch) {
+    fetch('/api/edicoes/' + eid + '/live-status').then(r => r.json()).then(data => {
+      if (data.has_running && window.createLiveMonitor) {
+        window.createLiveMonitor(eid, container, data.jobs);
+      }
+    }).catch(() => {});
+  }
+});
 </script>
 {% endblock %}

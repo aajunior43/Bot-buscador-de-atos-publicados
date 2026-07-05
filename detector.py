@@ -6,7 +6,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from config import SETTINGS, MUNICIPIOS_VIZINHOS
-from ocr_processor import PageText, TextBlock
+from ocr.models import PageText, TextBlock
 from ai_processor import refinar_publicacoes
 
 
@@ -453,7 +453,7 @@ def _parece_linha_de_rodape_ou_assinatura(linha: str) -> bool:
     inicio = _sem_acentos(_limpar(linha)[:160]).casefold()
     return bool(
         re.match(
-            r"^(cep|e-mail|email|fone|telefone|gabinete do prefeito|joao eder|assinado|prefeito municipal)\b",
+            r"^(cep|e-mail|email|fone|telefone|gabinete do prefeito|joao eder|joão eder|assinado|prefeito municipal)\b",
             inicio,
         )
     )
@@ -570,7 +570,6 @@ def _publicacao_do_segmento(segmento: TextBlock, termos: set[str]) -> dict | Non
     # Se o segmento pertencer a Inajá (por órgão ou menção direta) e contiver palavras indicativas de relatório orçamentário/balanço
     texto_clean = _sem_acentos(segmento.texto).casefold()
     eh_lrf = any(t in texto_clean for t in ["relatorio", "demonstrativo", "balanco", "lrf", "rgf", "rreo"])
-    per_inaja = orgao is not None or any(t in termos for t in termos)
     
     if not (orgao or termos):
         return None
@@ -633,6 +632,11 @@ def detectar(
     edicao_titulo: str,
     paginas: list[PageText],
 ) -> DetectionResult:
+    """Analisa páginas extraídas e detecta menções + publicações oficiais de Inajá.
+
+    Retorna trechos encontrados, menções para DB e publicações estruturadas
+    (que podem ser refinadas pela IA posteriormente).
+    """
     trechos: list[dict] = []
     termos_encontrados: set[str] = set()
     paginas_com_mencao: set[int] = set()

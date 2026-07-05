@@ -30,7 +30,7 @@ from config import SETTINGS
 from detector import detectar
 from downloader import baixar_edicao
 from exporter import exportar_csv, exportar_json
-from ocr_processor import extrair_texto_rapido_com_estruturado_candidato
+from ocr import extrair_texto_rapido_com_estruturado_candidato
 from scraper import Edicao, coletar_edicoes
 
 
@@ -53,6 +53,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Monitor O Regional - Inajá", lifespan=lifespan)
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+from detector import _sem_acentos
+templates.env.globals["_sem_acentos"] = _sem_acentos
+
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 # Autenticação HTTP Basic para toda a interface. Ativa quando WEBAPP_USER e
@@ -200,13 +203,25 @@ def _analisar_edicao_internal(edicao_id: int) -> None:
         titulo=edicao.titulo,
         edicao_id=edicao_id,
         mensagem=edicao.url,
+        progress_step="download",
+        progress_current=0,
+        progress_total=100,
     )
-    download = baixar_edicao(edicao)
+    # Simple progress updates for download phase (baixar_edicao doesn't expose callback yet)
+    def dl_progress(p):
+        if isinstance(p, dict):
+            database.update_job(download_job, "rodando", mensagem=p.get("msg", "Baixando..."), progress_current=p.get("current"), progress_total=p.get("total"), progress_step=p.get("step", "download"))
+        else:
+            database.update_job(download_job, "rodando", mensagem=str(p))
+    download = baixar_edicao(edicao, on_progress=dl_progress)
     database.update_job(
         download_job,
         "concluido",
         mensagem=f"PDF salvo em {download.caminho}",
         edicao_id=download.edicao_id,
+        progress_step="download",
+        progress_current=100,
+        progress_total=100,
     )
 
     ocr_job = database.start_job(
@@ -214,22 +229,41 @@ def _analisar_edicao_internal(edicao_id: int) -> None:
         titulo=edicao.titulo,
         edicao_id=download.edicao_id,
         mensagem="Iniciando OCR rápido + estruturado...",
+        progress_step="ocr",
     )
-    def on_progress(msg: str):
-        database.update_job(ocr_job, "rodando", mensagem=msg)
+    def on_progress(msg: str | dict):
+        """Support both legacy string and structured dict from OCR."""
+        if isinstance(msg, dict):
+            pc = msg.get("current")
+            pt = msg.get("total")
+            step = msg.get("step", "ocr")
+            raw_msg = msg.get("msg", str(msg))
+            database.update_job(ocr_job, "rodando", mensagem=raw_msg, progress_current=pc, progress_total=pt, progress_step=step)
+        else:
+            # Parse page progress if present for structured update
+            import re
+            m = re.search(r"Página\s+(\d+)\s*/\s*(\d+)", msg)
+            pc = int(m.group(1)) if m else None
+            pt = int(m.group(2)) if m else None
+            database.update_job(ocr_job, "rodando", mensagem=msg, progress_current=pc, progress_total=pt, progress_step="ocr")
     ocr = extrair_texto_rapido_com_estruturado_candidato(download.caminho, on_progress=on_progress)
     ocr_status = "aviso" if ocr.avisos else "concluido"
     ocr_mensagem = f"{len(ocr.paginas)} página(s), {len(ocr.texto_completo)} caracteres"
     if ocr.avisos:
         ocr_mensagem += " | " + "; ".join(ocr.avisos)
-    database.update_job(ocr_job, ocr_status, mensagem=ocr_mensagem)
+    database.update_job(ocr_job, ocr_status, mensagem=ocr_mensagem, progress_step="ocr")
 
     detectar_job = database.start_job(
         "detectando publicações",
         titulo=edicao.titulo,
         edicao_id=download.edicao_id,
+        progress_step="detect",
+        progress_current=0,
+        progress_total=100,
     )
+    database.update_job(detectar_job, "rodando", mensagem="Analisando páginas para menções...", progress_current=30, progress_total=100, progress_step="detect")
     resultado = detectar(download.edicao_id, edicao.titulo, ocr.paginas)
+    database.update_job(detectar_job, "rodando", mensagem="Processando publicações...", progress_current=70, progress_total=100, progress_step="detect")
     database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
     database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
     database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
@@ -241,6 +275,9 @@ def _analisar_edicao_internal(edicao_id: int) -> None:
             f"{len(resultado.publicacoes)} publicação(ões), "
             f"{len(resultado.mencoes_db)} menção(ões)"
         ),
+        progress_step="detect",
+        progress_current=100,
+        progress_total=100,
     )
     if resultado.encontrado:
         from notifier import notificar
@@ -323,12 +360,16 @@ def dashboard(
         # Consolida valor financeiro total sob monitoramento
         rows_valores = conn.execute("SELECT valor FROM publicacoes WHERE valor IS NOT NULL AND valor != ''").fetchall()
         total_acumulado = 0.0
+        import re
         for r in rows_valores:
-            val_str = r["valor"].replace("R$", "").replace(".", "").replace(",", ".").strip()
-            try:
-                total_acumulado += float(val_str)
-            except ValueError:
-                pass
+            # Extract numeric part more robustly (handles R$ 1.234.567,89 or variants)
+            match = re.search(r"[\d\.,]+", r["valor"] or "")
+            if match:
+                val_str = match.group(0).replace(".", "").replace(",", ".")
+                try:
+                    total_acumulado += float(val_str)
+                except ValueError:
+                    pass
         
         # Converte para formato legível (Ex: R$ 12,4M ou R$ 450.230,00)
         if total_acumulado >= 1_000_000.0:
@@ -500,8 +541,10 @@ def edicoes_detectadas_head() -> Response:
 
 
 @app.post("/edicoes-detectadas/detectar")
-def detectar_edicoes_agora(background_tasks: BackgroundTasks) -> RedirectResponse:
+def detectar_edicoes_agora(background_tasks: BackgroundTasks, request: Request, format: str = Query("redirect")):
     _task_executor.submit(_detectar_edicoes_com_trava)
+    if format == "json" or request.headers.get("accept", "").startswith("application/json"):
+        return {"status": "started", "tipo": "detectar edições"}
     return RedirectResponse("/edicoes-detectadas", status_code=303)
 
 
@@ -509,15 +552,20 @@ def detectar_edicoes_agora(background_tasks: BackgroundTasks) -> RedirectRespons
 def analisar_edicao_manual(
     edicao_id: int,
     background_tasks: BackgroundTasks,
-) -> RedirectResponse:
+    request: Request,
+    format: str = Query("redirect", description="Use 'json' for AJAX response"),
+):
+    """Supports redirect or JSON based on format param or Accept header."""
     with _conn() as conn:
         _row_or_404(conn, "SELECT id FROM edicoes WHERE id = ?", (edicao_id,))
     _task_executor.submit(_analisar_edicao, edicao_id)
+    if format == "json" or request.headers.get("accept", "").startswith("application/json"):
+        return {"status": "started", "edicao_id": edicao_id, "job_etapa": "analisando edição"}
     return RedirectResponse("/edicoes-detectadas", status_code=303)
 
 
 @app.post("/edicoes-detectadas/analisar-lote")
-def analisar_lote_pendentes(limite: int = Form(5)) -> RedirectResponse:
+def analisar_lote_pendentes(limite: int = Form(5), request: Request = None, format: str = Query("redirect")):
     limite = max(1, min(limite, 50))
     with _conn() as conn:
         rows = conn.execute(
@@ -533,6 +581,8 @@ def analisar_lote_pendentes(limite: int = Form(5)) -> RedirectResponse:
     edicao_ids = [row["id"] for row in rows]
     if edicao_ids:
         _task_executor.submit(_analisar_edicoes_lote, edicao_ids)
+    if format == "json" or (request and request.headers.get("accept", "").startswith("application/json")):
+        return {"status": "started", "tipo": "lote", "count": len(edicao_ids)}
     return RedirectResponse("/edicoes-detectadas", status_code=303)
 
 
@@ -944,6 +994,32 @@ def api_atividade() -> dict:
         return _atividade_atual(conn)
 
 
+def _live_status_for_edicao(edicao_id: int) -> dict:
+    """Return recent jobs + live state for a specific edition (for UI live monitor)."""
+    with _conn() as conn:
+        jobs = conn.execute(
+            """
+            SELECT * FROM jobs 
+            WHERE edicao_id = ? 
+            ORDER BY id DESC 
+            LIMIT 20
+            """,
+            (edicao_id,),
+        ).fetchall()
+        running = [dict(j) for j in jobs if j["status"] == "rodando"]
+        return {
+            "edicao_id": edicao_id,
+            "jobs": [dict(j) for j in jobs],
+            "has_running": bool(running),
+            "current": running[0] if running else None,
+        }
+
+
+@app.get("/api/edicoes/{edicao_id}/live-status")
+def api_edicao_live_status(edicao_id: int) -> dict:
+    return _live_status_for_edicao(edicao_id)
+
+
 @app.get("/api/status")
 def api_status() -> list[dict]:
     with _conn() as conn:
@@ -999,7 +1075,7 @@ async def api_eventos(request: Request) -> StreamingResponse:
 # ---------------------------------------------------------------------------
 
 @app.post("/edicoes/{edicao_id}/ia")
-def refinar_ia_manual(edicao_id: int) -> RedirectResponse:
+def refinar_ia_manual(edicao_id: int, request: Request = None, format: str = Query("redirect")):
     with _conn() as conn:
         row = _row_or_404(conn, "SELECT texto_extraido_path FROM edicoes WHERE id = ?", (edicao_id,))
         texto_path = row["texto_extraido_path"]
@@ -1008,16 +1084,30 @@ def refinar_ia_manual(edicao_id: int) -> RedirectResponse:
         ).fetchall()
 
     if not publicacoes_rows:
+        if format == "json" or (request and request.headers.get("accept", "").startswith("application/json")):
+            return {"status": "no_publicacoes", "edicao_id": edicao_id}
         return RedirectResponse(f"/edicoes/{edicao_id}", status_code=303)
+
+    ia_job = database.start_job(
+        "refinando com IA",
+        titulo=None,
+        edicao_id=edicao_id,
+        mensagem="Iniciando refinamento IA...",
+        progress_step="ia",
+    )
 
     def _refinar():
         from ai_processor import refinar_publicacoes
         pubs = [dict(r) for r in publicacoes_rows]
+        database.update_job(ia_job, "rodando", mensagem="Refinando publicações com IA...", progress_current=10, progress_total=100, progress_step="ia")
         refinadas = refinar_publicacoes(pubs)
         database.insert_publicacoes(edicao_id, refinadas)
         if texto_path:
             database.salvar_arquivos_atos_locais(texto_path, refinadas)
+        database.update_job(ia_job, "concluido", mensagem="Refinamento IA concluído", progress_current=100, progress_total=100, progress_step="ia")
 
     _task_executor.submit(_refinar)
+    if format == "json" or (request and request.headers.get("accept", "").startswith("application/json")):
+        return {"status": "started", "edicao_id": edicao_id, "job_etapa": "refinando com IA"}
     return RedirectResponse(f"/edicoes/{edicao_id}", status_code=303)
 

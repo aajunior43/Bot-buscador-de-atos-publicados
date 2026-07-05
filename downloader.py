@@ -104,7 +104,7 @@ def _resolver_pdf_url(url: str, session: requests.Session) -> str:
     raise ValueError(f"Não foi possível localizar PDF em {url}")
 
 
-def baixar_edicao(edicao: Edicao) -> DownloadResult:
+def baixar_edicao(edicao: Edicao, on_progress=None) -> DownloadResult:
     edicao_id = database.insert_or_get_edicao(
         edicao.url, edicao.titulo, edicao.data_publicacao
     )
@@ -134,10 +134,16 @@ def baixar_edicao(edicao: Edicao) -> DownloadResult:
                 allow_redirects=True,
             ) as resp:
                 resp.raise_for_status()
+                total = int(resp.headers.get("content-length", 0) or 0)
+                downloaded = 0
                 with destino.open("wb") as fp:
                     for chunk in resp.iter_content(chunk_size=1024 * 256):
                         if chunk:
                             fp.write(chunk)
+                            downloaded += len(chunk)
+                            if on_progress and total > 0:
+                                pct = int((downloaded / total) * 100)
+                                on_progress({"step": "download", "current": pct, "total": 100, "msg": f"Baixando PDF... {pct}%"})
 
             _validar_pdf(destino)
             md5 = _md5(destino)
@@ -145,7 +151,7 @@ def baixar_edicao(edicao: Edicao) -> DownloadResult:
             database.update_download(edicao_id, destino, tamanho, md5)
             logger.info("PDF baixado: %s (%s bytes)", destino, tamanho)
             return DownloadResult(edicao_id, edicao, destino, tamanho, md5)
-        except Exception as exc:
+        except (requests.RequestException, OSError, ValueError) as exc:
             ultimo_erro = exc
             logger.warning(
                 "Falha no download de %s na tentativa %s/%s: %s",
@@ -154,6 +160,13 @@ def baixar_edicao(edicao: Edicao) -> DownloadResult:
                 SETTINGS.max_retries,
                 exc,
             )
+            if destino.exists():
+                destino.unlink(missing_ok=True)
+            time.sleep(2 ** (tentativa - 1))
+        except Exception as exc:
+            # Erros inesperados também são capturados para retry
+            ultimo_erro = exc
+            logger.exception("Erro inesperado no download")
             if destino.exists():
                 destino.unlink(missing_ok=True)
             time.sleep(2 ** (tentativa - 1))

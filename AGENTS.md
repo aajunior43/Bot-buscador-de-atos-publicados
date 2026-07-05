@@ -30,6 +30,10 @@ pytest tests/ -v
 # Run single test class
 pytest tests/test_detector.py::TestExtrairOrgao -v
 
+# Linting and formatting (ruff via pyproject.toml)
+ruff check .
+ruff format .
+
 # Run one-shot processing
 python main.py --once
 
@@ -40,17 +44,32 @@ python run_interface.py
 python telegram_bot.py
 ```
 
-No linter or formatter config found (no `ruff`, `black`, `isort` config). No `pyproject.toml`. No pre-commit hooks.
+Linter/formatter config now in `pyproject.toml` (ruff + pytest config). Use `ruff check .` and `ruff format .`. No pre-commit hooks yet.
 
 ## Architecture notes
 
-### OCR strategy (ocr_processor.py)
+### OCR strategy (ocr/ package)
+
+The OCR logic was refactored from a monolithic `ocr_processor.py` into a clean `ocr/` package:
+
+- `models.py` – dataclasses
+- `preprocessing.py` – image prep
+- `column_detection.py` – auto column detection
+- `tesseract.py` – Tesseract calls + block grouping
+- `cache.py` – `.ocr.json` caching
+- `extractor.py` – public strategies
 
 Three extraction modes:
 1. **pdfplumber** — extracts embedded text. Used by default. Pages with < 100 chars (`MIN_TEXT_CHARS_PER_PAGE`) get OCR fallback.
 2. **OCR híbrido** — pdfplumber first, then Tesseract only on low-text pages.
 3. **OCR forçado** — Tesseract on every page (via `--force-ocr` or `FORCE_OCR=true`).
-4. **OCR rápido + estruturado** — Fast low-DPI Tesseract on all pages, then full structured OCR only on pages that mention Inajá-like terms. This is the default in `extrair_texto_rapido_com_estruturado_candidato()`.
+4. **OCR rápido + estruturado** — Fast low-DPI Tesseract on all pages, then full structured OCR only on pages that mention Inajá-like terms. This is the default in `extrair_texto_rapido_com_estruturado_candidato()` (recommended).
+
+Import with:
+```python
+from ocr import extrair_texto, extrair_texto_rapido_com_estruturado_candidato
+from ocr.models import PageText, TextBlock
+```
 
 OCR results are cached as `.ocr.json` next to the PDF. To force re-OCR, delete the `.ocr.json` file or use `--force-ocr`.
 

@@ -16,7 +16,7 @@ from downloader import baixar_edicao
 from ai_processor import retry_pending_ia
 from notifier import enviar_teste, notificar
 
-from ocr_processor import extrair_texto, extrair_texto_rapido_com_estruturado_candidato
+from ocr import extrair_texto, extrair_texto_rapido_com_estruturado_candidato
 from scraper import Edicao, listar_edicoes
 
 
@@ -64,7 +64,7 @@ def _processar_edicao(
     except Exception:
         logger.exception("Falha ao baixar edição %s", edicao.url)
         database.update_job(download_job, "erro", mensagem=f"Falha ao baixar {edicao.url}")
-        return
+        return  # não interrompe o ciclo inteiro
 
     ocr_job = database.start_job(
         "rodando OCR",
@@ -79,8 +79,11 @@ def _processar_edicao(
         ),
     )
     try:
-        def on_progress(msg: str):
-            database.update_job(ocr_job, "rodando", mensagem=msg)
+        def on_progress(msg: str | dict):
+            if isinstance(msg, dict):
+                database.update_job(ocr_job, "rodando", mensagem=msg.get("msg", str(msg)), progress_current=msg.get("current"), progress_total=msg.get("total"), progress_step=msg.get("step", "ocr"))
+            else:
+                database.update_job(ocr_job, "rodando", mensagem=msg)
         if fast_ocr and force_ocr:
             ocr = extrair_texto_rapido_com_estruturado_candidato(download.caminho, on_progress=on_progress)
         else:
@@ -133,6 +136,7 @@ def _processar_edicao(
             "erro",
             mensagem=f"Falha ao processar OCR/detecção: {edicao.url}",
         )
+        # Continuamos com a próxima edição (resiliência do ciclo)
 
 
 def executar_ciclo(
@@ -147,7 +151,7 @@ def executar_ciclo(
     try:
         retry_pending_ia()
     except Exception:
-        logger.warning("Falha no retry de IA pendente — continuando ciclo normal.")
+        logger.warning("Falha no retry de IA pendente — continuando ciclo normal.", exc_info=True)
 
     if force_rescan:
         logger.warning("Reprocessamento forçado ativado; limpando status anterior.")
@@ -168,7 +172,7 @@ def executar_ciclo(
             "erro",
             mensagem="Falha ao listar edições",
         )
-        novas = []
+        novas = []  # ciclo continua mesmo sem novas edições detectadas
 
     for edicao in novas:
         _processar_edicao(edicao, force_ocr=force_ocr, fast_ocr=fast_ocr)

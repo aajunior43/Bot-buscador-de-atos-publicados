@@ -32,7 +32,7 @@ def _headers() -> dict[str, str]:
     }
 
 
-_SYSTEM_PROMPT = """Você é um especialista em análise de publicações oficiais do jornal "O Regional" (Norte do Paraná), com foco no município de Inajá-PR.
+_SYSTEM_PROMPT_TEMPLATE = """Você é um especialista em análise de publicações oficiais do jornal "O Regional" (Norte do Paraná), com foco no município de Inajá-PR.
 
 Sua tarefa é analisar o texto de UMA publicação extraído por OCR (pode conter erros) e extrair dados estruturados de forma extremamente rigorosa e sem alucinações.
 
@@ -40,7 +40,7 @@ CONTEXTO IMPORTANTE — Município de Inajá-PR:
 - CEP local: 87670-000
 - Prefeito atual: João Eder Aguilar
 - CNPJs que aparecem em documentos de Inajá: 75.771.400/0001-48 e 76.970.318/0001-67
-- Cidades VIZINHAS (NÃO são Inajá): Jardim Olinda, Cruzeiro do Sul, Santo Inácio, Floraí, Paranapoema, Itaguajé, Colorado, Paranacity, Loanda, Querência do Norte, Santa Isabel do Ivaí, Marilena, Nova Londrina, Altamira do Paraná.
+- Cidades VIZINHAS (NÃO são Inajá): {vizinhos}.
 - ATENÇÃO ao CNPJ: o número 76.970.318/0001-67 aparece em documentos tanto da Prefeitura quanto da Câmara Municipal. Para diferenciá-los, observe o TEXTO: se o documento começa com "CÂMARA MUNICIPAL DE INAJÁ" ou menciona "CÂMARA", o órgão é a Câmara; se começa com "PREFEITURA MUNICIPAL DE INAJÁ" ou "MUNICÍPIO DE INAJÁ", é a Prefeitura/Município (mesmo que o CNPJ 76.970.318 seja citado).
 
 REGRAS CRÍTICAS DE EXTRAÇÃO:
@@ -79,6 +79,7 @@ def _tentar_recuperar_json(content: str) -> dict | None:
         content.rstrip() + '"}',
         content.rstrip() + '"}' + "}",
         content.rstrip().rsplit(",", 1)[0] + "}",
+        re.sub(r'[^}]*$', '}', content.rstrip()),  # close any open
     ]
     for tentativa in tentativas:
         try:
@@ -125,7 +126,7 @@ def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
             json={
                 "model": SETTINGS.opencode_model,
                 "messages": [
-                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "system", "content": _SYSTEM_PROMPT_TEMPLATE.format(vizinhos=', '.join(m.title() for m in MUNICIPIOS_VIZINHOS))},
                     {"role": "user", "content": _prompt_usuario(trecho_limpo)},
                 ],
                 "max_tokens": SETTINGS.ai_max_tokens,
@@ -181,10 +182,10 @@ def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
             exc,
             content[:500] if content else "N/A",
         )
-    except requests.RequestException:
-        logger.exception("Erro na requisição ao OpenCode Go")
+    except requests.RequestException as exc:
+        logger.warning("Erro na requisição ao OpenCode Go: %s", exc)
     except Exception:
-        logger.exception("Erro inesperado ao processar IA")
+        logger.exception("Erro inesperado ao processar IA para trecho")
     return None
 
 
@@ -362,6 +363,7 @@ def retry_pending_ia() -> int:
                     total_atualizadas += 1
         except Exception:
             logger.exception("retry_pending_ia: falha ao refinar edicao_id=%s", edicao_id)
+            # Continuamos com as outras edições
             continue
 
     logger.info("retry_pending_ia: %d publicação(ões) atualizadas.", total_atualizadas)

@@ -63,6 +63,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   etapa TEXT NOT NULL,
   status TEXT NOT NULL,
   mensagem TEXT,
+  progress_current INTEGER,
+  progress_total INTEGER,
+  progress_step TEXT,
   iniciado_em TEXT DEFAULT CURRENT_TIMESTAMP,
   atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP,
   finalizado_em TEXT
@@ -113,6 +116,9 @@ _MIGRATIONS: list[tuple[int, str]] = [
     (3, "ALTER TABLE publicacoes ADD COLUMN texto_corrigido TEXT"),
     (4, "ALTER TABLE publicacoes ADD COLUMN ia_processado INTEGER DEFAULT 0"),
     (5, "ALTER TABLE mencoes ADD COLUMN hash_trecho TEXT"),
+    (6, "ALTER TABLE jobs ADD COLUMN progress_current INTEGER"),
+    (7, "ALTER TABLE jobs ADD COLUMN progress_total INTEGER"),
+    (8, "ALTER TABLE jobs ADD COLUMN progress_step TEXT"),
 ]
 
 
@@ -363,14 +369,17 @@ def start_job(
     titulo: str | None = None,
     edicao_id: int | None = None,
     mensagem: str | None = None,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+    progress_step: str | None = None,
 ) -> int:
     with connect() as conn:
         cur = conn.execute(
             """
-            INSERT INTO jobs (edicao_id, titulo, etapa, status, mensagem)
-            VALUES (?, ?, ?, 'rodando', ?)
+            INSERT INTO jobs (edicao_id, titulo, etapa, status, mensagem, progress_current, progress_total, progress_step)
+            VALUES (?, ?, ?, 'rodando', ?, ?, ?, ?)
             """,
-            (edicao_id, titulo, etapa, mensagem),
+            (edicao_id, titulo, etapa, mensagem, progress_current, progress_total, progress_step),
         )
         return int(cur.lastrowid)
 
@@ -380,13 +389,25 @@ def update_job(
     status: str,
     mensagem: str | None = None,
     edicao_id: int | None = None,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+    progress_step: str | None = None,
 ) -> None:
     finalizados = {"concluido", "erro", "ignorado"}
     finalizado_sql = ", finalizado_em = CURRENT_TIMESTAMP" if status in finalizados else ""
     edicao_sql = ", edicao_id = ?" if edicao_id is not None else ""
+    prog_current_sql = ", progress_current = ?" if progress_current is not None else ""
+    prog_total_sql = ", progress_total = ?" if progress_total is not None else ""
+    prog_step_sql = ", progress_step = ?" if progress_step is not None else ""
     valores: list[object] = [status, mensagem]
     if edicao_id is not None:
         valores.append(edicao_id)
+    if progress_current is not None:
+        valores.append(progress_current)
+    if progress_total is not None:
+        valores.append(progress_total)
+    if progress_step is not None:
+        valores.append(progress_step)
     valores.append(job_id)
     with connect() as conn:
         conn.execute(
@@ -395,6 +416,9 @@ def update_job(
             SET status = ?, mensagem = ?, atualizado_em = CURRENT_TIMESTAMP
                 {finalizado_sql}
                 {edicao_sql}
+                {prog_current_sql}
+                {prog_total_sql}
+                {prog_step_sql}
             WHERE id = ?
             """,
             valores,
@@ -407,9 +431,12 @@ def log_job(
     titulo: str | None = None,
     edicao_id: int | None = None,
     mensagem: str | None = None,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+    progress_step: str | None = None,
 ) -> int:
-    job_id = start_job(etapa, titulo=titulo, edicao_id=edicao_id, mensagem=mensagem)
-    update_job(job_id, status, mensagem=mensagem, edicao_id=edicao_id)
+    job_id = start_job(etapa, titulo=titulo, edicao_id=edicao_id, mensagem=mensagem, progress_current=progress_current, progress_total=progress_total, progress_step=progress_step)
+    update_job(job_id, status, mensagem=mensagem, edicao_id=edicao_id, progress_current=progress_current, progress_total=progress_total, progress_step=progress_step)
     return job_id
 
 

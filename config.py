@@ -144,9 +144,16 @@ MUNICIPIOS_VIZINHOS = [
     "marilena",
     "guaira",
     "esperanca nova",
-    "altamira do paraná",
     "altamira do parana",
     "nova londrina",
     "santa cruz de monte castelo",
     "pioneiro jayme canet",
 ]
+
+# Ensure fully normalized (no accents, lowercase) at import time
+def _normalize_municipio(m):
+    import unicodedata
+    n = unicodedata.normalize("NFKD", m)
+    return "".join(c for c in n if not unicodedata.combining(c)).lower().strip()
+
+MUNICIPIOS_VIZINHOS = [_normalize_municipio(m) for m in MUNICIPIOS_VIZINHOS]

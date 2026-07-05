@@ -1557,6 +1557,119 @@ details[open] summary::before { transform: rotate(90deg); }
 
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
+
+/* ── Live Monitor & Pipeline (melhor feedback visual) ─────── */
+.live-monitor-card {
+  border: 1px solid var(--border);
+  margin: 1rem 0;
+  background: var(--surface);
+}
+.pipeline {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+.pipeline-step {
+  flex: 1;
+  min-width: 120px;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: var(--bg);
+  position: relative;
+  opacity: 0.6;
+  transition: all 0.2s ease;
+}
+.pipeline-step.active {
+  opacity: 1;
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.08);
+}
+.pipeline-step.done {
+  opacity: 1;
+  border-color: var(--green);
+  background: rgba(34, 211, 165, 0.08);
+}
+.pipeline-step .step-icon { margin-right: 4px; }
+.pipeline-step .sub-progress { margin-top: 4px; }
+.pipeline-step .sub-progress progress { width: 100%; height: 6px; }
+.pipeline-step .page-info { font-size: 11px; color: var(--text-3); }
+.pipeline-step.error { background: rgba(248,113,113,.12); border-color: #f87171; }
+
+.live-log {
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  border-top: 1px solid var(--border);
+  max-height: 120px;
+  overflow: auto;
+}
+.live-log .log-list {
+  margin: 0.25rem 0;
+  padding-left: 1rem;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.live-log li { margin-bottom: 2px; }
+
+.live-status {
+  padding: 0.4rem 1rem;
+  font-size: 0.75rem;
+  border-top: 1px dashed var(--border);
+  color: var(--text-3);
+}
+
+.processing-banner {
+  background: rgba(34, 211, 165, 0.1);
+  border: 1px solid var(--green);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+}
+
+/* Floating global progress overlay for "melhor feedback" */
+#global-progress-overlay {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9998;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.35);
+  padding: 8px 14px;
+  min-width: 280px;
+  max-width: 420px;
+  font-size: 0.82rem;
+  display: none;
+}
+#global-progress-overlay.visible { display: block; }
+#global-progress-overlay .pipeline-mini {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+#global-progress-overlay .step-mini {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+#global-progress-overlay .step-mini.active { background: rgba(99,102,241,.15); border-color: var(--accent); }
+#global-progress-overlay .step-mini.done { background: rgba(34,211,165,.15); border-color: var(--green); }
+#global-progress-overlay .main-msg {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
   50%       { opacity: .4; }
 }
 
