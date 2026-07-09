@@ -496,9 +496,14 @@ def executar_ciclo(
     force_ocr: bool = False,
     fast_ocr: bool = True,
 ) -> None:
-    """Ciclo completo automatizado: listar → processar novas → pendentes → IA."""
+    """Ciclo completo automatizado (BOT): listar → processar novas → pendentes → IA.
+
+    A interface WEB só cadastra edições; o OCR e as notificações ficam neste ciclo.
+    """
     database.init_db()
     _backup_diario_se_preciso()
+    processadas = 0
+    pendentes_ok = 0
 
     try:
         retry_pending_ia()
@@ -531,11 +536,13 @@ def executar_ciclo(
     for edicao in novas:
         try:
             # Novas: OCR rápido+estruturado por padrão (force_ocr or auto)
-            processar_edicao(
+            resultado = processar_edicao(
                 edicao,
                 force_ocr=force_ocr or SETTINGS.auto_process,
                 fast_ocr=fast_ocr,
             )
+            if resultado is not None:
+                processadas += 1
         except Exception:
             continue
 
@@ -552,19 +559,28 @@ def executar_ciclo(
                 data_publicacao=row["data_publicacao"],
             )
             try:
-                processar_edicao(
+                resultado = processar_edicao(
                     edicao,
                     force_ocr=force_ocr or True,
                     fast_ocr=fast_ocr,
                     edicao_id=int(row["id"]),
                 )
+                if resultado is not None:
+                    pendentes_ok += 1
             except Exception:
                 continue
     elif SETTINGS.auto_process:
         try:
-            processar_pendentes_automatico(
+            pendentes_ok = processar_pendentes_automatico(
                 force_ocr=True,
                 fast_ocr=fast_ocr,
             )
         except Exception:
             logger.exception("Falha no auto-processamento de pendentes.")
+
+    resumo = (
+        f"novas={len(novas)} processadas={processadas} "
+        f"fila_pendentes={pendentes_ok} auto={SETTINGS.auto_process}"
+    )
+    database.registrar_evento_ciclo("bot_ciclo", resumo)
+    logger.info("Ciclo BOT concluído: %s", resumo)

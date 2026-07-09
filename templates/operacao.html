@@ -6,8 +6,9 @@
   <p class="eyebrow">Operação · Oficina do bot</p>
   <h1>Painel operacional</h1>
   <p class="hero-copy">
-    Modo automático: o bot detecta edições, processa OCR e notifica sozinho.
-    Use esta área só para acompanhar, forçar ações ou revisar.
+    <strong>Ciclo único:</strong> a interface (WEB) só detecta e cadastra edições;
+    o rastreador (BOT) processa OCR, IA e notificações sozinho.
+    Use esta área para acompanhar o ciclo ou forçar ações manuais.
   </p>
 </section>
 
@@ -30,24 +31,107 @@
   </article>
 </section>
 
+<section class="panel fade-in ciclo-panel" id="ciclo-panel">
+  <div class="panel-head">
+    <h2>Status da automação</h2>
+    <span id="ciclo-refresh">atualiza com a página</span>
+  </div>
+  <div class="ciclo-grid">
+    <article class="ciclo-card">
+      <header>
+        <span class="ciclo-role">WEB · varredura</span>
+        <span class="badge badge-analyzed">só cadastra</span>
+      </header>
+      <dl class="ciclo-dl">
+        <div>
+          <dt>Última varredura</dt>
+          <dd id="ciclo-web-ultimo">{{ automacao.web_ultimo_br }}</dd>
+        </div>
+        <div>
+          <dt>Próxima estimada</dt>
+          <dd id="ciclo-web-proxima">{{ automacao.web_proxima_br }}</dd>
+        </div>
+        <div>
+          <dt>Intervalo</dt>
+          <dd>a cada {{ automacao.web_intervalo_h }}h</dd>
+        </div>
+        <div>
+          <dt>Último resultado</dt>
+          <dd id="ciclo-web-msg" class="ciclo-msg">{{ automacao.web_mensagem or "—" }}</dd>
+        </div>
+      </dl>
+    </article>
+    <article class="ciclo-card ciclo-card-bot">
+      <header>
+        <span class="ciclo-role">BOT · processamento</span>
+        <span class="badge badge-inaja">OCR + IA + alertas</span>
+      </header>
+      <dl class="ciclo-dl">
+        <div>
+          <dt>Último ciclo</dt>
+          <dd id="ciclo-bot-ultimo">{{ automacao.bot_ultimo_br }}</dd>
+        </div>
+        <div>
+          <dt>Próximo estimado</dt>
+          <dd id="ciclo-bot-proxima">{{ automacao.bot_proxima_br }}</dd>
+        </div>
+        <div>
+          <dt>Intervalo</dt>
+          <dd>a cada {{ automacao.bot_intervalo_h }}h</dd>
+        </div>
+        <div>
+          <dt>Último resultado</dt>
+          <dd id="ciclo-bot-msg" class="ciclo-msg">{{ automacao.bot_mensagem or "—" }}</dd>
+        </div>
+      </dl>
+    </article>
+  </div>
+  <div class="ciclo-fila">
+    <div>
+      <strong id="ciclo-pendentes">{{ automacao.pendentes_ocr }}</strong>
+      <span>edição(ões) pendente(s) de OCR no banco</span>
+    </div>
+    <div>
+      <strong id="ciclo-fila">{{ automacao.fila_proximo_ciclo }}</strong>
+      <span>
+        na fila do próximo ciclo BOT
+        {% if automacao.auto_process %}
+          (limite {{ automacao.auto_process_limit }}, últimos {{ automacao.auto_process_dias }} dias)
+        {% else %}
+          <em>· AUTO_PROCESS desligado</em>
+        {% endif %}
+      </span>
+    </div>
+  </div>
+</section>
+
 <section class="ops-actions panel fade-in">
   <div class="panel-head"><h2>Atalhos</h2></div>
   <div class="ops-actions-grid">
-    <form method="post" action="/edicoes-detectadas/detectar">
-      <button type="submit" class="btn">Detectar edições agora</button>
-    </form>
-    {% if stats.pendentes_ocr and stats.pendentes_ocr > 0 %}
-    <form method="post" action="/edicoes-detectadas/analisar-lote">
-      <input type="hidden" name="limite" value="5">
-      <button type="submit" class="btn btn-secondary">Analisar lote (5 pendentes)</button>
-    </form>
-    {% endif %}
     <a class="btn btn-secondary" href="/edicoes-detectadas">Abrir lista de edições</a>
     <a class="btn btn-secondary" href="/revisao/so-mencao">Revisão só menção</a>
     <a class="btn btn-secondary" href="/status">Abrir fila de jobs</a>
     <a class="btn btn-secondary" href="/admin">Administração</a>
     <a class="btn btn-secondary" href="/">← Voltar aos atos</a>
   </div>
+  <details class="ops-advanced">
+    <summary>Avançado · ações manuais</summary>
+    <p class="ops-advanced-hint">
+      O sistema já varre e processa sozinho. Use só se quiser forçar agora
+      (ex.: jornal acabou de publicar ou fila atrasada).
+    </p>
+    <div class="ops-actions-grid">
+      <form method="post" action="/edicoes-detectadas/detectar">
+        <button type="submit" class="btn">Detectar edições agora</button>
+      </form>
+      {% if stats.pendentes_ocr and stats.pendentes_ocr > 0 %}
+      <form method="post" action="/edicoes-detectadas/analisar-lote">
+        <input type="hidden" name="limite" value="5">
+        <button type="submit" class="btn btn-secondary">Analisar lote (5 pendentes)</button>
+      </form>
+      {% endif %}
+    </div>
+  </details>
 </section>
 
 <section class="ops-split fade-in">
@@ -63,7 +147,7 @@
           {% if atividade.tem_atividade %}Executando {{ atividade.rodando|length }} etapa(s){% else %}Sistema aguardando{% endif %}
         </strong>
         <p id="activity-message">
-          {% if atividade.tem_atividade %}Processamento em andamento.{% else %}Aguardando próxima varredura ou ação manual.{% endif %}
+          {% if atividade.tem_atividade %}Processamento em andamento.{% else %}Aguardando próximo ciclo do BOT ou ação manual.{% endif %}
         </p>
       </div>
     </div>
@@ -109,7 +193,7 @@
         <span>{{ saude.app_env }}</span>
       </li>
       <li class="health-item {% if saude.auto_process %}ok{% else %}warn{% endif %}">
-        <strong>Automação OCR</strong>
+        <strong>Automação OCR (BOT)</strong>
         <span>
           {% if saude.auto_process %}
             Ligada · até {{ saude.auto_process_limit }}/ciclo · {{ saude.auto_process_dias }} dias

@@ -311,6 +311,102 @@ def set_setting(chave: str, valor: str) -> None:
         )
 
 
+def registrar_evento_ciclo(tipo: str, mensagem: str = "") -> None:
+    """Registra fim de ciclo da WEB (varredura) ou do BOT (processamento).
+
+    tipo: ``web_scan`` | ``bot_ciclo``
+    """
+    agora = datetime.now().isoformat(timespec="seconds")
+    set_setting(f"ciclo_{tipo}_ultimo", agora)
+    set_setting(f"ciclo_{tipo}_mensagem", mensagem or "")
+
+
+def _formatar_dt_br(iso: str) -> str:
+    if not iso:
+        return "—"
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", ""))
+        return dt.strftime("%d/%m/%Y %H:%M")
+    except ValueError:
+        return iso
+
+
+def _proxima_a_partir(ultimo_iso: str, intervalo_h: int) -> tuple[str, str]:
+    """Retorna (iso, rotulo_br) da próxima execução estimada."""
+    horas = max(1, int(intervalo_h or 6))
+    try:
+        if ultimo_iso:
+            base = datetime.fromisoformat(ultimo_iso.replace("Z", ""))
+        else:
+            base = datetime.now()
+    except ValueError:
+        base = datetime.now()
+    from datetime import timedelta
+
+    prox = base + timedelta(hours=horas)
+    # Se a próxima já passou (processo reiniciou tarde), mostra "em breve / agora"
+    if prox <= datetime.now():
+        return (
+            datetime.now().isoformat(timespec="seconds"),
+            "em breve (intervalo vencido)",
+        )
+    return prox.isoformat(timespec="seconds"), prox.strftime("%d/%m/%Y %H:%M")
+
+
+def get_status_automacao() -> dict:
+    """Status unificado: última/próxima varredura (WEB) e ciclo do BOT + fila."""
+    web_ultimo = get_setting("ciclo_web_scan_ultimo", "")
+    web_msg = get_setting("ciclo_web_scan_mensagem", "")
+    bot_ultimo = get_setting("ciclo_bot_ciclo_ultimo", "")
+    bot_msg = get_setting("ciclo_bot_ciclo_mensagem", "")
+
+    web_prox_iso, web_prox_br = _proxima_a_partir(
+        web_ultimo, SETTINGS.web_scan_interval_hours
+    )
+    bot_prox_iso, bot_prox_br = _proxima_a_partir(
+        bot_ultimo, SETTINGS.check_interval_hours
+    )
+
+    with connect() as conn:
+        pendentes = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM edicoes WHERE ocr_processado = 0"
+            ).fetchone()[0]
+            or 0
+        )
+
+    # Fila que o BOT pegaria no próximo ciclo (mesma regra de processar_pendentes)
+    lim = max(0, int(SETTINGS.auto_process_limit or 0))
+    dias = int(SETTINGS.auto_process_dias or 0)
+    fila_proximo = len(
+        get_pending_edicoes(
+            process_all=False,
+            limit=lim if lim else None,
+            recent_days=dias if dias else None,
+        )
+    )
+
+    return {
+        "web_ultimo": web_ultimo,
+        "web_ultimo_br": _formatar_dt_br(web_ultimo) if web_ultimo else "ainda não rodou",
+        "web_mensagem": web_msg,
+        "web_proxima": web_prox_iso,
+        "web_proxima_br": web_prox_br if web_ultimo else f"a cada {SETTINGS.web_scan_interval_hours}h (após 1ª varredura)",
+        "web_intervalo_h": int(SETTINGS.web_scan_interval_hours or 6),
+        "bot_ultimo": bot_ultimo,
+        "bot_ultimo_br": _formatar_dt_br(bot_ultimo) if bot_ultimo else "ainda não rodou",
+        "bot_mensagem": bot_msg,
+        "bot_proxima": bot_prox_iso,
+        "bot_proxima_br": bot_prox_br if bot_ultimo else f"a cada {SETTINGS.check_interval_hours}h (após 1º ciclo)",
+        "bot_intervalo_h": int(SETTINGS.check_interval_hours or 6),
+        "pendentes_ocr": pendentes,
+        "fila_proximo_ciclo": fila_proximo,
+        "auto_process": bool(SETTINGS.auto_process),
+        "auto_process_limit": int(SETTINGS.auto_process_limit or 0),
+        "auto_process_dias": int(SETTINGS.auto_process_dias or 0),
+    }
+
+
 def url_exists(url: str) -> bool:
     with connect() as conn:
         row = conn.execute("SELECT 1 FROM edicoes WHERE url = ?", (url,)).fetchone()

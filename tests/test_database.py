@@ -311,6 +311,20 @@ class TestAusenciaPublicacao:
 
 
 class TestSettings:
+    def test_registrar_e_status_automacao(self, db):
+        import database
+
+        database.registrar_evento_ciclo("web_scan", "10 detectadas")
+        database.registrar_evento_ciclo("bot_ciclo", "processadas=2")
+        st = database.get_status_automacao()
+        assert st["web_mensagem"] == "10 detectadas"
+        assert st["bot_mensagem"] == "processadas=2"
+        assert st["web_ultimo"]
+        assert st["bot_ultimo"]
+        assert "ainda não" not in st["web_ultimo_br"]
+        assert isinstance(st["pendentes_ocr"], int)
+        assert isinstance(st["fila_proximo_ciclo"], int)
+
     def test_set_e_get_setting(self, db):
         import database
         database.init_db()

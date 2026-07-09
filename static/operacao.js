@@ -164,7 +164,7 @@
           : "Sistema aguardando";
         message.textContent = data.tem_atividade
           ? "Processamento em andamento."
-          : "Aguardando próxima varredura ou ação manual.";
+          : "Aguardando próximo ciclo do BOT ou ação manual.";
         running.innerHTML = data.rodando.length
           ? data.rodando.map(renderJob).join("")
           : '<p class="empty">Nada rodando agora.</p>';
@@ -175,7 +175,35 @@
     };
   }
 
+  function atualizarAutomacao() {
+    fetch("/api/automacao", { cache: "no-store" })
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (a) {
+        function setText(id, val) {
+          var el = document.getElementById(id);
+          if (el) el.textContent = val == null || val === "" ? "—" : String(val);
+        }
+        setText("ciclo-web-ultimo", a.web_ultimo_br);
+        setText("ciclo-web-proxima", a.web_proxima_br);
+        setText("ciclo-web-msg", a.web_mensagem || "—");
+        setText("ciclo-bot-ultimo", a.bot_ultimo_br);
+        setText("ciclo-bot-proxima", a.bot_proxima_br);
+        setText("ciclo-bot-msg", a.bot_mensagem || "—");
+        setText("ciclo-pendentes", a.pendentes_ocr);
+        setText("ciclo-fila", a.fila_proximo_ciclo);
+        var refresh = document.getElementById("ciclo-refresh");
+        if (refresh)
+          refresh.textContent =
+            "atualizado " + new Date().toLocaleTimeString("pt-BR");
+      })
+      .catch(function () {});
+  }
+
   carregarGraficoPorMes();
   carregarGraficoPorTipo();
   conectarSSE();
+  atualizarAutomacao();
+  setInterval(atualizarAutomacao, 30000);
 })();

@@ -6,27 +6,36 @@
   <p class="eyebrow">Operação · Varredura</p>
   <h1>Edições do jornal</h1>
   <p class="hero-copy">
-    Sistema <strong>totalmente automático</strong>: varredura periódica, download, OCR e alertas sem clique.
-    Os botões abaixo são opcionais (forçar agora / lote manual).
+    A <strong>WEB</strong> cadastra edições periodicamente; o <strong>BOT</strong> processa OCR e alertas sozinho.
+    Acompanhe a lista abaixo — ações manuais ficam em <em>Avançado</em>.
   </p>
   <div class="actions" style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
-    <form method="post" action="/edicoes-detectadas/detectar" style="margin:0;">
-      <button type="submit">Detectar agora</button>
-    </form>
-    {% if stats.pendentes and stats.pendentes > 0 %}
-    <form method="post" action="/edicoes-detectadas/analisar-lote" class="lote-form" style="margin:0; display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
-      <label for="lote-limite" class="lote-label">Lote:</label>
-      <select id="lote-limite" name="limite" class="lote-select">
-        <option value="5">5 edições</option>
-        <option value="10">10 edições</option>
-        <option value="20">20 edições</option>
-        <option value="50">50 edições</option>
-      </select>
-      <button type="submit" id="lote-btn" class="btn btn-secondary">Analisar lote de 5 pendentes</button>
-    </form>
-    {% endif %}
-    <a href="/status" style="font-size:.9rem; margin-left:.5rem;">Ver status</a>
+    <a href="/status" class="btn btn-secondary" style="font-size:.9rem;">Ver status / jobs</a>
+    <a href="/operacao" class="btn btn-secondary" style="font-size:.9rem;">Status da automação</a>
   </div>
+  <details class="ops-advanced" style="margin-top:1rem;">
+    <summary>Avançado · forçar varredura ou OCR manual</summary>
+    <p class="ops-advanced-hint">
+      Opcional. Use se quiser detectar ou analisar agora, sem esperar o ciclo automático.
+    </p>
+    <div class="actions" style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+      <form method="post" action="/edicoes-detectadas/detectar" style="margin:0;">
+        <button type="submit">Detectar agora</button>
+      </form>
+      {% if stats.pendentes and stats.pendentes > 0 %}
+      <form method="post" action="/edicoes-detectadas/analisar-lote" class="lote-form" style="margin:0; display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+        <label for="lote-limite" class="lote-label">Lote:</label>
+        <select id="lote-limite" name="limite" class="lote-select">
+          <option value="5">5 edições</option>
+          <option value="10">10 edições</option>
+          <option value="20">20 edições</option>
+          <option value="50">50 edições</option>
+        </select>
+        <button type="submit" id="lote-btn" class="btn btn-secondary">Analisar lote de 5 pendentes</button>
+      </form>
+      {% endif %}
+    </div>
+  </details>
 </section>
 
 <section class="stats-grid">

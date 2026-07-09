@@ -145,6 +145,7 @@ def _atividade_atual(conn: sqlite3.Connection) -> dict:
 # ---------------------------------------------------------------------------
 
 def _registrar_edicoes_detectadas() -> int:
+    """Só cadastra edições no banco — OCR fica a cargo do BOT (main.py)."""
     job_id = database.start_job(
         "detectando edições",
         mensagem=f"Varredura automática em {SETTINGS.site_url}",
@@ -157,40 +158,19 @@ def _registrar_edicoes_detectadas() -> int:
                 edicao.titulo,
                 edicao.data_publicacao,
             )
-        database.update_job(
-            job_id,
-            "concluido",
-            mensagem=f"{len(edicoes)} edição(ões) detectada(s)",
-        )
+        msg = f"{len(edicoes)} edição(ões) detectada(s)"
+        database.update_job(job_id, "concluido", mensagem=msg)
+        database.registrar_evento_ciclo("web_scan", msg)
         return len(edicoes)
     except Exception as exc:
         logger.exception("Falha ao detectar edições.")
         database.update_job(job_id, "erro", mensagem=str(exc))
+        database.registrar_evento_ciclo("web_scan", f"erro: {exc}")
         return 0
 
 
-def _auto_processar_pendentes_bg() -> None:
-    """Baixa + OCR + detecção + notificação das pendentes (fila automática)."""
-    if not SETTINGS.auto_process:
-        return
-    if not _analise_lock.acquire(blocking=False):
-        database.log_job(
-            "auto-processando pendentes",
-            "ignorado",
-            mensagem="Análise já em execução",
-        )
-        return
-    try:
-        from pipeline import processar_pendentes_automatico
-
-        processar_pendentes_automatico(force_ocr=True, fast_ocr=True)
-    except Exception:
-        logger.exception("Falha no auto-processamento de pendentes (web).")
-    finally:
-        _analise_lock.release()
-
-
 def _detectar_edicoes_com_trava() -> None:
+    """Varredura WEB: apenas lista/cadastra URLs. Não roda OCR."""
     if not _detector_lock.acquire(blocking=False):
         database.log_job(
             "detectando edições",
@@ -200,15 +180,12 @@ def _detectar_edicoes_com_trava() -> None:
         return
     try:
         _registrar_edicoes_detectadas()
-        # Após cadastrar edições, processa OCR automaticamente
-        if SETTINGS.auto_process:
-            _task_executor.submit(_auto_processar_pendentes_bg)
     finally:
         _detector_lock.release()
 
 
 def _scheduler_loop() -> None:
-    # Aguarda web subir, depois 1º ciclo completo (detectar + processar)
+    # Aguarda web subir, depois 1ª varredura (cadastro apenas)
     time.sleep(3)
     _detectar_edicoes_com_trava()
     intervalo_h = max(1, int(SETTINGS.web_scan_interval_hours or 6))
@@ -224,13 +201,13 @@ def _start_scheduler() -> None:
     _scheduler_started = True
     thread = threading.Thread(
         target=_scheduler_loop,
-        name="auto-scan-process",
+        name="auto-scan-web",
         daemon=True,
     )
     thread.start()
     logger.info(
-        "Automação ativa: varredura a cada %sh + OCR de pendentes "
-        "(AUTO_PROCESS=%s, limite=%s, dias=%s).",
+        "WEB em modo varredura: cadastra edições a cada %sh "
+        "(OCR/notificações ficam no BOT; AUTO_PROCESS=%s, limite=%s, dias=%s).",
         SETTINGS.web_scan_interval_hours,
         SETTINGS.auto_process,
         SETTINGS.auto_process_limit,
@@ -453,11 +430,12 @@ def atos_alias(
 
 @app.get("/operacao", response_class=HTMLResponse)
 def operacao(request: Request) -> HTMLResponse:
-    """Hub operacional: atalhos, fila ao vivo, saúde, métricas e gráficos."""
+    """Hub operacional: ciclo automático, fila ao vivo, saúde e gráficos."""
     with _conn() as conn:
         stats = _stats_basicos(conn)
         atividade = _atividade_atual(conn)
     metricas = database.get_metricas_qualidade()
+    automacao = database.get_status_automacao()
     return templates.TemplateResponse(
         request,
         "operacao.html",
@@ -466,6 +444,7 @@ def operacao(request: Request) -> HTMLResponse:
             "atividade": atividade,
             "metricas": metricas,
             "saude": _saude_sistema(),
+            "automacao": automacao,
         },
     )
 
@@ -1121,6 +1100,12 @@ def api_publicacoes() -> list[dict]:
 def api_atividade() -> dict:
     with _conn() as conn:
         return _atividade_atual(conn)
+
+
+@app.get("/api/automacao")
+def api_automacao() -> dict:
+    """Última/próxima varredura WEB, ciclo BOT e fila de OCR."""
+    return database.get_status_automacao()
 
 
 def _live_status_for_edicao(edicao_id: int) -> dict:

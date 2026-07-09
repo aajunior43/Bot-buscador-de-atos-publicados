@@ -28,6 +28,24 @@ def test_operacao_hub(db):
     assert response.status_code == 200
     assert "Painel operacional" in response.text
     assert "Saúde do sistema" in response.text
+    assert "Status da automação" in response.text
+    assert "WEB · varredura" in response.text
+    assert "BOT · processamento" in response.text
+    assert "Avançado" in response.text
+
+
+def test_api_automacao(db):
+    database.registrar_evento_ciclo("web_scan", "3 edição(ões) detectada(s)")
+    database.registrar_evento_ciclo("bot_ciclo", "novas=1 processadas=1 fila_pendentes=0")
+    client = TestClient(app)
+    r = client.get("/api/automacao")
+    assert r.status_code == 200
+    data = r.json()
+    assert "web_ultimo" in data
+    assert data["web_mensagem"].startswith("3 edição")
+    assert "bot_ultimo" in data
+    assert "fila_proximo_ciclo" in data
+    assert "pendentes_ocr" in data
 
 
 def test_revisao_so_mencao(db):
