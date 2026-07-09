@@ -12,11 +12,21 @@ from webapp import app
 
 
 def test_dashboard_vazio(db):
-    """Banco vazio não pode quebrar o dashboard (SUM NULL do SQLite)."""
+    """Banco vazio não pode quebrar o dashboard (home de Atos)."""
     client = TestClient(app)
     response = client.get("/")
     assert response.status_code == 200
-    assert "Publicações de Inajá" in response.text
+    assert "Atos de Inajá" in response.text
+    assert "Leitura" in response.text
+    assert "Operação" in response.text
+
+
+def test_operacao_hub(db):
+    client = TestClient(app)
+    response = client.get("/operacao")
+    assert response.status_code == 200
+    assert "Painel operacional" in response.text
+    assert "Saúde do sistema" in response.text
 
 
 def test_edicoes_detectadas_vazia(db):

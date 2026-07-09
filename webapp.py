@@ -272,100 +272,140 @@ def _analisar_edicoes_lote(edicao_ids: list[int]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Dashboard
+# Dashboard (Leitura — Atos)
 # ---------------------------------------------------------------------------
+
+def _stats_basicos(conn: sqlite3.Connection) -> dict:
+    stats_db = conn.execute(
+        """
+        SELECT
+          COUNT(*) AS total_edicoes,
+          COALESCE(SUM(CASE WHEN tem_inaja = 1 THEN 1 ELSE 0 END), 0) AS edicoes_inaja,
+          COALESCE(SUM(CASE WHEN ocr_processado = 0 THEN 1 ELSE 0 END), 0) AS pendentes_ocr,
+          (SELECT COUNT(*) FROM publicacoes) AS total_publicacoes,
+          (SELECT COUNT(*) FROM mencoes) AS total_mencoes
+        FROM edicoes
+        """
+    ).fetchone()
+    fin = database.somar_valores_publicacoes(deduplicar=True)
+    ultima = conn.execute(
+        """
+        SELECT e.data_publicacao
+        FROM publicacoes p
+        JOIN edicoes e ON e.id = p.edicao_id
+        WHERE e.data_publicacao IS NOT NULL AND e.data_publicacao != ''
+        ORDER BY e.data_publicacao DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    return {
+        "total_edicoes": int(stats_db["total_edicoes"] or 0),
+        "edicoes_inaja": int(stats_db["edicoes_inaja"] or 0),
+        "pendentes_ocr": int(stats_db["pendentes_ocr"] or 0),
+        "total_publicacoes": int(stats_db["total_publicacoes"] or 0),
+        "total_mencoes": int(stats_db["total_mencoes"] or 0),
+        "total_valor_licitado": database.formatar_reais(float(fin["total"])),
+        "valor_n_unicos": int(fin["n_unicos"]),
+        "valor_n_brutos": int(fin["n_com_valor"]),
+        "ultima_deteccao": (ultima["data_publicacao"] if ultima else None) or "—",
+    }
+
+
+def _saude_sistema() -> dict:
+    return {
+        "telegram_ok": bool(
+            SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id
+        ),
+        "ai_key": bool(SETTINGS.opencode_api_key),
+        "ai_refine": bool(SETTINGS.ai_refine_publications),
+        "web_auth": bool(SETTINGS.webapp_user and SETTINGS.webapp_password),
+        "app_env": SETTINGS.app_env or "development",
+    }
+
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,
     q: str = Query("", description="Busca por título, data, órgão, tipo ou assunto"),
 ) -> HTMLResponse:
+    """Home de leitura: busca + KPIs leigos + lista de atos."""
     termo = f"%{q.strip()}%"
     with _conn() as conn:
-        stats_db = conn.execute(
-            """
-            SELECT
-              COUNT(*) AS total_edicoes,
-              COALESCE(SUM(CASE WHEN tem_inaja = 1 THEN 1 ELSE 0 END), 0) AS edicoes_inaja,
-              COALESCE(SUM(CASE WHEN ocr_processado = 0 THEN 1 ELSE 0 END), 0) AS pendentes_ocr,
-              (SELECT COUNT(*) FROM publicacoes) AS total_publicacoes,
-              (SELECT COUNT(*) FROM mencoes) AS total_mencoes
-            FROM edicoes
-            """
-        ).fetchone()
-
-        # Valores citados: soma deduplicada (órgão+tipo+número) — indicador, não caixa
-        fin = database.somar_valores_publicacoes(deduplicar=True)
-        valor_formatado = database.formatar_reais(float(fin["total"]))
-
-        stats = {
-            "total_edicoes": int(stats_db["total_edicoes"] or 0),
-            "edicoes_inaja": int(stats_db["edicoes_inaja"] or 0),
-            "pendentes_ocr": int(stats_db["pendentes_ocr"] or 0),
-            "total_publicacoes": int(stats_db["total_publicacoes"] or 0),
-            "total_mencoes": int(stats_db["total_mencoes"] or 0),
-            "total_valor_licitado": valor_formatado,
-            "valor_n_unicos": int(fin["n_unicos"]),
-            "valor_n_brutos": int(fin["n_com_valor"]),
-        }
-        metricas = database.get_metricas_qualidade()
-
+        stats = _stats_basicos(conn)
         if q.strip():
-            edicoes = conn.execute(
+            publicacoes = conn.execute(
                 """
-                SELECT DISTINCT e.*,
-                  (SELECT COUNT(*) FROM publicacoes p WHERE p.edicao_id = e.id) AS publicacoes_count,
-                  (SELECT COUNT(*) FROM mencoes m WHERE m.edicao_id = e.id) AS mencoes_count
-                FROM edicoes e
-                LEFT JOIN publicacoes p ON p.edicao_id = e.id
+                SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao
+                FROM publicacoes p
+                JOIN edicoes e ON e.id = p.edicao_id
                 WHERE e.titulo LIKE ?
                    OR e.data_publicacao LIKE ?
                    OR p.orgao LIKE ?
                    OR p.tipo LIKE ?
                    OR p.assunto LIKE ?
-                ORDER BY e.data_publicacao DESC, e.id DESC
-                LIMIT 100
+                   OR p.resumo_ia LIKE ?
+                   OR p.numero LIKE ?
+                ORDER BY e.data_publicacao DESC, p.id DESC
+                LIMIT 50
                 """,
-                (termo, termo, termo, termo, termo),
+                (termo, termo, termo, termo, termo, termo, termo),
             ).fetchall()
         else:
-            edicoes = conn.execute(
+            publicacoes = conn.execute(
                 """
-                SELECT e.*,
-                  (SELECT COUNT(*) FROM publicacoes p WHERE p.edicao_id = e.id) AS publicacoes_count,
-                  (SELECT COUNT(*) FROM mencoes m WHERE m.edicao_id = e.id) AS mencoes_count
-                FROM edicoes e
-                ORDER BY e.data_publicacao DESC, e.id DESC
-                LIMIT 100
-                """,
+                SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao
+                FROM publicacoes p
+                JOIN edicoes e ON e.id = p.edicao_id
+                ORDER BY e.data_publicacao DESC, p.id DESC
+                LIMIT 40
+                """
             ).fetchall()
-
-        publicacoes = conn.execute(
-            """
-            SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao
-            FROM publicacoes p
-            JOIN edicoes e ON e.id = p.edicao_id
-            ORDER BY e.data_publicacao DESC, p.id DESC
-            LIMIT 30
-            """
-        ).fetchall()
         atividade = _atividade_atual(conn)
-
-    timeline = database.get_timeline_por_mes()
 
     return templates.TemplateResponse(
         request,
         "dashboard.html",
         {
             "stats": stats,
-            "metricas": metricas,
-            "edicoes": edicoes,
             "publicacoes": publicacoes,
             "atividade": atividade,
-            "timeline": timeline,
             "q": q,
         },
     )
+
+
+@app.get("/atos", response_class=HTMLResponse)
+def atos_alias(
+    request: Request,
+    q: str = Query("", description="Busca"),
+) -> HTMLResponse:
+    """Alias de leitura para a home de atos."""
+    return dashboard(request, q=q)
+
+
+@app.get("/operacao", response_class=HTMLResponse)
+def operacao(request: Request) -> HTMLResponse:
+    """Hub operacional: atalhos, fila ao vivo, saúde, métricas e gráficos."""
+    with _conn() as conn:
+        stats = _stats_basicos(conn)
+        atividade = _atividade_atual(conn)
+    metricas = database.get_metricas_qualidade()
+    return templates.TemplateResponse(
+        request,
+        "operacao.html",
+        {
+            "stats": stats,
+            "atividade": atividade,
+            "metricas": metricas,
+            "saude": _saude_sistema(),
+        },
+    )
+
+
+@app.get("/detecoes", response_class=RedirectResponse)
+def detecoes_redirect() -> RedirectResponse:
+    """Rota legada: lista de detecções virou a home de Atos."""
+    return RedirectResponse(url="/", status_code=302)
 
 
 # ---------------------------------------------------------------------------

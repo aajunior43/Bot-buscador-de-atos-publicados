@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Edições Detectadas - Monitor Inajá{% endblock %}
 {% block content %}
-<section class="detail-hero">
-  <p class="eyebrow">Varredura automática</p>
-  <h1>Edições detectadas</h1>
-  <p>O sistema registra edições automaticamente 4 vezes ao dia. A análise OCR é iniciada manualmente por edição.</p>
+<section class="detail-hero fade-in">
+  <a class="backlink" href="/operacao">← Operação</a>
+  <p class="eyebrow">Operação · Varredura</p>
+  <h1>Edições do jornal</h1>
+  <p class="hero-copy">Listagem automática 4×/dia. A análise OCR é iniciada por edição ou em lote.</p>
   <div class="actions" style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
     <form method="post" action="/edicoes-detectadas/detectar" style="margin:0;">
       <button type="submit">Detectar agora</button>

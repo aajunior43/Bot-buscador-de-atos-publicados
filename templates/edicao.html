@@ -2,62 +2,28 @@
 {% block title %}{{ edicao.titulo }} - Monitor Inajá{% endblock %}
 {% block content %}
 <section class="detail-hero fade-in">
-  <a class="backlink" href="/">← Voltar ao Dashboard</a>
+  <a class="backlink" href="/">← Atos</a>
   <h1>{{ edicao.titulo or ("Edição " ~ edicao.id) }}</h1>
   <p>{{ edicao.data_publicacao or "Data não informada" }}</p>
   <div class="actions">
-    {% if edicao.caminho_local %}<a href="/edicoes/{{ edicao.id }}/pdf" target="_blank" class="btn btn-secondary">📄 Abrir PDF</a>{% endif %}
-    {% if edicao.texto_extraido_path %}<a href="/edicoes/{{ edicao.id }}/texto" target="_blank" class="btn btn-secondary">📝 Ver texto OCR</a>{% endif %}
-    <a href="{{ edicao.url }}" target="_blank" class="btn btn-secondary">🔗 Original</a>
+    {% if edicao.caminho_local %}<a href="/edicoes/{{ edicao.id }}/pdf" target="_blank" class="btn btn-secondary">Abrir PDF</a>{% endif %}
+    {% if edicao.texto_extraido_path %}<a href="/edicoes/{{ edicao.id }}/texto" target="_blank" class="btn btn-secondary">Texto OCR</a>{% endif %}
+    <a href="{{ edicao.url }}" target="_blank" class="btn btn-secondary">Original</a>
     <form method="post" action="/edicoes/{{ edicao.id }}/ia" style="display:inline;" onsubmit="return startProcessing(this, 'Refinando com IA...', {{ edicao.id }})">
-      <button type="submit" class="btn">✨ Refinar com IA</button>
+      <button type="submit" class="btn">Refinar com IA</button>
     </form>
     <form method="post" action="/edicoes/{{ edicao.id }}/analisar" style="display:inline;" onsubmit="return startProcessing(this, 'Reanalisando edição...', {{ edicao.id }})">
-      <button type="submit" class="btn btn-secondary">🔄 Reanalisar</button>
+      <button type="submit" class="btn btn-secondary">Reanalisar</button>
     </form>
   </div>
 </section>
 
-<!-- Live monitor placeholder (populated by startProcessing or on load if running) -->
 <div id="live-monitor-{{ edicao.id }}"></div>
 
-<!-- Debug OCR: navegação por página -->
-{% if num_paginas > 0 %}
-<section class="panel fade-in" id="debug-ocr-section">
-  <div class="panel-head">
-    <h2>🔍 Inspeção de Página (Debug OCR)</h2>
-    <span>{{ num_paginas }} página(s)</span>
-  </div>
-  <div style="padding:1rem 1.5rem;">
-    <div style="display:flex; align-items:center; gap:.75rem; margin-bottom:1rem; flex-wrap:wrap;">
-      <label for="pg-select" style="font-size:.8rem; color:var(--text-3); font-weight:600;">Página:</label>
-      <button id="pg-prev-btn" class="pg-nav-btn" title="Página Anterior">◀</button>
-      <select id="pg-select" style="width:100px;">
-        {% for n in range(1, num_paginas + 1) %}
-        <option value="{{ n }}">{{ n }}</option>
-        {% endfor %}
-      </select>
-      <button id="pg-next-btn" class="pg-nav-btn" title="Próxima Página">▶</button>
-      <button id="pg-load-btn" class="btn btn-secondary" style="padding:.45rem .9rem;">Ver página</button>
-    </div>
-    <div class="ocr-debug" id="ocr-debug-container" style="display:none;">
-      <div>
-        <p style="font-size:.72rem; color:var(--text-3); margin-bottom:.4rem; text-transform:uppercase; letter-spacing:.08em;">Imagem da página</p>
-        <img id="pg-img" src="" alt="Imagem da página" style="width:100%;">
-      </div>
-      <div>
-        <p style="font-size:.72rem; color:var(--text-3); margin-bottom:.4rem; text-transform:uppercase; letter-spacing:.08em;">Texto OCR extraído</p>
-        <div class="ocr-text" id="pg-text">Carregando texto...</div>
-      </div>
-    </div>
-  </div>
-</section>
-{% endif %}
-
-<!-- Publicações Classificadas -->
+<!-- Publicações (leitura) primeiro -->
 <section class="panel fade-in">
   <div class="panel-head">
-    <h2>Publicações Classificadas</h2>
+    <h2>Publicações</h2>
     <span>{{ publicacoes|length }} itens</span>
   </div>
   <div class="cards" style="grid-template-columns:1fr;">
@@ -144,6 +110,38 @@
     {% endfor %}
   </div>
 </section>
+
+{% if num_paginas > 0 %}
+<section class="panel fade-in" id="debug-ocr-section">
+  <div class="panel-head">
+    <h2>Inspeção de página (OCR)</h2>
+    <span>{{ num_paginas }} página(s)</span>
+  </div>
+  <div class="panel-body-pad">
+    <div class="pg-nav-row">
+      <label for="pg-select">Página</label>
+      <button type="button" id="pg-prev-btn" class="pg-nav-btn" title="Anterior">◀</button>
+      <select id="pg-select">
+        {% for n in range(1, num_paginas + 1) %}
+        <option value="{{ n }}">{{ n }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" id="pg-next-btn" class="pg-nav-btn" title="Próxima">▶</button>
+      <button type="button" id="pg-load-btn" class="btn btn-secondary">Ver página</button>
+    </div>
+    <div class="ocr-debug" id="ocr-debug-container" style="display:none;">
+      <div>
+        <p class="ocr-debug-label">Imagem da página</p>
+        <img id="pg-img" src="" alt="Imagem da página">
+      </div>
+      <div>
+        <p class="ocr-debug-label">Texto OCR</p>
+        <div class="ocr-text" id="pg-text">Carregando texto...</div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

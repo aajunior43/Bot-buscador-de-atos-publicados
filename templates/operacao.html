@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Operação - Monitor Inajá{% endblock %}
+{% block content %}
+
+<section class="detail-hero fade-in">
+  <p class="eyebrow">Operação · Oficina do bot</p>
+  <h1>Painel operacional</h1>
+  <p class="hero-copy">Varredura, OCR, fila de jobs e saúde do sistema — separado da leitura de atos.</p>
+</section>
+
+<section class="stats-grid stats-grid-compact fade-in">
+  <article class="{% if stats.pendentes_ocr %}stat-alert{% endif %}">
+    <strong>{{ stats.pendentes_ocr or 0 }}</strong>
+    <span>Pendentes OCR</span>
+  </article>
+  <article>
+    <strong>{{ stats.edicoes_inaja or 0 }}</strong>
+    <span>Com Inajá</span>
+  </article>
+  <article>
+    <strong>{{ stats.total_edicoes or 0 }}</strong>
+    <span>Edições no banco</span>
+  </article>
+  <article>
+    <strong id="ops-jobs-count">{{ atividade.rodando|length if atividade and atividade.rodando else 0 }}</strong>
+    <span>Jobs rodando</span>
+  </article>
+</section>
+
+<section class="ops-actions panel fade-in">
+  <div class="panel-head"><h2>Atalhos</h2></div>
+  <div class="ops-actions-grid">
+    <form method="post" action="/edicoes-detectadas/detectar">
+      <button type="submit" class="btn">Detectar edições agora</button>
+    </form>
+    {% if stats.pendentes_ocr and stats.pendentes_ocr > 0 %}
+    <form method="post" action="/edicoes-detectadas/analisar-lote">
+      <input type="hidden" name="limite" value="5">
+      <button type="submit" class="btn btn-secondary">Analisar lote (5 pendentes)</button>
+    </form>
+    {% endif %}
+    <a class="btn btn-secondary" href="/edicoes-detectadas">Abrir lista de edições</a>
+    <a class="btn btn-secondary" href="/status">Abrir fila de jobs</a>
+    <a class="btn btn-secondary" href="/admin">Administração</a>
+    <a class="btn btn-secondary" href="/">← Voltar aos atos</a>
+  </div>
+</section>
+
+<section class="ops-split fade-in">
+  <section class="panel activity-panel" id="activity-panel">
+    <div class="panel-head">
+      <h2>Atividade ao vivo</h2>
+      <span id="activity-refresh">ao vivo</span>
+    </div>
+    <div class="activity-state {% if atividade.tem_atividade %}is-running{% else %}is-idle{% endif %}" id="activity-state">
+      <div class="activity-orb"><span></span></div>
+      <div>
+        <strong id="activity-title">
+          {% if atividade.tem_atividade %}Executando {{ atividade.rodando|length }} etapa(s){% else %}Sistema aguardando{% endif %}
+        </strong>
+        <p id="activity-message">
+          {% if atividade.tem_atividade %}Processamento em andamento.{% else %}Aguardando próxima varredura ou ação manual.{% endif %}
+        </p>
+      </div>
+    </div>
+    <div class="activity-list" id="running-list">
+      {% for job in atividade.rodando %}
+      <article class="activity-item status-{{ job.status }}">
+        <span class="status-dot"></span>
+        <div>
+          <strong>{{ job.etapa }}</strong>
+          <small>{{ job.edicao_titulo or job.titulo or "Processo geral" }} · {{ job.atualizado_em }}</small>
+          {% if job.mensagem %}<p>{{ job.mensagem }}</p>{% endif %}
+        </div>
+      </article>
+      {% else %}
+      <p class="empty">Nada rodando agora.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Saúde do sistema</h2></div>
+    <ul class="health-list">
+      <li class="health-item {% if saude.telegram_ok %}ok{% else %}warn{% endif %}">
+        <strong>Telegram</strong>
+        <span>{% if saude.telegram_ok %}Configurado{% else %}Token ou chat ausente{% endif %}</span>
+      </li>
+      <li class="health-item {% if saude.ai_key %}ok{% else %}warn{% endif %}">
+        <strong>API de IA</strong>
+        <span>{% if saude.ai_key %}Chave presente{% else %}Sem chave{% endif %}{% if not saude.ai_refine %} · refine off{% endif %}</span>
+      </li>
+      <li class="health-item {% if saude.web_auth %}ok{% else %}warn{% endif %}">
+        <strong>Auth da interface</strong>
+        <span>{% if saude.web_auth %}Ativa{% else %}Desligada (só use em local){% endif %}</span>
+      </li>
+      <li class="health-item {% if saude.app_env == 'production' %}ok{% else %}neutral{% endif %}">
+        <strong>Ambiente</strong>
+        <span>{{ saude.app_env }}</span>
+      </li>
+    </ul>
+  </section>
+</section>
+
+{% if metricas and metricas.edicoes_com_metricas %}
+<section class="panel fade-in">
+  <div class="panel-head">
+    <h2>Qualidade da detecção</h2>
+    <span>{{ metricas.edicoes_com_metricas }} edição(ões) com métricas</span>
+  </div>
+  <div class="stats-grid stats-grid-compact">
+    <article>
+      <strong>{{ metricas.taxa_ia_ok_pct }}%</strong>
+      <span>IA ok</span>
+    </article>
+    <article>
+      <strong>{{ metricas.taxa_retencao_pct }}%</strong>
+      <span>Retenção pós-filtros</span>
+    </article>
+    <article>
+      <strong>{{ metricas.descartes_vizinho }}</strong>
+      <span>Descartes vizinho</span>
+    </article>
+    <article>
+      <strong>{{ metricas.taxa_ocr_fraco_pct }}%</strong>
+      <span>OCR fraco</span>
+    </article>
+  </div>
+</section>
+{% endif %}
+
+<section class="dash-mid fade-in">
+  <div class="dash-charts">
+    <div class="panel chart-panel-sm">
+      <div class="panel-head"><h2>Publicações por mês</h2></div>
+      <div class="chart-wrap"><canvas id="chart-por-mes" aria-label="Gráfico de publicações por mês"></canvas></div>
+    </div>
+    <div class="panel chart-panel-sm">
+      <div class="panel-head"><h2>Tipos de ato</h2></div>
+      <div class="chart-wrap chart-wrap-donut"><canvas id="chart-por-tipo" aria-label="Gráfico de tipos de ato"></canvas></div>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="/static/operacao.js"></script>
+{% endblock %}

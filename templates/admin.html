@@ -2,9 +2,9 @@
 {% block title %}Admin - Monitor Inajá{% endblock %}
 {% block content %}
 <section class="detail-hero fade-in">
-  <a class="backlink" href="/">← Voltar</a>
+  <a class="backlink" href="/operacao">← Operação</a>
   <h1>Administração</h1>
-  <p>Configure a IA, termos de busca, e-mail, webhooks e parâmetros do sistema.</p>
+  <p class="hero-copy">IA, termos de busca, e-mail, webhooks e manutenção.</p>
 </section>
 
 {% if msg %}
@@ -19,16 +19,16 @@
 
 <form method="post" action="/admin/salvar" id="admin-form">
   <nav class="tabs-nav" id="admin-tabs" role="tablist">
-    <button type="button" class="tab-btn active" data-tab="ia-busca" role="tab">✨ IA &amp; Busca</button>
-    <button type="button" class="tab-btn" data-tab="smtp" role="tab">📧 Notificações &amp; SMTP</button>
-    <button type="button" class="tab-btn" data-tab="webhooks" role="tab">🔗 Webhooks</button>
-    <button type="button" class="tab-btn" data-tab="manutencao" role="tab">🛠️ Manutenção &amp; Diagnóstico</button>
+    <button type="button" class="tab-btn active" data-tab="ia-busca" role="tab">IA e busca</button>
+    <button type="button" class="tab-btn" data-tab="smtp" role="tab">Notificações</button>
+    <button type="button" class="tab-btn" data-tab="webhooks" role="tab">Webhooks</button>
+    <button type="button" class="tab-btn" data-tab="manutencao" role="tab">Manutenção</button>
   </nav>
 
   <!-- Aba: IA & Busca -->
   <div class="tab-panel active" data-panel="ia-busca">
     <div class="panel fade-in" style="margin-bottom:1.5rem;">
-      <div class="panel-head"><h2>✨ Inteligência Artificial (OpenCode Go)</h2></div>
+      <div class="panel-head"><h2>Inteligência artificial</h2></div>
       <div class="admin-form">
         <div class="admin-section">
           <div class="field">
@@ -50,7 +50,7 @@
     </div>
 
     <div class="panel fade-in" style="margin-bottom:1.5rem;">
-      <div class="panel-head"><h2>🔍 Termos de Busca</h2></div>
+      <div class="panel-head"><h2>Termos de busca</h2></div>
       <div class="admin-form">
         <div class="field">
           <label for="extra_terms">Termos extras (separados por vírgula)</label>

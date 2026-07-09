@@ -1,197 +1,50 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - Monitor Inajá{% endblock %}
+{% block title %}Atos de Inajá - Monitor{% endblock %}
 {% block content %}
 
-<!-- ── Cabeçalho compacto + busca ─────────────────────────── -->
 <section class="dash-header fade-in">
   <div class="dash-header-text">
-    <p class="eyebrow">Monitor automático · O Regional Jornal</p>
-    <h1>Publicações de Inajá</h1>
+    <p class="eyebrow">Leitura · Publicações oficiais</p>
+    <h1>Atos de Inajá</h1>
+    <p class="hero-copy">Decretos, portarias, extratos e demais atos detectados no O Regional.</p>
   </div>
   <form class="dash-search" method="get" action="/">
     <div class="search-row">
-      <input id="q" name="q" value="{{ q }}" placeholder="Buscar por decreto, crédito, data…" aria-label="Buscar publicações">
+      <input id="q" name="q" value="{{ q }}" placeholder="Buscar por tipo, órgão, número, data…" aria-label="Buscar atos">
       <button type="submit">Buscar</button>
     </div>
   </form>
 </section>
 
-<!-- ── Stats ──────────────────────────────────────────────── -->
-<section class="stats-grid fade-in">
-  <article class="stat-accent">
-    <div class="stat-icon">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M7 2v4M13 2v4M3 9h14"/></svg>
-    </div>
-    <strong>{{ stats.total_edicoes or 0 }}</strong>
-    <span>Edições no banco</span>
-  </article>
-  <article class="stat-green">
-    <div class="stat-icon">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 7v3l2 2"/></svg>
-    </div>
-    <strong>{{ stats.edicoes_inaja or 0 }}</strong>
-    <span>Edições com Inajá</span>
-  </article>
-  <article class="stat-amber">
-    <div class="stat-icon">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 4h12v9H4z"/><path d="M8 17h4M10 13v4"/></svg>
-    </div>
+{% if atividade and atividade.tem_atividade %}
+<p class="ops-banner fade-in">
+  Sistema processando {{ atividade.rodando|length }} etapa(s).
+  <a href="/operacao">Ver operação →</a>
+</p>
+{% endif %}
+
+<section class="stats-grid stats-grid-compact fade-in">
+  <article>
     <strong>{{ stats.total_publicacoes or 0 }}</strong>
     <span>Publicações</span>
   </article>
-  <article class="stat-blue">
-    <div class="stat-icon">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 10h14M3 6h14M3 14h8"/></svg>
-    </div>
-    <strong>{{ stats.total_mencoes or 0 }}</strong>
-    <span>Menções</span>
+  <article>
+    <strong>{{ stats.edicoes_inaja or 0 }}</strong>
+    <span>Edições com Inajá</span>
   </article>
-  <article class="stat-red {% if stats.pendentes_ocr > 0 %}stat-alert{% endif %}">
-    <div class="stat-icon">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 7v4M10 14v.5"/></svg>
-    </div>
-    <strong>{{ stats.pendentes_ocr or 0 }}</strong>
-    <span>Pendentes OCR</span>
-  </article>
-  <article class="stat-purple">
-    <div class="stat-icon">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-    </div>
+  <article title="Soma deduplicada por órgão+tipo+número — indicador, não contabilidade">
     <strong>{{ stats.total_valor_licitado or "R$ 0,00" }}</strong>
-    <span>Valores citados (dedup.){% if stats.valor_n_unicos %} · {{ stats.valor_n_unicos }} unív.{% endif %}</span>
+    <span>Valores citados</span>
+  </article>
+  <article>
+    <strong>{{ stats.ultima_deteccao or "—" }}</strong>
+    <span>Última detecção</span>
   </article>
 </section>
 
-<!-- ── Qualidade da detecção ─────────────────────────────── -->
-{% if metricas and metricas.edicoes_com_metricas %}
-<section class="panel fade-in" style="margin-bottom:1.25rem;">
-  <div class="panel-head">
-    <h2>Qualidade da detecção</h2>
-    <span>{{ metricas.edicoes_com_metricas }} edição(ões) com métricas</span>
-  </div>
-  <div class="stats-grid" style="padding:0.75rem 1rem 1rem;">
-    <article>
-      <strong>{{ metricas.taxa_ia_ok_pct }}%</strong>
-      <span>IA ok ({{ metricas.publicacoes_com_ia }}/{{ metricas.publicacoes_total }})</span>
-    </article>
-    <article>
-      <strong>{{ metricas.taxa_retencao_pct }}%</strong>
-      <span>Retenção pós-filtros ({{ metricas.publicacoes_finais }}/{{ metricas.publicacoes_brutas }})</span>
-    </article>
-    <article>
-      <strong>{{ metricas.descartes_vizinho }}</strong>
-      <span>Descartes município vizinho</span>
-    </article>
-    <article>
-      <strong>{{ metricas.descartes_ia }}</strong>
-      <span>Descartes pela IA</span>
-    </article>
-    <article>
-      <strong>{{ metricas.taxa_ocr_fraco_pct }}%</strong>
-      <span>Páginas OCR fraco ({{ metricas.paginas_ocr_fraco }}/{{ metricas.paginas_total }})</span>
-    </article>
-    <article>
-      <strong>{{ metricas.publicacoes_sem_ia }}</strong>
-      <span>Publicações sem IA</span>
-    </article>
-  </div>
-</section>
-{% endif %}
-
-<!-- ── Gráficos + Atividade ───────────────────────────────── -->
-<div class="dash-mid fade-in">
-  <!-- Gráficos -->
-  <div class="dash-charts">
-    <div class="panel chart-panel-sm">
-      <div class="panel-head"><h2>Publicações por mês</h2></div>
-      <div class="chart-wrap"><canvas id="chart-por-mes" aria-label="Gráfico de publicações por mês"></canvas></div>
-    </div>
-    <div class="panel chart-panel-sm">
-      <div class="panel-head"><h2>Tipos de ato</h2></div>
-      <div class="chart-wrap chart-wrap-donut"><canvas id="chart-por-tipo" aria-label="Gráfico de tipos de ato"></canvas></div>
-    </div>
-  </div>
-
-  <!-- Atividade -->
-  <section class="panel activity-panel" id="activity-panel">
-    <div class="panel-head">
-      <h2>Atividade</h2>
-      <span id="activity-refresh">ao vivo</span>
-    </div>
-    <div class="activity-state {% if atividade.tem_atividade %}is-running{% else %}is-idle{% endif %}" id="activity-state">
-      <div class="activity-orb"><span></span></div>
-      <div>
-        <strong id="activity-title">
-          {% if atividade.tem_atividade %}Executando {{ atividade.rodando|length }} etapa(s){% else %}Sistema aguardando{% endif %}
-        </strong>
-        <p id="activity-message">
-          {% if atividade.tem_atividade %}Processamento em andamento.{% else %}Aguardando próxima varredura.{% endif %}
-        </p>
-      </div>
-    </div>
-    <div class="activity-single">
-      <div class="activity-list" id="running-list">
-        {% for job in atividade.rodando %}
-        <article class="activity-item status-{{ job.status }}">
-          <span class="status-dot"></span>
-          <div>
-            <strong>{{ job.etapa }}</strong>
-            <small>{{ job.edicao_titulo or job.titulo or "Processo geral" }} · {{ job.atualizado_em }}</small>
-            {% if job.mensagem %}<p>{{ job.mensagem }}</p>{% endif %}
-          </div>
-        </article>
-        {% else %}
-        <p class="empty">Nada rodando agora.</p>
-        {% endfor %}
-      </div>
-    </div>
-  </section>
-</div>
-
-<!-- ── Timeline por mês ──────────────────────────────────── -->
 <section class="panel fade-in">
   <div class="panel-head">
-    <h2>Linha do tempo</h2>
-    <span>últimos 18 meses</span>
-  </div>
-  <div class="timeline">
-    {% for mes in timeline %}
-    {% set tem_atos = mes.pubs > 0 %}
-    <a class="tl-item {% if tem_atos %}tl-active{% endif %}" href="/edicoes-detectadas?mes={{ mes.mes }}" {% if not tem_atos %}tabindex="-1"{% endif %}>
-      <div class="tl-spine">
-        <div class="tl-dot {% if tem_atos %}tl-dot-active{% endif %}"></div>
-        <div class="tl-line"></div>
-      </div>
-      <div class="tl-content">
-        <div class="tl-header">
-          <span class="tl-mes">{{ mes.mes | replace('-', '/') }}</span>
-          <span class="tl-chips">
-            <em class="tl-chip">{{ mes.edicoes }} edições</em>
-            {% if mes.edicoes_inaja > 0 %}
-            <em class="tl-chip tl-chip-inaja">{{ mes.edicoes_inaja }} com Inajá</em>
-            {% endif %}
-            {% if mes.pubs > 0 %}
-            <em class="tl-chip tl-chip-pub">{{ mes.pubs }} ato{% if mes.pubs != 1 %}s{% endif %}</em>
-            {% endif %}
-          </span>
-        </div>
-        {% if tem_atos and mes.tipos %}
-        <div class="tl-tipos">
-          {% for tipo in mes.tipos.split(',') | unique | list %}
-          <span class="tl-tipo-tag">{{ tipo.strip() }}</span>
-          {% endfor %}
-        </div>
-        {% endif %}
-      </div>
-    </a>
-    {% endfor %}
-  </div>
-</section>
-
-<!-- ── Publicações recentes ───────────────────────────────── -->
-<section class="panel fade-in">
-  <div class="panel-head">
-    <h2>Publicações recentes</h2>
+    <h2>{% if q %}Resultados da busca{% else %}Atos recentes{% endif %}</h2>
     <span>{{ publicacoes|length }} itens</span>
   </div>
   <div class="pub-list">
@@ -199,14 +52,13 @@
     {% set cat_class = 'outro' %}
     {% set item_tipo_norm = _sem_acentos(item.tipo or '').casefold() %}
     {% set item_orgao_norm = _sem_acentos(item.orgao or '').casefold() %}
-    
-    {% if 'rgf' in item_tipo_norm or 'rreo' in item_tipo_norm or 'lrf' in item_tipo_norm or 'fiscal' in item_tipo_norm or 'demonstrativo' in item_tipo_norm or 'balanco' in item_tipo_norm %}
+    {% if 'rgf' in item_tipo_norm or 'rreo' in item_tipo_norm or 'fiscal' in item_tipo_norm or 'demonstrativo' in item_tipo_norm %}
       {% set cat_class = 'fiscal' %}
-    {% elif 'conselho' in item_orgao_norm or 'comissao' in item_orgao_norm %}
+    {% elif 'conselho' in item_orgao_norm %}
       {% set cat_class = 'conselho' %}
-    {% elif 'contrato' in item_tipo_norm %}
+    {% elif 'contrato' in item_tipo_norm or 'extrato' in item_tipo_norm %}
       {% set cat_class = 'contrato' %}
-    {% elif 'licitacao' in item_tipo_norm or 'pregao' in item_tipo_norm or 'concorrencia' in item_tipo_norm %}
+    {% elif 'licitacao' in item_tipo_norm or 'dispensa' in item_tipo_norm or 'homolog' in item_tipo_norm %}
       {% set cat_class = 'licitacao' %}
     {% elif 'decreto' in item_tipo_norm %}
       {% set cat_class = 'decreto' %}
@@ -215,7 +67,7 @@
     {% elif 'publicacao' in (item.categoria_ia or item.categoria or '') %}
       {% set cat_class = 'publicacao_oficial' %}
     {% endif %}
-    
+
     <a class="pub-row cat-{{ cat_class }}" href="/edicoes/{{ item.edicao_id }}">
       <div class="pub-row-accent"></div>
       <div class="pub-row-body">
@@ -236,112 +88,16 @@
       </div>
     </a>
     {% else %}
-    <p class="empty" style="padding:1.5rem">Nenhuma publicação estruturada ainda.<br>Analise uma edição para começar.</p>
+    <p class="empty empty-pad">
+      {% if q %}
+      Nenhum ato encontrado para “{{ q }}”.
+      {% else %}
+      Nenhuma publicação estruturada ainda.<br>
+      Em <a href="/operacao">Operação</a>, detecte e analise edições do jornal.
+      {% endif %}
+    </p>
     {% endfor %}
   </div>
 </section>
 
-<!-- ── Edições recentes ───────────────────────────────────── -->
-<section class="panel fade-in">
-  <div class="panel-head">
-    <h2>Edições recentes</h2>
-    <a href="/edicoes-detectadas" class="panel-link">Ver todas →</a>
-  </div>
-  <div class="edition-list edition-list-scroll">
-    {% for edicao in edicoes %}
-    <a class="edition-row" href="/edicoes/{{ edicao.id }}">
-      <span>
-        <strong>{{ edicao.titulo or ("Edição " ~ edicao.id) }}</strong>
-        <small>{{ edicao.data_publicacao or "data não informada" }}</small>
-      </span>
-      <span class="chips">
-        {% if edicao.tem_inaja %}<em class="chip-inaja">Inajá</em>{% endif %}
-        <em>{{ edicao.publicacoes_count }} pub.</em>
-        <em>{{ edicao.mencoes_count }} men.</em>
-      </span>
-    </a>
-    {% else %}
-    <p class="empty" style="padding:1.5rem">Nenhuma edição registrada.<br>Acesse <a href="/edicoes-detectadas">Edições</a> para iniciar.</p>
-    {% endfor %}
-  </div>
-</section>
-
-{% endblock %}
-
-{% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script>
-Chart.defaults.color = '#a0a8c0';
-Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
-Chart.defaults.font.family = "'Inter', sans-serif";
-
-async function carregarGraficoPorMes() {
-  try {
-    const r = await fetch('/api/graficos/por-mes');
-    const dados = await r.json();
-    const ctx = document.getElementById('chart-por-mes');
-    if (!ctx) return;
-    new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: dados.map(d => d.mes),
-        datasets: [
-          { label: 'Total', data: dados.map(d => d.total), borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.08)', tension: 0.4, fill: true, pointBackgroundColor: '#6366f1', pointRadius: 3 },
-          { label: 'Com Inajá', data: dados.map(d => d.com_inaja), borderColor: '#22d3a5', backgroundColor: 'rgba(34,211,165,0.08)', tension: 0.4, fill: true, pointBackgroundColor: '#22d3a5', pointRadius: 3 }
-        ]
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } } }, scales: { x: { ticks: { font: { size: 10 } } }, y: { beginAtZero: true, ticks: { font: { size: 10 } } } } }
-    });
-  } catch(e) { console.warn('Gráfico por mês indisponível', e); }
-}
-
-async function carregarGraficoPorTipo() {
-  try {
-    const r = await fetch('/api/graficos/por-tipo');
-    const dados = await r.json();
-    const ctx = document.getElementById('chart-por-tipo');
-    if (!ctx) return;
-    const cores = ['#6366f1','#22d3a5','#fbbf24','#f87171','#38bdf8','#a78bfa','#34d399','#fb923c','#e879f9','#94a3b8'];
-    new Chart(ctx, {
-      type: 'doughnut',
-      data: { labels: dados.map(d => d.tipo), datasets: [{ data: dados.map(d => d.total), backgroundColor: cores, borderColor: '#13161e', borderWidth: 2, hoverOffset: 6 }] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } } }, cutout: '68%' }
-    });
-  } catch(e) { console.warn('Gráfico por tipo indisponível', e); }
-}
-
-// SSE
-const statusLabel = { aviso: 'concluído com avisos' };
-function escapeHtml(v) {
-  return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;");
-}
-function renderJob(job, includeTitle) {
-  const title = includeTitle ? (job.edicao_titulo || job.titulo || 'Processo geral') : (statusLabel[job.status] || job.status);
-  return `<article class="activity-item status-${escapeHtml(job.status)}"><span class="status-dot"></span><div><strong>${escapeHtml(job.etapa)}</strong><small>${escapeHtml(title)} · ${escapeHtml(job.atualizado_em)}</small>${job.mensagem ? `<p>${escapeHtml(job.mensagem)}</p>` : ''}</div></article>`;
-}
-function conectarSSE() {
-  const source = new EventSource('/api/eventos');
-  source.onmessage = function(event) {
-    try {
-      const data = JSON.parse(event.data);
-      const state   = document.getElementById('activity-state');
-      const title   = document.getElementById('activity-title');
-      const message = document.getElementById('activity-message');
-      const running = document.getElementById('running-list');
-      const refresh = document.getElementById('activity-refresh');
-      if (!state) return;
-      state.className = `activity-state ${data.tem_atividade ? 'is-running' : 'is-idle'}`;
-      title.textContent = data.tem_atividade ? `Executando ${data.rodando.length} etapa(s)` : 'Sistema aguardando';
-      message.textContent = data.tem_atividade ? 'Processamento em andamento.' : 'Aguardando próxima varredura.';
-      running.innerHTML = data.rodando.length ? data.rodando.map(j => renderJob(j, true)).join('') : '<p class="empty">Nada rodando agora.</p>';
-      refresh.textContent = new Date().toLocaleTimeString('pt-BR');
-    } catch(e) {}
-  };
-  source.onerror = () => { const r = document.getElementById('activity-refresh'); if (r) r.textContent = 'reconectando…'; };
-}
-
-carregarGraficoPorMes();
-carregarGraficoPorTipo();
-conectarSSE();
-</script>
 {% endblock %}

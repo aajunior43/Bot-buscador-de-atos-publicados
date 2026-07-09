@@ -4,16 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0d0f14">
-    <title>{% block title %}Monitor O Regional{% endblock %}</title>
-    <meta name="description" content="Monitor automático de publicações oficiais de Inajá-PR no jornal O Regional.">
+    <title>{% block title %}Monitor Inajá{% endblock %}</title>
+    <meta name="description" content="Monitor de publicações oficiais de Inajá-PR no jornal O Regional.">
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <style>
-      .processing-dot { display:inline-block; width:8px; height:8px; background:#22d3a5; border-radius:50%; margin-right:6px; animation:pulse 1.5s infinite; }
-      @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-      .global-processing { font-size:.8rem; padding:.2rem .6rem; background:rgba(34,211,165,.1); border-radius:999px; color:#22d3a5; margin-left:.75rem; }
-    </style>
   </head>
   <body>
     <div class="page-shell">
@@ -25,309 +20,38 @@
             <small>O Regional Jornal</small>
           </span>
         </a>
-        <nav>
-          <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>Dashboard</a>
-          <a href="/edicoes-detectadas" {% if '/edicoes-detectadas' in request.url.path %}class="active"{% endif %}>Edições</a>
-          <a href="/status" {% if request.url.path == '/status' %}class="active"{% endif %}>Status</a>
-          <a href="/notificacoes" {% if request.url.path == '/notificacoes' %}class="active"{% endif %}>Alertas</a>
-          <a href="/exportar" {% if request.url.path == '/exportar' %}class="active"{% endif %}>Exportar</a>
-          <a href="/admin" {% if request.url.path == '/admin' %}class="active"{% endif %}>Admin</a>
-          <span id="global-processing" class="global-processing" style="display:none;"><span class="processing-dot"></span>Processando</span>
-        </nav>
-        <!-- Floating global progress overlay -->
-        <div id="global-progress-overlay">
-          <div class="pipeline-mini">
-            <div class="step-mini" data-step="download">⬇️</div>
-            <div class="step-mini" data-step="ocr">🔍</div>
-            <div class="step-mini" data-step="detect">🔎</div>
-            <div class="step-mini" data-step="ia">✨</div>
+
+        <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Abrir menu" aria-expanded="false" aria-controls="main-nav">
+          <span></span><span></span><span></span>
+        </button>
+
+        <nav class="main-nav" id="main-nav" aria-label="Principal">
+          <div class="nav-group" data-zone="leitura">
+            <span class="nav-group-label">Leitura</span>
+            <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>Atos</a>
+            <a href="/exportar" {% if request.url.path == '/exportar' %}class="active"{% endif %}>Exportar</a>
           </div>
-          <div class="main-msg"></div>
-        </div>
+          <div class="nav-divider" aria-hidden="true"></div>
+          <div class="nav-group" data-zone="operacao">
+            <span class="nav-group-label">Operação</span>
+            <a href="/operacao" {% if request.url.path == '/operacao' %}class="active"{% endif %}>Painel</a>
+            <a href="/edicoes-detectadas" {% if '/edicoes-detectadas' in request.url.path %}class="active"{% endif %}>Edições</a>
+            <a href="/status" {% if request.url.path == '/status' %}class="active"{% endif %}>Fila</a>
+            <a href="/notificacoes" {% if request.url.path == '/notificacoes' %}class="active"{% endif %}>Alertas</a>
+            <a href="/admin" {% if request.url.path == '/admin' %}class="active"{% endif %}>Admin</a>
+          </div>
+          <a href="/status" id="global-processing" class="global-processing" style="display:none;" title="Há jobs em execução">
+            <span class="processing-dot"></span>Processando
+          </a>
+        </nav>
       </header>
+
       <main>
         {% block content %}{% endblock %}
       </main>
     </div>
 
-    <!-- Global processing indicator + helpers -->
-    <script>
-      window.startProcessing = function(form, loadingText, edicaoIdHint) {
-        const btn = form.querySelector('button');
-        if (!btn) return true;
-
-        // Prevent double submit
-        if (btn.disabled) return false;
-        btn.disabled = true;
-        const originalText = btn.innerHTML;
-        btn.innerHTML = `⏳ ${loadingText}`;
-
-        // AJAX mode: fetch + in-place live monitor
-        const action = form.getAttribute('action');
-        if (action && window.fetch) {
-          fetch(action, {
-            method: form.method || 'POST',
-            body: new FormData(form),
-            headers: { 'Accept': 'application/json' }
-          }).then(r => {
-            if (r.ok) {
-              if (window.showToast) window.showToast('Processamento iniciado! Monitorando ao vivo...');
-              // Try to find or create monitor container near the form or in page
-              let container = form.closest('.actions') || form.parentNode;
-              let monContainer = document.getElementById('live-monitor-' + (edicaoIdHint || 'global'));
-              if (!monContainer) {
-                monContainer = document.createElement('div');
-                monContainer.id = 'live-monitor-' + (edicaoIdHint || 'global');
-                container.appendChild(monContainer);
-              }
-              // Determine edicao id from URL or hint
-              let eid = edicaoIdHint;
-              if (!eid) {
-                const m = window.location.pathname.match(/\/edicoes\/(\d+)/);
-                if (m) eid = parseInt(m[1]);
-              }
-              if (eid && window.createLiveMonitor) {
-                window.createLiveMonitor(eid, monContainer, [{etapa: loadingText, status:'rodando', mensagem: 'Iniciado...'}]);
-              } else {
-                // fallback: redirect to status
-                window.location.href = '/status';
-              }
-            } else {
-              btn.innerHTML = originalText;
-              btn.disabled = false;
-              if (window.showToast) window.showToast('Falha ao iniciar. Ver Status.');
-            }
-          }).catch(() => {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-            if (window.showToast) window.showToast('Erro de rede. Tente novamente.');
-          });
-          return false; // prevent normal submit
-        }
-
-        // Fallback (no fetch or no AJAX)
-        if (window.showToast) window.showToast('Processamento iniciado. Acompanhe no Status ou Atividade.');
-        return true;
-      };
-
-      window.showToast = function(msg) {
-        let t = document.getElementById('global-toast');
-        if (!t) {
-          t = document.createElement('div');
-          t.id = 'global-toast';
-          t.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#1f2937;color:#e5e7eb;padding:10px 16px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.3);font-size:0.9rem;z-index:9999;';
-          document.body.appendChild(t);
-        }
-        t.textContent = msg;
-        t.style.display = 'block';
-        setTimeout(() => { t.style.display = 'none'; }, 4200);
-      };
-
-      function atualizarHeaderProcessing(rodandoCount) {
-        const el = document.getElementById('global-processing');
-        if (!el) return;
-        el.style.display = (rodandoCount > 0) ? 'inline-flex' : 'none';
-        el.title = rodandoCount + ' etapa(s) em execução';
-      }
-
-      function atualizarGlobalOverlay(rodandoJobs) {
-        const overlay = document.getElementById('global-progress-overlay');
-        if (!overlay) return;
-        if (!rodandoJobs || rodandoJobs.length === 0) {
-          overlay.classList.remove('visible');
-          return;
-        }
-        overlay.classList.add('visible');
-        const latest = rodandoJobs[0];
-        const msgEl = overlay.querySelector('.main-msg');
-        if (msgEl) msgEl.textContent = `${latest.etapa || 'Processando'}: ${latest.mensagem || ''}`;
-
-        // Update mini steps
-        const steps = overlay.querySelectorAll('.step-mini');
-        steps.forEach(s => s.classList.remove('active', 'done'));
-        const prog = window.parseProgress(latest);
-        if (prog && prog.step) {
-          const stepEl = overlay.querySelector(`.step-mini[data-step="${prog.step}"]`);
-          if (stepEl) stepEl.classList.add('active');
-        }
-        // Mark previous steps done heuristically
-        const order = ['download', 'ocr', 'detect', 'ia'];
-        if (prog && prog.step) {
-          const idx = order.indexOf(prog.step);
-          for (let i=0; i<idx; i++) {
-            const prev = overlay.querySelector(`.step-mini[data-step="${order[i]}"]`);
-            if (prev) prev.classList.add('done');
-          }
-        }
-      }
-
-      // Tenta conectar SSE globalmente para o indicador do header
-      (function initGlobalActivity() {
-        if (!window.EventSource) return;
-        try {
-          const src = new EventSource('/api/eventos');
-          src.onmessage = function(ev) {
-            try {
-              const data = JSON.parse(ev.data);
-              const count = (data.rodando && data.rodando.length) || 0;
-              atualizarHeaderProcessing(count);
-              atualizarGlobalOverlay(data.rodando || []);
-            } catch(e){}
-          };
-        } catch(e){}
-      })();
-
-      // Parser melhorado para mensagens de progresso (suporta formatos atuais do OCR + dicts + progress fields)
-      window.parseProgress = function(input) {
-        if (!input) return null;
-        let msg = typeof input === 'string' ? input : (input.msg || JSON.stringify(input));
-        let cur = input.current || input.progress_current || null;
-        let tot = input.total || input.progress_total || null;
-        let step = input.step || input.progress_step || 'ocr';
-
-        if (cur == null || tot == null) {
-          const m = msg.match(/Página\s+(\d+)\s*\/\s*(\d+)/i);
-          if (m) {
-            cur = parseInt(m[1], 10);
-            tot = parseInt(m[2], 10);
-          }
-        }
-        const pct = (cur != null && tot) ? Math.round((cur / tot) * 100) : 0;
-
-        if (!step || step === 'unknown') {
-          if (/download|pdf|baixando/i.test(msg)) step = 'download';
-          else if (/ocr|rapido|estruturado|complet/i.test(msg)) step = 'ocr';
-          else if (/detect|publicaç|menç/i.test(msg)) step = 'detect';
-          else if (/ia|refin/i.test(msg)) step = 'ia';
-        }
-        return { current: cur, total: tot, percent: pct, step, raw: msg };
-      };
-
-      // Simple ETA / elapsed helper (call with start time and progress)
-      window.formatProgressInfo = function(prog, startTime) {
-        if (!prog || !prog.current || !prog.total) return '';
-        const now = Date.now();
-        const elapsed = startTime ? Math.round((now - startTime) / 1000) : 0;
-        let eta = '';
-        if (elapsed > 3 && prog.percent > 5) {
-          const rate = prog.current / (elapsed / 60); // per min
-          const remaining = Math.max(0, prog.total - prog.current);
-          const etaMin = Math.round(remaining / rate);
-          eta = ` · ETA ~${etaMin}min`;
-        }
-        return `${prog.current}/${prog.total} (${prog.percent}%)${elapsed ? ' · ' + elapsed + 's' : ''}${eta}`;
-      };
-
-      // Cria um widget de monitoramento ao vivo para uma edição
-      window.createLiveMonitor = function(edicaoId, container, initialJobs) {
-        if (!container) return;
-        container.innerHTML = '';
-        const card = document.createElement('div');
-        card.className = 'live-monitor-card panel fade-in';
-        card.innerHTML = `
-          <div class="panel-head">
-            <h3>⚡ Processamento ao vivo <small>(Edição ${edicaoId})</small></h3>
-            <button class="btn btn-secondary btn-small" onclick="this.closest('.live-monitor-card').remove()">Fechar</button>
-          </div>
-          <div class="pipeline">
-            <div class="pipeline-step" data-step="download"><span class="step-icon">⬇️</span> Baixando PDF <span class="step-status"></span></div>
-            <div class="pipeline-step" data-step="ocr"><span class="step-icon">🔍</span> OCR <span class="step-status"></span><div class="sub-progress"><progress value="0" max="100"></progress><small class="page-info"></small></div></div>
-            <div class="pipeline-step" data-step="detect"><span class="step-icon">🔎</span> Detecção <span class="step-status"></span></div>
-            <div class="pipeline-step" data-step="ia"><span class="step-icon">✨</span> IA <span class="step-status"></span></div>
-          </div>
-          <div class="live-log"><strong>Log recente:</strong><ul class="log-list"></ul></div>
-          <div class="live-status"><small>Atualizando...</small></div>
-        `;
-        container.appendChild(card);
-
-        card._startTime = Date.now();
-
-        const updateUI = (jobs) => {
-          if (!jobs || !jobs.length) return;
-          const latest = jobs[0];
-          const logList = card.querySelector('.log-list');
-          logList.innerHTML = '';
-          // Mostrar até 5 mensagens recentes
-          jobs.slice(0,5).reverse().forEach(j => {
-            if (j.mensagem) {
-              const li = document.createElement('li');
-              li.textContent = `${j.etapa}: ${j.mensagem}`;
-              logList.appendChild(li);
-            }
-          });
-
-          // Atualizar steps - prefer structured fields
-          const steps = card.querySelectorAll('.pipeline-step');
-          steps.forEach(s => s.classList.remove('active', 'done', 'error'));
-          const prog = window.parseProgress(latest);  // pass whole job for structured
-          if (prog) {
-            const stepEl = card.querySelector(`[data-step="${prog.step}"]`);
-            if (stepEl) {
-              const isDone = latest.status === 'concluido';
-              const isErr = latest.status === 'erro';
-              stepEl.classList.add(isErr ? 'error' : (isDone ? 'done' : 'active'));
-              if (prog.step === 'ocr' || prog.step.includes('ocr')) {
-                const p = stepEl.querySelector('progress');
-                const info = stepEl.querySelector('.page-info');
-                const c = prog.current || latest.progress_current || 0;
-                const t = prog.total || latest.progress_total || 100;
-                if (p) { p.value = c; p.max = t; }
-                if (info) info.textContent = window.formatProgressInfo({current: c, total: t, percent: prog.percent}, card._startTime);
-              } else {
-                const statusSpan = stepEl.querySelector('.step-status');
-                if (statusSpan) statusSpan.textContent = isDone ? '✓' : (isErr ? '✗' : '...');
-              }
-            }
-          }
-          // Status geral + ETA
-          const statusEl = card.querySelector('.live-status small');
-          let info = latest.status === 'rodando' ? `Rodando: ${latest.etapa}` : `Status: ${latest.status}`;
-          if (latest.mensagem) info += ` - ${latest.mensagem}`;
-          statusEl.textContent = info;
-        };
-
-        // Initial
-        if (initialJobs) updateUI(initialJobs);
-
-        // Poll for this edition (lightweight, 2s)
-        const poll = setInterval(async () => {
-          try {
-            const r = await fetch(`/api/edicoes/${edicaoId}/live-status`);
-            const data = await r.json();
-            if (data.jobs) updateUI(data.jobs);
-            if (!data.has_running) {
-              clearInterval(poll);
-              const s = card.querySelector('.live-status small');
-              if (s) s.textContent = latest && latest.status === 'erro' ? 'Processamento com erro.' : 'Processamento concluído.';
-              setTimeout(() => { if (card.parentNode) card.parentNode.removeChild(card); }, 3200);
-            }
-          } catch(e) {}
-        }, 2000);
-
-        // Also listen to global SSE for faster updates
-        if (window.EventSource && !card._sseBound) {
-          card._sseBound = true;
-          try {
-            const sse = new EventSource('/api/eventos');
-            sse.onmessage = (ev) => {
-              try {
-                const d = JSON.parse(ev.data);
-                const match = (d.rodando || []).find(j => String(j.edicao_id) === String(edicaoId));
-                if (match) updateUI([match, ...(d.rodando || [])].slice(0,5));
-              } catch(e){}
-            };
-            // cleanup on card remove
-            const obs = new MutationObserver(() => {
-              if (!card.parentNode) { sse.close(); obs.disconnect(); }
-            });
-            obs.observe(card.parentNode || document.body, {childList:true, subtree:true});
-          } catch(e){}
-        }
-
-        return card;
-      };
-    </script>
-
+    <script src="/static/app.js"></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>
