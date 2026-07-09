@@ -1,0 +1,48 @@
+"""Testes do terminal rico (funções puras, sem I/O crítico)."""
+from __future__ import annotations
+
+import console_ui
+
+
+def test_bar_and_pct():
+    assert console_ui.pct(0, 10) == 0
+    assert console_ui.pct(5, 10) == 50
+    assert console_ui.pct(10, 10) == 100
+    assert len(console_ui.bar(5, 10, width=10)) == 10
+    assert "█" in console_ui.bar(10, 10, width=8)
+
+
+def test_parse_progress_dict():
+    cur, tot, label = console_ui.parse_progress_payload(
+        {"step": "ocr_fast", "current": 3, "total": 12, "msg": "x"}
+    )
+    assert cur == 3 and tot == 12
+    assert "rápido" in label.lower() or "OCR" in label
+
+
+def test_parse_progress_string():
+    cur, tot, label = console_ui.parse_progress_payload(
+        "OCR rápido: Página 4/20 processada"
+    )
+    assert cur == 4 and tot == 20
+
+
+def test_session_stats_elapsed():
+    s = console_ui.SessionStats()
+    assert s.elapsed().endswith("s") or "m" in s.elapsed()
+
+
+def test_rich_formatter_skips_column_noise():
+    fmt = console_ui.RichConsoleFormatter()
+    import logging
+
+    rec = logging.LogRecord(
+        name="ocr.tesseract",
+        level=logging.INFO,
+        pathname="",
+        lineno=1,
+        msg="Página 10: 5 coluna(s) detectada(s)",
+        args=(),
+        exc_info=None,
+    )
+    assert fmt.format(rec) == ""

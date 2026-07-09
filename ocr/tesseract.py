@@ -218,7 +218,7 @@ def _extrair_blocos_tesseract_imagem(
             blocos = _agrupar_data_tesseract(data, pagina, coluna, x_offset)
             if blocos:
                 if estrategia != "psm 4":
-                    logger.info(
+                    logger.debug(
                         "OCR na página %s coluna %s recuperado (%s)",
                         pagina,
                         coluna + 1,
@@ -265,7 +265,7 @@ def _extrair_blocos_tesseract_por_coluna(
                 avisos=avisos,
             )
             if resultado:
-                logger.info(
+                logger.debug(
                     "OCR na página %s coluna %s recuperado (ampliação 2x)",
                     pagina,
                     coluna + 1,
@@ -290,7 +290,7 @@ def _extrair_blocos_tesseract(
 ) -> list[TextBlock]:
     faixas = _detectar_faixas_colunas(imagem)
     if faixas:
-        logger.info("Página %s: %s coluna(s) detectada(s)", pagina, len(faixas))
+        logger.debug("Página %s: %s coluna(s) detectada(s)", pagina, len(faixas))
         return _extrair_blocos_tesseract_por_coluna(imagem, pagina, faixas, avisos)
 
     return _extrair_blocos_tesseract_imagem(

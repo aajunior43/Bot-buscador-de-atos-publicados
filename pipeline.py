@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import console_ui
 import database
 from ai_processor import retry_pending_ia
 from config import SETTINGS
@@ -36,6 +37,9 @@ def processar_edicao(
     fast_ocr: bool = True,
     edicao_id: int | None = None,
     notificar_se_encontrado: bool = True,
+    ui_indice: int | None = None,
+    ui_total_lote: int | None = None,
+    ui_pendentes: int | None = None,
 ) -> DetectionResult | None:
     """Processa uma edição completa (com lock global de OCR).
 
@@ -50,6 +54,9 @@ def processar_edicao(
                 fast_ocr=fast_ocr,
                 edicao_id=edicao_id,
                 notificar_se_encontrado=notificar_se_encontrado,
+                ui_indice=ui_indice,
+                ui_total_lote=ui_total_lote,
+                ui_pendentes=ui_pendentes,
             )
     except ProcessLockError as exc:
         # Lock ocupado não conta como falha da edição
@@ -71,7 +78,20 @@ def _processar_edicao_unlocked(
     fast_ocr: bool = True,
     edicao_id: int | None = None,
     notificar_se_encontrado: bool = True,
+    ui_indice: int | None = None,
+    ui_total_lote: int | None = None,
+    ui_pendentes: int | None = None,
 ) -> DetectionResult | None:
+    t0 = console_ui.edition_start(
+        titulo=edicao.titulo or edicao.url,
+        data=edicao.data_publicacao,
+        edicao_id=edicao_id,
+        indice=ui_indice,
+        total_lote=ui_total_lote,
+        pendentes_restantes=ui_pendentes,
+    )
+    console_ui.step("Download", "buscando PDF…")
+
     download_job = database.start_job(
         "baixando PDF",
         titulo=edicao.titulo,
@@ -92,6 +112,11 @@ def _processar_edicao_unlocked(
             progress_current=100,
             progress_total=100,
         )
+        console_ui.step(
+            "Download",
+            f"ok · {Path(download.caminho).name}",
+            ok=True,
+        )
     except Exception as exc:
         logger.exception("Falha ao baixar edição %s", edicao.url)
         database.update_job(
@@ -105,41 +130,47 @@ def _processar_edicao_unlocked(
             database.registrar_falha_processamento(
                 int(edicao_id), f"download: {exc}"
             )
+        console_ui.step("Download", str(exc)[:80], ok=False)
+        console_ui.edition_end(ok=False, t0=t0, erro=f"download: {exc}")
         return None
 
+    modo = _ocr_mensagem_modo(force_ocr, fast_ocr)
+    console_ui.step("OCR", modo)
     ocr_job = database.start_job(
         "rodando OCR",
         titulo=edicao.titulo,
         edicao_id=download.edicao_id,
-        mensagem=_ocr_mensagem_modo(force_ocr, fast_ocr),
+        mensagem=modo,
         progress_step="ocr",
         progress_current=0,
         progress_total=100,
     )
     try:
         def on_progress(msg: str | dict) -> None:
+            cur, tot, label = console_ui.parse_progress_payload(msg)
+            if cur is not None and tot is not None:
+                console_ui.progress(cur, tot, label=label)
+            texto = (
+                str(msg.get("msg") or msg)
+                if isinstance(msg, dict)
+                else str(msg)
+            )
+            step = "ocr"
             if isinstance(msg, dict):
+                step = str(msg.get("step") or "ocr")
                 database.update_job(
                     ocr_job,
                     "rodando",
-                    mensagem=str(msg.get("msg") or msg),
-                    progress_current=msg.get("current"),
-                    progress_total=msg.get("total"),
-                    progress_step=msg.get("step") or "ocr",
+                    mensagem=texto,
+                    progress_current=msg.get("current") or cur,
+                    progress_total=msg.get("total") or tot,
+                    progress_step=step,
                 )
                 return
-            # Parse "Página X/Y"
-            cur = tot = None
-            if isinstance(msg, str):
-                import re
-
-                m = re.search(r"Página\s+(\d+)\s*/\s*(\d+)", msg, re.I)
-                if m:
-                    cur, tot = int(m.group(1)), int(m.group(2))
             database.update_job(
                 ocr_job,
                 "rodando",
-                mensagem=str(msg),
+                mensagem=texto,
                 progress_current=cur,
                 progress_total=tot,
                 progress_step="ocr",
@@ -168,7 +199,15 @@ def _processar_edicao_unlocked(
             progress_current=len(ocr.paginas),
             progress_total=len(ocr.paginas) or 100,
         )
+        console_ui.step(
+            "OCR",
+            f"{len(ocr.paginas)} págs · {len(ocr.texto_completo):,} chars".replace(
+                ",", "."
+            ),
+            ok=True,
+        )
 
+        console_ui.step("Detecção", "menções e atos oficiais…")
         detectar_job = database.start_job(
             "detectando publicações",
             titulo=edicao.titulo,
@@ -211,8 +250,15 @@ def _processar_edicao_unlocked(
             progress_current=100,
             progress_total=100,
         )
+        console_ui.step(
+            "Detecção",
+            f"{len(resultado.publicacoes)} pub · {len(resultado.mencoes_db)} menções"
+            + (" · INAJÁ" if resultado.encontrado else ""),
+            ok=True,
+        )
 
         if notificar_se_encontrado and resultado.encontrado:
+            console_ui.step("Alerta", "Telegram / e-mail / arquivo…")
             notify_job = database.start_job(
                 "notificando",
                 titulo=edicao.titulo,
@@ -230,6 +276,7 @@ def _processar_edicao_unlocked(
                 progress_current=100,
                 progress_total=100,
             )
+            console_ui.step("Alerta", "enviado", ok=True)
 
         database.limpar_falhas_processamento(download.edicao_id)
         logger.info(
@@ -237,6 +284,13 @@ def _processar_edicao_unlocked(
             download.edicao_id,
             resultado.encontrado,
             len(resultado.publicacoes),
+        )
+        console_ui.edition_end(
+            ok=True,
+            tem_inaja=bool(resultado.encontrado),
+            n_pubs=len(resultado.publicacoes),
+            n_mencoes=len(resultado.mencoes_db),
+            t0=t0,
         )
         return resultado
     except Exception as exc:
@@ -253,6 +307,8 @@ def _processar_edicao_unlocked(
         database.registrar_falha_processamento(
             download.edicao_id, f"ocr/detecção: {exc}"
         )
+        console_ui.step("OCR/Detecção", str(exc)[:80], ok=False)
+        console_ui.edition_end(ok=False, t0=t0, erro=str(exc))
         # Não propaga: falha contada; fila segue para a próxima edição
         return None
 
@@ -497,6 +553,13 @@ def processar_pendentes_automatico(
             break
 
         lote_n += 1
+        if not quiet:
+            console_ui.ciclo_banner(
+                f"LOTE {lote_n}",
+                f"{len(rows)} edição(ões) · limite={lim} · teto={teto} · "
+                f"dias={dias or 'todos'}"
+                + (f" · desde={desde}" if desde else ""),
+            )
         job = database.start_job(
             "auto-processando pendentes",
             mensagem=(
@@ -505,7 +568,18 @@ def processar_pendentes_automatico(
             ),
         )
         ok = 0
-        for row in rows:
+        try:
+            restam_fila = len(
+                database.get_pending_edicoes(
+                    process_all=False,
+                    limit=500,
+                    recent_days=int(dias) if dias else None,
+                    desde=desde or None,
+                )
+            )
+        except Exception:
+            restam_fila = len(rows)
+        for i, row in enumerate(rows, start=1):
             database.registrar_heartbeat_bot()
             edicao = Edicao(
                 url=row["url"],
@@ -519,6 +593,9 @@ def processar_pendentes_automatico(
                     fast_ocr=fast_ocr,
                     edicao_id=int(row["id"]),
                     notificar_se_encontrado=True,
+                    ui_indice=i,
+                    ui_total_lote=len(rows),
+                    ui_pendentes=max(0, restam_fila - i + 1),
                 )
                 if resultado is not None:
                     ok += 1
@@ -548,6 +625,15 @@ def processar_pendentes_automatico(
             total_ok,
             teto,
         )
+        try:
+            st = database.get_status_automacao()
+            console_ui.status_fila(
+                pendentes=st.get("pendentes_ocr"),
+                fila=st.get("fila_proximo_ciclo"),
+                quarentena=st.get("quarentena_count"),
+            )
+        except Exception:
+            pass
         if not lotes:
             break
         # Evita loop infinito se OCR falhar e ocr_processado continuar 0
@@ -572,6 +658,10 @@ def executar_ciclo(
 
     A interface WEB só cadastra edições; o OCR e as notificações ficam neste ciclo.
     """
+    console_ui.ciclo_banner(
+        "CICLO BOT",
+        "varredura → novas → fila de pendentes → IA",
+    )
     database.init_db()
     database.registrar_heartbeat_bot()
     stuck = database.cleanup_stuck_jobs(max_hours=2)
@@ -661,3 +751,13 @@ def executar_ciclo(
     )
     database.registrar_evento_ciclo("bot_ciclo", resumo)
     logger.info("Ciclo BOT concluído: %s", resumo)
+    console_ui.ciclo_banner("CICLO CONCLUÍDO", resumo)
+    try:
+        st = database.get_status_automacao()
+        console_ui.status_fila(
+            pendentes=st.get("pendentes_ocr"),
+            fila=st.get("fila_proximo_ciclo"),
+            quarentena=st.get("quarentena_count"),
+        )
+    except Exception:
+        pass

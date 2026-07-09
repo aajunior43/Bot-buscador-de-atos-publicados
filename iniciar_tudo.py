@@ -190,12 +190,14 @@ def main() -> int:
         ("BOT", [py, "main.py"], True, True),
     ]
 
-    print("=" * 60, flush=True)
-    print("  Monitor de Atos — um terminal", flush=True)
-    print(f"  Web:  http://localhost:{WEB_PORT}", flush=True)
-    print("  Serviços: interface web + rastreador", flush=True)
-    print("  Ctrl+C encerra tudo", flush=True)
-    print("=" * 60, flush=True)
+    c_sys = _CORES["SYS"]
+    print(f"{c_sys}{'═' * 62}{_RESET}", flush=True)
+    print(f"{c_sys}  MONITOR INAJÁ — um terminal (WEB + BOT){_RESET}", flush=True)
+    print(f"{c_sys}  Web:  http://localhost:{WEB_PORT}{_RESET}", flush=True)
+    print(f"{c_sys}  BOT:  rastreador · fila contínua · OCR em tempo real{_RESET}", flush=True)
+    print(f"{c_sys}  Dica: linhas [BOT] mostram progresso; [WEB] a interface{_RESET}", flush=True)
+    print(f"{c_sys}  Ctrl+C encerra tudo{_RESET}", flush=True)
+    print(f"{c_sys}{'═' * 62}{_RESET}", flush=True)
     print(flush=True)
 
     # Evita WinError 10048: mata uvicorn/python antigo na porta
