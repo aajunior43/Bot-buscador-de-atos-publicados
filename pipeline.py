@@ -583,8 +583,9 @@ def executar_ciclo(
             logger.exception("Falha no auto-processamento de pendentes.")
 
     resumo = (
-        f"novas={len(novas)} processadas={processadas} "
-        f"fila_pendentes={pendentes_ok} auto={SETTINGS.auto_process}"
+        f"novas_listadas={len(novas)} novas_processadas={processadas} "
+        f"fila_processada={pendentes_ok} "
+        f"total_ok={processadas + pendentes_ok} auto={SETTINGS.auto_process}"
     )
     database.registrar_evento_ciclo("bot_ciclo", resumo)
     logger.info("Ciclo BOT concluído: %s", resumo)
