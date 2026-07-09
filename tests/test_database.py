@@ -316,6 +316,7 @@ class TestSettings:
 
         database.registrar_evento_ciclo("web_scan", "10 detectadas")
         database.registrar_evento_ciclo("bot_ciclo", "processadas=2")
+        database.registrar_heartbeat_bot()
         st = database.get_status_automacao()
         assert st["web_mensagem"] == "10 detectadas"
         assert st["bot_mensagem"] == "processadas=2"
@@ -324,6 +325,11 @@ class TestSettings:
         assert "ainda não" not in st["web_ultimo_br"]
         assert isinstance(st["pendentes_ocr"], int)
         assert isinstance(st["fila_proximo_ciclo"], int)
+        assert st["bot_vivo"] is True
+        assert st["bot_heartbeat"]
+        assert "web_proxima_rel" in st
+        assert "bot_proxima_rel" in st
+        assert isinstance(st["erros_recentes"], list)
 
     def test_set_e_get_setting(self, db):
         import database

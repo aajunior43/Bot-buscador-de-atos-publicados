@@ -319,32 +319,88 @@ def registrar_evento_ciclo(tipo: str, mensagem: str = "") -> None:
     agora = datetime.now().isoformat(timespec="seconds")
     set_setting(f"ciclo_{tipo}_ultimo", agora)
     set_setting(f"ciclo_{tipo}_mensagem", mensagem or "")
+    if tipo == "bot_ciclo":
+        registrar_heartbeat_bot()
+
+
+def registrar_heartbeat_bot() -> None:
+    """Sinal de vida do processo BOT (main.py) — atualizado no loop ocioso."""
+    set_setting(
+        "ciclo_bot_heartbeat",
+        datetime.now().isoformat(timespec="seconds"),
+    )
+
+
+def _parse_iso(iso: str) -> datetime | None:
+    if not iso:
+        return None
+    try:
+        return datetime.fromisoformat(iso.replace("Z", ""))
+    except ValueError:
+        return None
 
 
 def _formatar_dt_br(iso: str) -> str:
     if not iso:
         return "—"
-    try:
-        dt = datetime.fromisoformat(iso.replace("Z", ""))
-        return dt.strftime("%d/%m/%Y %H:%M")
-    except ValueError:
+    dt = _parse_iso(iso)
+    if not dt:
         return iso
+    return dt.strftime("%d/%m/%Y %H:%M")
+
+
+def _relativo_ate(iso: str) -> str:
+    """Texto amigável até um instante futuro (ou atraso)."""
+    dt = _parse_iso(iso)
+    if not dt:
+        return "—"
+    secs = int((dt - datetime.now()).total_seconds())
+    if secs <= 0:
+        if secs > -120:
+            return "agora"
+        mins = abs(secs) // 60
+        if mins < 60:
+            return f"atrasado {mins} min"
+        return f"atrasado {mins // 60}h {mins % 60}min"
+    mins = secs // 60
+    if mins < 1:
+        return "em menos de 1 min"
+    if mins < 60:
+        return f"em {mins} min"
+    h, m = divmod(mins, 60)
+    if h < 48:
+        return f"em {h}h {m:02d}min"
+    return f"em {h // 24}d {h % 24}h"
+
+
+def _relativo_desde(iso: str) -> str:
+    """Há quanto tempo um evento ocorreu."""
+    dt = _parse_iso(iso)
+    if not dt:
+        return "—"
+    secs = int((datetime.now() - dt).total_seconds())
+    if secs < 0:
+        return "agora"
+    if secs < 60:
+        return "há instantes"
+    mins = secs // 60
+    if mins < 60:
+        return f"há {mins} min"
+    h, m = divmod(mins, 60)
+    if h < 48:
+        return f"há {h}h {m:02d}min"
+    return f"há {h // 24}d"
 
 
 def _proxima_a_partir(ultimo_iso: str, intervalo_h: int) -> tuple[str, str]:
-    """Retorna (iso, rotulo_br) da próxima execução estimada."""
-    horas = max(1, int(intervalo_h or 6))
-    try:
-        if ultimo_iso:
-            base = datetime.fromisoformat(ultimo_iso.replace("Z", ""))
-        else:
-            base = datetime.now()
-    except ValueError:
-        base = datetime.now()
+    """Retorna (iso, rotulo_br absoluto) da próxima execução estimada."""
     from datetime import timedelta
 
+    horas = max(1, int(intervalo_h or 6))
+    base = _parse_iso(ultimo_iso) if ultimo_iso else None
+    if base is None:
+        base = datetime.now()
     prox = base + timedelta(hours=horas)
-    # Se a próxima já passou (processo reiniciou tarde), mostra "em breve / agora"
     if prox <= datetime.now():
         return (
             datetime.now().isoformat(timespec="seconds"),
@@ -354,11 +410,12 @@ def _proxima_a_partir(ultimo_iso: str, intervalo_h: int) -> tuple[str, str]:
 
 
 def get_status_automacao() -> dict:
-    """Status unificado: última/próxima varredura (WEB) e ciclo do BOT + fila."""
+    """Status unificado: última/próxima varredura (WEB), ciclo do BOT, heartbeat e fila."""
     web_ultimo = get_setting("ciclo_web_scan_ultimo", "")
     web_msg = get_setting("ciclo_web_scan_mensagem", "")
     bot_ultimo = get_setting("ciclo_bot_ciclo_ultimo", "")
     bot_msg = get_setting("ciclo_bot_ciclo_mensagem", "")
+    bot_hb = get_setting("ciclo_bot_heartbeat", "")
 
     web_prox_iso, web_prox_br = _proxima_a_partir(
         web_ultimo, SETTINGS.web_scan_interval_hours
@@ -367,6 +424,17 @@ def get_status_automacao() -> dict:
         bot_ultimo, SETTINGS.check_interval_hours
     )
 
+    # BOT vivo se heartbeat recente (loop a cada 30s) ou ciclo ainda “fresco”
+    hb_dt = _parse_iso(bot_hb)
+    bot_dt = _parse_iso(bot_ultimo)
+    agora = datetime.now()
+    bot_vivo = False
+    if hb_dt and (agora - hb_dt).total_seconds() <= 180:
+        bot_vivo = True
+    elif bot_dt and (agora - bot_dt).total_seconds() <= 600:
+        # Ciclo acabou de terminar e o loop ainda não bateu heartbeat
+        bot_vivo = True
+
     with connect() as conn:
         pendentes = int(
             conn.execute(
@@ -374,6 +442,26 @@ def get_status_automacao() -> dict:
             ).fetchone()[0]
             or 0
         )
+        jobs_rodando = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status = 'rodando'"
+            ).fetchone()[0]
+            or 0
+        )
+        erros_recentes = [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT j.id, j.etapa, j.mensagem, j.atualizado_em, j.edicao_id,
+                       e.titulo AS edicao_titulo
+                FROM jobs j
+                LEFT JOIN edicoes e ON e.id = j.edicao_id
+                WHERE j.status = 'erro'
+                ORDER BY j.id DESC
+                LIMIT 5
+                """
+            ).fetchall()
+        ]
 
     # Fila que o BOT pegaria no próximo ciclo (mesma regra de processar_pendentes)
     lim = max(0, int(SETTINGS.auto_process_limit or 0))
@@ -389,16 +477,26 @@ def get_status_automacao() -> dict:
     return {
         "web_ultimo": web_ultimo,
         "web_ultimo_br": _formatar_dt_br(web_ultimo) if web_ultimo else "ainda não rodou",
+        "web_ultimo_rel": _relativo_desde(web_ultimo) if web_ultimo else "ainda não rodou",
         "web_mensagem": web_msg,
         "web_proxima": web_prox_iso,
         "web_proxima_br": web_prox_br if web_ultimo else f"a cada {SETTINGS.web_scan_interval_hours}h (após 1ª varredura)",
+        "web_proxima_rel": _relativo_ate(web_prox_iso) if web_ultimo else "aguardando 1ª varredura",
         "web_intervalo_h": int(SETTINGS.web_scan_interval_hours or 6),
         "bot_ultimo": bot_ultimo,
         "bot_ultimo_br": _formatar_dt_br(bot_ultimo) if bot_ultimo else "ainda não rodou",
+        "bot_ultimo_rel": _relativo_desde(bot_ultimo) if bot_ultimo else "ainda não rodou",
         "bot_mensagem": bot_msg,
         "bot_proxima": bot_prox_iso,
         "bot_proxima_br": bot_prox_br if bot_ultimo else f"a cada {SETTINGS.check_interval_hours}h (após 1º ciclo)",
+        "bot_proxima_rel": _relativo_ate(bot_prox_iso) if bot_ultimo else "aguardando 1º ciclo",
         "bot_intervalo_h": int(SETTINGS.check_interval_hours or 6),
+        "bot_heartbeat": bot_hb,
+        "bot_heartbeat_br": _formatar_dt_br(bot_hb) if bot_hb else "—",
+        "bot_heartbeat_rel": _relativo_desde(bot_hb) if bot_hb else "sem sinal",
+        "bot_vivo": bot_vivo,
+        "jobs_rodando": jobs_rodando,
+        "erros_recentes": erros_recentes,
         "pendentes_ocr": pendentes,
         "fila_proximo_ciclo": fila_proximo,
         "auto_process": bool(SETTINGS.auto_process),

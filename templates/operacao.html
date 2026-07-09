@@ -36,6 +36,13 @@
     <h2>Status da automação</h2>
     <span id="ciclo-refresh">atualiza com a página</span>
   </div>
+  <div class="ciclo-live-banner {% if automacao.bot_vivo %}is-online{% else %}is-offline{% endif %}" id="ciclo-bot-banner">
+    <span class="ciclo-live-dot" id="ciclo-bot-dot"></span>
+    <strong id="ciclo-bot-status">
+      {% if automacao.bot_vivo %}BOT online{% else %}BOT offline{% endif %}
+    </strong>
+    <span id="ciclo-bot-hb">heartbeat {{ automacao.bot_heartbeat_rel }}</span>
+  </div>
   <div class="ciclo-grid">
     <article class="ciclo-card">
       <header>
@@ -45,11 +52,17 @@
       <dl class="ciclo-dl">
         <div>
           <dt>Última varredura</dt>
-          <dd id="ciclo-web-ultimo">{{ automacao.web_ultimo_br }}</dd>
+          <dd>
+            <span id="ciclo-web-ultimo">{{ automacao.web_ultimo_br }}</span>
+            <small class="ciclo-rel" id="ciclo-web-ultimo-rel">{{ automacao.web_ultimo_rel }}</small>
+          </dd>
         </div>
         <div>
-          <dt>Próxima estimada</dt>
-          <dd id="ciclo-web-proxima">{{ automacao.web_proxima_br }}</dd>
+          <dt>Próxima</dt>
+          <dd>
+            <span id="ciclo-web-proxima-rel" class="ciclo-countdown">{{ automacao.web_proxima_rel }}</span>
+            <small class="ciclo-rel" id="ciclo-web-proxima">{{ automacao.web_proxima_br }}</small>
+          </dd>
         </div>
         <div>
           <dt>Intervalo</dt>
@@ -69,11 +82,17 @@
       <dl class="ciclo-dl">
         <div>
           <dt>Último ciclo</dt>
-          <dd id="ciclo-bot-ultimo">{{ automacao.bot_ultimo_br }}</dd>
+          <dd>
+            <span id="ciclo-bot-ultimo">{{ automacao.bot_ultimo_br }}</span>
+            <small class="ciclo-rel" id="ciclo-bot-ultimo-rel">{{ automacao.bot_ultimo_rel }}</small>
+          </dd>
         </div>
         <div>
-          <dt>Próximo estimado</dt>
-          <dd id="ciclo-bot-proxima">{{ automacao.bot_proxima_br }}</dd>
+          <dt>Próximo</dt>
+          <dd>
+            <span id="ciclo-bot-proxima-rel" class="ciclo-countdown">{{ automacao.bot_proxima_rel }}</span>
+            <small class="ciclo-rel" id="ciclo-bot-proxima">{{ automacao.bot_proxima_br }}</small>
+          </dd>
         </div>
         <div>
           <dt>Intervalo</dt>
@@ -103,6 +122,21 @@
       </span>
     </div>
   </div>
+  {% if automacao.erros_recentes %}
+  <div class="ciclo-erros" id="ciclo-erros">
+    <h3>Erros recentes</h3>
+    <ul id="ciclo-erros-list">
+      {% for err in automacao.erros_recentes[:3] %}
+      <li>
+        <strong>{{ err.etapa }}</strong>
+        <span>{{ err.atualizado_em }}</span>
+        <p>{{ err.mensagem or "—" }}{% if err.edicao_titulo %} · {{ err.edicao_titulo }}{% endif %}</p>
+        {% if err.edicao_id %}<a href="/edicoes/{{ err.edicao_id }}">Abrir edição</a>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
 </section>
 
 <section class="ops-actions panel fade-in">
@@ -200,6 +234,12 @@
           {% else %}
             Desligada (AUTO_PROCESS=false)
           {% endif %}
+        </span>
+      </li>
+      <li class="health-item {% if saude.bot_vivo %}ok{% else %}warn{% endif %}">
+        <strong>Heartbeat BOT</strong>
+        <span id="saude-bot-hb">
+          {% if saude.bot_vivo %}Online · {{ saude.bot_heartbeat_rel }}{% else %}Offline · {{ saude.bot_heartbeat_rel }}{% endif %}
         </span>
       </li>
     </ul>

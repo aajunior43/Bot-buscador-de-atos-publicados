@@ -74,6 +74,7 @@ def main() -> None:
     configurar_logging()
     args = parse_args()
     database.init_db()
+    database.registrar_heartbeat_bot()
 
     if args.notify_test:
         enviar_teste()
@@ -89,12 +90,16 @@ def main() -> None:
         return
 
     logger.info(
-        "Agendando verificação a cada %s hora(s).",
+        "Agendando verificação a cada %s hora(s). Heartbeat a cada 30s.",
         SETTINGS.check_interval_hours,
     )
     executar_ciclo()
     schedule.every(SETTINGS.check_interval_hours).hours.do(executar_ciclo)
     while True:
+        try:
+            database.registrar_heartbeat_bot()
+        except Exception:
+            logger.debug("Falha ao gravar heartbeat do BOT", exc_info=True)
         schedule.run_pending()
         time.sleep(30)
 

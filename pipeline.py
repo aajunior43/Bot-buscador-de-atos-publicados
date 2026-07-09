@@ -501,6 +501,10 @@ def executar_ciclo(
     A interface WEB só cadastra edições; o OCR e as notificações ficam neste ciclo.
     """
     database.init_db()
+    database.registrar_heartbeat_bot()
+    stuck = database.cleanup_stuck_jobs(max_hours=2)
+    if stuck:
+        logger.warning("Ciclo BOT: %s job(s) travado(s) marcado(s) como erro", stuck)
     _backup_diario_se_preciso()
     processadas = 0
     pendentes_ok = 0

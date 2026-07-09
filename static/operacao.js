@@ -186,13 +186,64 @@
           if (el) el.textContent = val == null || val === "" ? "—" : String(val);
         }
         setText("ciclo-web-ultimo", a.web_ultimo_br);
+        setText("ciclo-web-ultimo-rel", a.web_ultimo_rel);
         setText("ciclo-web-proxima", a.web_proxima_br);
+        setText("ciclo-web-proxima-rel", a.web_proxima_rel);
         setText("ciclo-web-msg", a.web_mensagem || "—");
         setText("ciclo-bot-ultimo", a.bot_ultimo_br);
+        setText("ciclo-bot-ultimo-rel", a.bot_ultimo_rel);
         setText("ciclo-bot-proxima", a.bot_proxima_br);
+        setText("ciclo-bot-proxima-rel", a.bot_proxima_rel);
         setText("ciclo-bot-msg", a.bot_mensagem || "—");
         setText("ciclo-pendentes", a.pendentes_ocr);
         setText("ciclo-fila", a.fila_proximo_ciclo);
+
+        var banner = document.getElementById("ciclo-bot-banner");
+        var statusEl = document.getElementById("ciclo-bot-status");
+        var hbEl = document.getElementById("ciclo-bot-hb");
+        var saudeHb = document.getElementById("saude-bot-hb");
+        if (banner) {
+          banner.className =
+            "ciclo-live-banner " + (a.bot_vivo ? "is-online" : "is-offline");
+        }
+        if (statusEl) statusEl.textContent = a.bot_vivo ? "BOT online" : "BOT offline";
+        if (hbEl)
+          hbEl.textContent = "heartbeat " + (a.bot_heartbeat_rel || "sem sinal");
+        if (saudeHb) {
+          saudeHb.textContent = a.bot_vivo
+            ? "Online · " + (a.bot_heartbeat_rel || "")
+            : "Offline · " + (a.bot_heartbeat_rel || "sem sinal");
+        }
+
+        var errosList = document.getElementById("ciclo-erros-list");
+        if (errosList && Array.isArray(a.erros_recentes)) {
+          errosList.innerHTML = a.erros_recentes
+            .slice(0, 3)
+            .map(function (err) {
+              var link = err.edicao_id
+                ? '<a href="/edicoes/' +
+                  err.edicao_id +
+                  '">Abrir edição</a>'
+                : "";
+              var titulo = err.edicao_titulo
+                ? " · " + escapeHtml(err.edicao_titulo)
+                : "";
+              return (
+                "<li><strong>" +
+                escapeHtml(err.etapa) +
+                "</strong><span>" +
+                escapeHtml(err.atualizado_em) +
+                "</span><p>" +
+                escapeHtml(err.mensagem || "—") +
+                titulo +
+                "</p>" +
+                link +
+                "</li>"
+              );
+            })
+            .join("");
+        }
+
         var refresh = document.getElementById("ciclo-refresh");
         if (refresh)
           refresh.textContent =
@@ -205,5 +256,5 @@
   carregarGraficoPorTipo();
   conectarSSE();
   atualizarAutomacao();
-  setInterval(atualizarAutomacao, 30000);
+  setInterval(atualizarAutomacao, 15000);
 })();

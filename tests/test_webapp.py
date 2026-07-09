@@ -20,6 +20,41 @@ def test_dashboard_vazio(db):
     assert "Leitura" in response.text
     assert "Operação" in response.text
     assert "health-strip" in response.text or "Auth" in response.text
+    assert "BOT" in response.text
+
+
+def test_dashboard_filtro_tipo(db):
+    eid = database.insert_or_get_edicao(
+        "https://example.com/tipo_filtro.pdf", "Ed Tipo", "2026-07-01"
+    )
+    database.insert_publicacoes(
+        eid,
+        [
+            {
+                "pagina": 1,
+                "orgao": "Prefeitura",
+                "tipo": "Decreto",
+                "numero": "1/2026",
+                "assunto": "Teste decreto",
+                "trecho": "x",
+            },
+            {
+                "pagina": 2,
+                "orgao": "Prefeitura",
+                "tipo": "Portaria",
+                "numero": "2/2026",
+                "assunto": "Teste portaria",
+                "trecho": "y",
+            },
+        ],
+    )
+    client = TestClient(app)
+    r = client.get("/?tipo=Decreto")
+    assert r.status_code == 200
+    assert "Decreto" in r.text
+    assert "1/2026" in r.text
+    # Portaria filtrada fora
+    assert "2/2026" not in r.text
 
 
 def test_operacao_hub(db):
@@ -32,11 +67,13 @@ def test_operacao_hub(db):
     assert "WEB · varredura" in response.text
     assert "BOT · processamento" in response.text
     assert "Avançado" in response.text
+    assert "Heartbeat" in response.text or "BOT online" in response.text or "BOT offline" in response.text
 
 
 def test_api_automacao(db):
     database.registrar_evento_ciclo("web_scan", "3 edição(ões) detectada(s)")
     database.registrar_evento_ciclo("bot_ciclo", "novas=1 processadas=1 fila_pendentes=0")
+    database.registrar_heartbeat_bot()
     client = TestClient(app)
     r = client.get("/api/automacao")
     assert r.status_code == 200
@@ -45,6 +82,21 @@ def test_api_automacao(db):
     assert data["web_mensagem"].startswith("3 edição")
     assert "bot_ultimo" in data
     assert "fila_proximo_ciclo" in data
+    assert "pendentes_ocr" in data
+    assert data["bot_vivo"] is True
+    assert "web_proxima_rel" in data
+    assert "bot_proxima_rel" in data
+
+
+def test_api_health(db):
+    database.registrar_heartbeat_bot()
+    client = TestClient(app)
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["bot_vivo"] is True
+    assert data["status"] in ("ok", "degraded")
     assert "pendentes_ocr" in data
 
 

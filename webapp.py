@@ -56,14 +56,18 @@ def _validar_auth_startup() -> None:
 async def lifespan(app: FastAPI):
     _validar_auth_startup()
     database.init_db()
+    # Limpa jobs "rodando" de crash anterior. OCR de pendentes fica com o BOT.
     resume_ids = database.pop_interrupted_edicao_ids()
     if resume_ids:
         logger.warning(
-            "Startup: %s edição(ões) interrompida(s) serão reprocessada(s): %s",
+            "Startup WEB: %s job(s) interrompido(s) limpo(s); "
+            "reprocessamento OCR fica a cargo do BOT: %s",
             len(resume_ids),
             resume_ids,
         )
-        _task_executor.submit(_analisar_edicoes_lote, resume_ids)
+    stuck = database.cleanup_stuck_jobs(max_hours=2)
+    if stuck:
+        logger.warning("Startup WEB: %s job(s) travado(s) marcado(s) como erro", stuck)
     _start_scheduler()
     yield
 
@@ -325,6 +329,7 @@ def _saude_sistema() -> dict:
     from ai_processor import _api_key, _auth_bloqueada, ia_disponivel
 
     key = _api_key()
+    auto = database.get_status_automacao()
     return {
         "telegram_ok": bool(
             SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id
@@ -338,6 +343,11 @@ def _saude_sistema() -> dict:
         "auto_process": bool(SETTINGS.auto_process),
         "auto_process_limit": int(SETTINGS.auto_process_limit),
         "auto_process_dias": int(SETTINGS.auto_process_dias),
+        "bot_vivo": bool(auto.get("bot_vivo")),
+        "bot_heartbeat_rel": auto.get("bot_heartbeat_rel") or "sem sinal",
+        "bot_proxima_rel": auto.get("bot_proxima_rel") or "—",
+        "pendentes_ocr": int(auto.get("pendentes_ocr") or 0),
+        "fila_proximo_ciclo": int(auto.get("fila_proximo_ciclo") or 0),
     }
 
 
@@ -346,10 +356,12 @@ def dashboard(
     request: Request,
     q: str = Query("", description="Busca por título, data, órgão, tipo ou assunto"),
     mes: str = Query("", description="Filtro mês YYYY-MM"),
+    tipo: str = Query("", description="Filtro tipo de ato (ex.: Decreto)"),
 ) -> HTMLResponse:
     """Home de leitura: busca + KPIs leigos + lista de atos."""
     termo = f"%{q.strip()}%"
     mes_f = mes.strip()
+    tipo_f = tipo.strip()
     with _conn() as conn:
         stats = _stats_basicos(conn)
         filtros = []
@@ -363,6 +375,9 @@ def dashboard(
         if mes_f and len(mes_f) >= 7:
             filtros.append("e.data_publicacao LIKE ?")
             params.append(f"{mes_f[:7]}%")
+        if tipo_f:
+            filtros.append("LOWER(COALESCE(p.tipo, '')) = LOWER(?)")
+            params.append(tipo_f)
         where = ("WHERE " + " AND ".join(filtros)) if filtros else ""
         publicacoes = conn.execute(
             f"""
@@ -385,6 +400,20 @@ def dashboard(
                 WHERE e.data_publicacao IS NOT NULL AND e.data_publicacao != ''
                 ORDER BY mes DESC
                 LIMIT 24
+                """
+            ).fetchall()
+            if r[0]
+        ]
+        tipos = [
+            r[0]
+            for r in conn.execute(
+                """
+                SELECT tipo, COUNT(*) AS n
+                FROM publicacoes
+                WHERE tipo IS NOT NULL AND TRIM(tipo) != ''
+                GROUP BY tipo
+                ORDER BY n DESC, tipo ASC
+                LIMIT 12
                 """
             ).fetchall()
             if r[0]
@@ -412,7 +441,9 @@ def dashboard(
             "atividade": atividade,
             "q": q,
             "mes": mes_f[:7] if mes_f else "",
+            "tipo": tipo_f,
             "meses": meses,
+            "tipos": tipos,
             "saude": saude,
         },
     )
@@ -423,9 +454,10 @@ def atos_alias(
     request: Request,
     q: str = Query("", description="Busca"),
     mes: str = Query("", description="Filtro mês"),
+    tipo: str = Query("", description="Filtro tipo"),
 ) -> HTMLResponse:
     """Alias de leitura para a home de atos."""
-    return dashboard(request, q=q, mes=mes)
+    return dashboard(request, q=q, mes=mes, tipo=tipo)
 
 
 @app.get("/operacao", response_class=HTMLResponse)
@@ -1106,6 +1138,33 @@ def api_atividade() -> dict:
 def api_automacao() -> dict:
     """Última/próxima varredura WEB, ciclo BOT e fila de OCR."""
     return database.get_status_automacao()
+
+
+@app.get("/api/health")
+def api_health() -> dict:
+    """Health-check simples para monitoramento / Docker / uptime."""
+    auto = database.get_status_automacao()
+    ok = True
+    problemas: list[str] = []
+    if not auto.get("bot_vivo"):
+        problemas.append("bot_offline")
+    if int(auto.get("jobs_rodando") or 0) > 10:
+        problemas.append("muitos_jobs_rodando")
+    # Interface sozinha está ok; bot offline vira degraded, não fatal
+    status = "ok" if auto.get("bot_vivo") else "degraded"
+    return {
+        "status": status,
+        "ok": ok,
+        "bot_vivo": bool(auto.get("bot_vivo")),
+        "pendentes_ocr": int(auto.get("pendentes_ocr") or 0),
+        "fila_proximo_ciclo": int(auto.get("fila_proximo_ciclo") or 0),
+        "jobs_rodando": int(auto.get("jobs_rodando") or 0),
+        "web_ultimo": auto.get("web_ultimo") or None,
+        "bot_ultimo": auto.get("bot_ultimo") or None,
+        "bot_heartbeat": auto.get("bot_heartbeat") or None,
+        "problemas": problemas,
+        "auto_process": bool(auto.get("auto_process")),
+    }
 
 
 def _live_status_for_edicao(edicao_id: int) -> dict:
