@@ -432,13 +432,71 @@ def _backup_diario_se_preciso() -> None:
         logger.warning("Backup diário falhou (seguindo o ciclo).", exc_info=True)
 
 
+def processar_pendentes_automatico(
+    *,
+    limit: int | None = None,
+    recent_days: int | None = None,
+    force_ocr: bool = True,
+    fast_ocr: bool = True,
+) -> int:
+    """Processa edições com ocr_processado=0 (mais recentes primeiro).
+
+    Returns:
+        Quantidade de edições em que o pipeline foi invocado.
+    """
+    lim = limit if limit is not None else SETTINGS.auto_process_limit
+    dias = recent_days if recent_days is not None else SETTINGS.auto_process_dias
+    rows = database.get_pending_edicoes(
+        process_all=False,
+        limit=max(0, int(lim)),
+        recent_days=int(dias) if dias else None,
+    )
+    if not rows:
+        logger.info("Automação: nenhuma edição pendente de OCR.")
+        return 0
+
+    job = database.start_job(
+        "auto-processando pendentes",
+        mensagem=f"{len(rows)} edição(ões) (limite={lim}, dias={dias or 'todos'})",
+    )
+    ok = 0
+    for row in rows:
+        edicao = Edicao(
+            url=row["url"],
+            titulo=row["titulo"] or f"Edição {row['id']}",
+            data_publicacao=row["data_publicacao"],
+        )
+        try:
+            resultado = processar_edicao(
+                edicao,
+                force_ocr=force_ocr,
+                fast_ocr=fast_ocr,
+                edicao_id=int(row["id"]),
+                notificar_se_encontrado=True,
+            )
+            if resultado is not None:
+                ok += 1
+        except Exception:
+            logger.exception(
+                "Automação: falha na edição id=%s", row["id"]
+            )
+            continue
+    database.update_job(
+        job,
+        "concluido",
+        mensagem=f"Processadas {ok}/{len(rows)} edição(ões) pendentes",
+    )
+    logger.info("Automação: %s/%s edições pendentes processadas", ok, len(rows))
+    return ok
+
+
 def executar_ciclo(
     force_rescan: bool = False,
     process_all: bool = False,
     force_ocr: bool = False,
     fast_ocr: bool = True,
 ) -> None:
-    """Um ciclo completo: listar novas edições, processar e retentar IA."""
+    """Ciclo completo automatizado: listar → processar novas → pendentes → IA."""
     database.init_db()
     _backup_diario_se_preciso()
 
@@ -472,16 +530,22 @@ def executar_ciclo(
 
     for edicao in novas:
         try:
-            processar_edicao(edicao, force_ocr=force_ocr, fast_ocr=fast_ocr)
+            # Novas: OCR rápido+estruturado por padrão (force_ocr or auto)
+            processar_edicao(
+                edicao,
+                force_ocr=force_ocr or SETTINGS.auto_process,
+                fast_ocr=fast_ocr,
+            )
         except Exception:
-            # processar_edicao já registra jobs de erro; continua o ciclo
             continue
 
+    # Fila residual (registradas pela web sem OCR, ou falhas anteriores)
     if process_all:
-        for row in database.get_pending_edicoes(process_all=True):
+        for row in database.get_pending_edicoes(process_all=False, limit=None):
             caminho = row["caminho_local"]
             if not caminho or not Path(caminho).exists():
-                continue
+                # Sem PDF local: processar_edicao tenta baixar de novo
+                pass
             edicao = Edicao(
                 url=row["url"],
                 titulo=row["titulo"] or f"Edição {row['id']}",
@@ -490,9 +554,17 @@ def executar_ciclo(
             try:
                 processar_edicao(
                     edicao,
-                    force_ocr=force_ocr,
+                    force_ocr=force_ocr or True,
                     fast_ocr=fast_ocr,
                     edicao_id=int(row["id"]),
                 )
             except Exception:
                 continue
+    elif SETTINGS.auto_process:
+        try:
+            processar_pendentes_automatico(
+                force_ocr=True,
+                fast_ocr=fast_ocr,
+            )
+        except Exception:
+            logger.exception("Falha no auto-processamento de pendentes.")

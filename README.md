@@ -10,15 +10,21 @@ Além dos trechos, o detector classifica publicações:
 
 Para publicações oficiais, extrai órgão, tipo do ato, número, data, assunto e valor. Opcionalmente a IA (OpenCode/compatível OpenAI) refina e filtra publicações de municípios vizinhos.
 
-## Pipeline
+## Pipeline (totalmente automático)
 
 ```
-scraper → downloader → ocr_processor → detector → ai_processor → notifier
-                              ↓              ↓
-                         database.py    settings (DB / .env)
+scraper → downloader → ocr → detector → ai_processor → notifier
 ```
 
-Orquestração unificada em `pipeline.py` (CLI e webapp usam o mesmo fluxo).
+Com `AUTO_PROCESS=true` (padrão), o sistema:
+
+1. Varre o site em intervalos (`CHECK_INTERVAL_HOURS` / `WEB_SCAN_INTERVAL_HOURS`)
+2. Baixa PDFs novos
+3. Roda OCR + detecção + IA
+4. Notifica (Telegram/e-mail/arquivo)
+5. Processa fila de pendentes (mais recentes primeiro, limite configurável)
+
+Orquestração em `pipeline.py`. Botões na interface são opcionais (forçar agora).
 
 ## Instalação
 

@@ -84,6 +84,14 @@ class Settings:
     webhook_url: str = os.getenv("WEBHOOK_URL", "").strip()
     # Limite de edições novas processadas por ciclo (evita sobrecarga no primeiro uso)
     max_edicoes_por_ciclo: int = _int_env("MAX_EDICOES_POR_CICLO", 10)
+    # Automação total: processa OCR/notificação sem clique manual
+    auto_process: bool = _bool_env("AUTO_PROCESS", True)
+    # Quantas edições pendentes (ocr_processado=0) processar por ciclo
+    auto_process_limit: int = _int_env("AUTO_PROCESS_LIMIT", 5)
+    # Só auto-processa edições com data nos últimos N dias (0 = todas)
+    auto_process_dias: int = _int_env("AUTO_PROCESS_DIAS", 120)
+    # Intervalo do scheduler da web (horas entre varreduras; padrão 6 = 4x/dia)
+    web_scan_interval_hours: int = _int_env("WEB_SCAN_INTERVAL_HOURS", 6)
     # Poppler (para pdf2image no Windows)
     poppler_path: str = os.getenv("POPPLER_PATH", "").strip()
     # Tesseract OCR (para pytesseract no Windows)

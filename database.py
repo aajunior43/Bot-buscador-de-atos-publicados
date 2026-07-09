@@ -524,8 +524,27 @@ def mark_notified(edicao_id: int) -> None:
         )
 
 
-def get_pending_edicoes(process_all: bool = False) -> list[sqlite3.Row]:
-    where = "" if process_all else "WHERE ocr_processado = 0"
+def get_pending_edicoes(
+    process_all: bool = False,
+    *,
+    limit: int | None = None,
+    recent_days: int | None = None,
+) -> list[sqlite3.Row]:
+    """Edições ainda não processadas por OCR (ou todas se process_all).
+
+    Ordena pelas mais recentes primeiro — essencial para automação com fila grande.
+    """
+    clauses: list[str] = []
+    params: list[object] = []
+    if not process_all:
+        clauses.append("ocr_processado = 0")
+    if recent_days and recent_days > 0:
+        clauses.append(
+            "(data_publicacao IS NULL OR data_publicacao >= date('now', ?))"
+        )
+        params.append(f"-{int(recent_days)} days")
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    lim_sql = f" LIMIT {int(limit)}" if limit and limit > 0 else ""
     with connect() as conn:
         return list(
             conn.execute(
@@ -533,8 +552,13 @@ def get_pending_edicoes(process_all: bool = False) -> list[sqlite3.Row]:
                 SELECT *
                 FROM edicoes
                 {where}
-                ORDER BY id ASC
-                """
+                ORDER BY
+                  CASE WHEN data_publicacao IS NULL OR data_publicacao = '' THEN 1 ELSE 0 END,
+                  data_publicacao DESC,
+                  id DESC
+                {lim_sql}
+                """,
+                params,
             )
         )
 

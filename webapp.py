@@ -169,6 +169,27 @@ def _registrar_edicoes_detectadas() -> int:
         return 0
 
 
+def _auto_processar_pendentes_bg() -> None:
+    """Baixa + OCR + detecção + notificação das pendentes (fila automática)."""
+    if not SETTINGS.auto_process:
+        return
+    if not _analise_lock.acquire(blocking=False):
+        database.log_job(
+            "auto-processando pendentes",
+            "ignorado",
+            mensagem="Análise já em execução",
+        )
+        return
+    try:
+        from pipeline import processar_pendentes_automatico
+
+        processar_pendentes_automatico(force_ocr=True, fast_ocr=True)
+    except Exception:
+        logger.exception("Falha no auto-processamento de pendentes (web).")
+    finally:
+        _analise_lock.release()
+
+
 def _detectar_edicoes_com_trava() -> None:
     if not _detector_lock.acquire(blocking=False):
         database.log_job(
@@ -179,16 +200,20 @@ def _detectar_edicoes_com_trava() -> None:
         return
     try:
         _registrar_edicoes_detectadas()
+        # Após cadastrar edições, processa OCR automaticamente
+        if SETTINGS.auto_process:
+            _task_executor.submit(_auto_processar_pendentes_bg)
     finally:
         _detector_lock.release()
 
 
 def _scheduler_loop() -> None:
-    time.sleep(2)
+    # Aguarda web subir, depois 1º ciclo completo (detectar + processar)
+    time.sleep(3)
     _detectar_edicoes_com_trava()
-    intervalo = max(1, int(24 / 4))
+    intervalo_h = max(1, int(SETTINGS.web_scan_interval_hours or 6))
     while True:
-        time.sleep(intervalo * 60 * 60)
+        time.sleep(intervalo_h * 60 * 60)
         _detectar_edicoes_com_trava()
 
 
@@ -199,10 +224,18 @@ def _start_scheduler() -> None:
     _scheduler_started = True
     thread = threading.Thread(
         target=_scheduler_loop,
-        name="edicoes-detector-4x-dia",
+        name="auto-scan-process",
         daemon=True,
     )
     thread.start()
+    logger.info(
+        "Automação ativa: varredura a cada %sh + OCR de pendentes "
+        "(AUTO_PROCESS=%s, limite=%s, dias=%s).",
+        SETTINGS.web_scan_interval_hours,
+        SETTINGS.auto_process,
+        SETTINGS.auto_process_limit,
+        SETTINGS.auto_process_dias,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +358,9 @@ def _saude_sistema() -> dict:
         "ai_disponivel": ia_disponivel(),
         "web_auth": bool(SETTINGS.webapp_user and SETTINGS.webapp_password),
         "app_env": SETTINGS.app_env or "development",
+        "auto_process": bool(SETTINGS.auto_process),
+        "auto_process_limit": int(SETTINGS.auto_process_limit),
+        "auto_process_dias": int(SETTINGS.auto_process_dias),
     }
 
 

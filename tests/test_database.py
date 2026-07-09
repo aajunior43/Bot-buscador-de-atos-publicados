@@ -90,6 +90,29 @@ class TestInsertMencoes:
         assert count == 1  # deduplica pelo hash_trecho
 
 
+class TestPendingEdicoes:
+    def test_ordena_recentes_primeiro(self, db):
+        import database
+
+        database.init_db()
+        database.insert_or_get_edicao("https://ex.com/old.pdf", "Old", "2020-01-01")
+        database.insert_or_get_edicao("https://ex.com/new.pdf", "New", "2026-07-01")
+        pend = database.get_pending_edicoes(limit=10)
+        assert len(pend) >= 2
+        assert pend[0]["data_publicacao"] >= pend[1]["data_publicacao"]
+
+    def test_limite(self, db):
+        import database
+
+        database.init_db()
+        for i in range(5):
+            database.insert_or_get_edicao(
+                f"https://ex.com/l{i}.pdf", f"L{i}", "2026-06-01"
+            )
+        pend = database.get_pending_edicoes(limit=2)
+        assert len(pend) == 2
+
+
 class TestSomaValoresDedup:
     def test_deduplica_mesmo_numero(self, db):
         import database

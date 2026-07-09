@@ -5,7 +5,10 @@
 <section class="detail-hero fade-in">
   <p class="eyebrow">Operação · Oficina do bot</p>
   <h1>Painel operacional</h1>
-  <p class="hero-copy">Varredura, OCR, fila de jobs e saúde do sistema — separado da leitura de atos.</p>
+  <p class="hero-copy">
+    Modo automático: o bot detecta edições, processa OCR e notifica sozinho.
+    Use esta área só para acompanhar, forçar ações ou revisar.
+  </p>
 </section>
 
 <section class="stats-grid stats-grid-compact fade-in">
@@ -104,6 +107,16 @@
       <li class="health-item {% if saude.app_env == 'production' %}ok{% else %}neutral{% endif %}">
         <strong>Ambiente</strong>
         <span>{{ saude.app_env }}</span>
+      </li>
+      <li class="health-item {% if saude.auto_process %}ok{% else %}warn{% endif %}">
+        <strong>Automação OCR</strong>
+        <span>
+          {% if saude.auto_process %}
+            Ligada · até {{ saude.auto_process_limit }}/ciclo · {{ saude.auto_process_dias }} dias
+          {% else %}
+            Desligada (AUTO_PROCESS=false)
+          {% endif %}
+        </span>
       </li>
     </ul>
   </section>

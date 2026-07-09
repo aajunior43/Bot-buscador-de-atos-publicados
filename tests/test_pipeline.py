@@ -83,6 +83,25 @@ def test_processar_edicao_falha_download(db):
     assert result is None
 
 
+def test_processar_pendentes_automatico(db, mock_settings, tmp_path):
+    import database
+    import pipeline
+
+    eid = database.insert_or_get_edicao(
+        "https://example.com/pend.pdf", "Pend", "2026-07-01"
+    )
+    calls = []
+
+    def fake_processar(edicao, **kwargs):
+        calls.append(edicao.url)
+        return _resultado(kwargs.get("edicao_id") or eid)
+
+    with patch("pipeline.processar_edicao", side_effect=fake_processar):
+        n = pipeline.processar_pendentes_automatico(limit=5, recent_days=400)
+    assert n >= 1
+    assert any("pend.pdf" in u for u in calls)
+
+
 def test_reprocessar_deteccao_de_cache(db, mock_settings, tmp_path):
     import database
     import pipeline
