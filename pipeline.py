@@ -239,6 +239,21 @@ def _processar_edicao_unlocked(
         database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
         database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
         database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
+        try:
+            import atos_arquivo
+
+            atos_arquivo.espelhar_edicao(
+                download.edicao_id,
+                resultado.publicacoes,
+                edicao_meta={
+                    "id": download.edicao_id,
+                    "titulo": edicao.titulo,
+                    "data_publicacao": edicao.data_publicacao,
+                    "url": edicao.url,
+                },
+            )
+        except Exception:
+            logger.exception("Falha ao espelhar atos em pasta organizada")
         database.update_ocr(download.edicao_id, ocr.texto_path, resultado.encontrado)
         if resultado.metricas:
             database.salvar_metricas_deteccao(download.edicao_id, resultado.metricas)
@@ -370,10 +385,12 @@ def reprocessar_deteccao_de_cache(
             raise ValueError(f"Edição id={edicao_id} não encontrada")
         caminho = row["caminho_local"]
         titulo = row["titulo"] or f"Edição {edicao_id}"
+        data_pub = row["data_publicacao"]
+        url_ed = row["url"]
         edicao = Edicao(
-            url=row["url"],
+            url=url_ed,
             titulo=titulo,
-            data_publicacao=row["data_publicacao"],
+            data_publicacao=data_pub,
         )
 
     if not caminho or not Path(caminho).exists():
@@ -409,6 +426,21 @@ def reprocessar_deteccao_de_cache(
             ocr.texto_path if ocr.texto_path else pdf_path.with_suffix(".txt"),
             resultado.publicacoes,
         )
+        try:
+            import atos_arquivo
+
+            atos_arquivo.espelhar_edicao(
+                edicao_id,
+                resultado.publicacoes,
+                edicao_meta={
+                    "id": edicao_id,
+                    "titulo": titulo,
+                    "data_publicacao": data_pub,
+                    "url": url_ed,
+                },
+            )
+        except Exception:
+            logger.exception("Falha ao espelhar atos em pasta organizada")
         database.update_ocr(
             edicao_id,
             ocr.texto_path or pdf_path.with_suffix(".txt"),
