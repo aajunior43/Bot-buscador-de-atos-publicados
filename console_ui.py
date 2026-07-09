@@ -194,7 +194,10 @@ def banner_startup(
     box(
         [
             _c(C.BOLD + C.BRIGHT_WHITE, "Rastreador de atos · O Regional · Inajá-PR"),
-            _c(C.DIM, f"{_now()}  ·  terminal em tempo real  ·  modo espectador 🔥"),
+            _c(
+                C.DIM,
+                f"{_now()}  ·  {_greeting()}  ·  modo espectador 🔥",
+            ),
             "",
             f"{_c(C.CYAN, '▸')} ciclo a cada {_c(C.BRIGHT_WHITE, str(interval_h) + 'h')}"
             f"   {_c(C.CYAN, '▸')} fila contínua {_c(C.BRIGHT_GREEN, 'SIM' if continuo else 'não')}",
@@ -204,10 +207,16 @@ def banner_startup(
             f"{_c(C.CYAN, '▸')} janela {_c(C.BRIGHT_WHITE, str(dias) if dias else '∞')}"
             f"   {_c(C.CYAN, '▸')} quarentena após {_c(C.BRIGHT_YELLOW, str(max_falhas))} falhas",
             "",
-            _c(C.DIM, "Acompanhe: barras OCR · atos · ETA · marcos da sessão"),
+            _c(
+                C.DIM,
+                "Show: trilho · barras · combos · placar · ETA no relógio · diário em logs/",
+            ),
         ],
         color=C.BRIGHT_MAGENTA,
         title="MONITOR INAJÁ · BOT",
+    )
+    _journal_line(
+        f"START continuo={continuo} lote={lote} desde={desde or '-'} max_falhas={max_falhas}"
     )
     _emit()
 
@@ -227,6 +236,10 @@ class SessionStats:
     duracoes: deque[float] = field(default_factory=lambda: deque(maxlen=20))
     marcos_feitos: set[int] = field(default_factory=set)
     primeiro_inaja: bool = False
+    combo_inaja: int = 0
+    combo_ok: int = 0
+    max_combo_inaja: int = 0
+    max_combo_ok: int = 0
 
     def elapsed(self) -> str:
         return _fmt_dur(time.time() - self.started_at)
@@ -247,6 +260,16 @@ class SessionStats:
         if media is None or not pendentes or pendentes <= 0:
             return None
         return _fmt_dur(media * pendentes)
+
+    def eta_relogio(self, pendentes: int | None) -> str | None:
+        """Horário de relógio estimado para esvaziar a fila."""
+        media = self.media_seg()
+        if media is None or not pendentes or pendentes <= 0:
+            return None
+        from datetime import timedelta
+
+        fim = datetime.now() + timedelta(seconds=media * pendentes)
+        return fim.strftime("%H:%M")
 
     def spark(self) -> str:
         if not self.historico:
@@ -280,11 +303,48 @@ class SessionStats:
             self.processadas * 10
             + self.com_inaja * 50
             + self.publicacoes * 15
+            + self.max_combo_inaja * 25
             - self.falhas * 20
         )
 
 
 SESSION = SessionStats()
+
+
+def queue_health(pendentes: int | None) -> str:
+    if pendentes is None:
+        return _c(C.DIM, "○ fila —")
+    if pendentes == 0:
+        return _c(C.BRIGHT_GREEN, "● fila zerada")
+    if pendentes < 50:
+        return _c(C.BRIGHT_GREEN, f"● fila leve ({pendentes})")
+    if pendentes < 300:
+        return _c(C.BRIGHT_YELLOW, f"● fila média ({pendentes})")
+    return _c(C.BRIGHT_RED, f"● fila pesada ({pendentes})")
+
+
+def _greeting() -> str:
+    h = datetime.now().hour
+    if h < 6:
+        return "madrugada produtiva"
+    if h < 12:
+        return "bom dia, fiscal de atos"
+    if h < 18:
+        return "boa tarde, caçador de Inajá"
+    return "boa noite, o bot não dorme"
+
+
+def _journal_line(text: str) -> None:
+    """Append em logs/sessao_terminal.log (reler depois)."""
+    try:
+        from config import SETTINGS
+
+        path = SETTINGS.log_dir / "sessao_terminal.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now().isoformat(timespec='seconds')} | {text}\n")
+    except Exception:
+        pass
 
 # Pipeline visual da edição atual
 _PHASES = ("DL", "OCR", "DET", "IA", "ALR")
@@ -307,15 +367,18 @@ def phase_reset() -> None:
     _phase_state = {p: "wait" for p in _PHASES}
 
 
-def phase_set(phase: str, state: str) -> None:
+def phase_set(phase: str, state: str, *, draw: bool = True) -> None:
     """Atualiza etapa e redesenha o trilho  DL●──OCR○──…"""
     if phase not in _phase_state:
+        return
+    if _phase_state[phase] == state:
         return
     _phase_state[phase] = state
     # Se começou OCR, download ok implícito se ainda wait
     if phase == "OCR" and state == "run" and _phase_state["DL"] == "wait":
         _phase_state["DL"] = "ok"
-    _draw_phase_rail()
+    if draw:
+        _draw_phase_rail()
 
 
 def _draw_phase_rail() -> None:
@@ -342,12 +405,11 @@ def _draw_phase_rail() -> None:
             else:
                 link = _c(C.DIM, "╌╌")
             parts.append(link)
-    _emit("  " + "".join(parts))
-    # legenda curta da etapa em execução
     running = [p for p, s in _phase_state.items() if s == "run"]
+    agora = ""
     if running:
-        p = running[0]
-        _emit(_c(C.DIM, f"     agora: {_PHASE_LABEL.get(p, p)}"))
+        agora = _c(C.DIM, f"  · {_PHASE_LABEL.get(running[0], running[0])}")
+    _emit("  " + "".join(parts) + agora)
 
 
 def _maybe_milestone() -> None:
@@ -401,13 +463,20 @@ def status_fila(
         eta = SESSION.eta_fila(pendentes)
         if eta:
             bits.append(f"⏳ ~{eta}")
+        clock = SESSION.eta_relogio(pendentes)
+        if clock:
+            bits.append(f"🕒 ~{clock}")
     if fila is not None:
         bits.append(f"⏭ {fila}")
     if quarentena:
         bits.append(f"🚫 {quarentena}")
+    if SESSION.combo_inaja >= 2:
+        bits.append(f"🔥 x{SESSION.combo_inaja}")
     _emit(_c(C.DIM, f"  [{_now()}] " + "  ·  ".join(bits)))
+    if pendentes is not None:
+        _emit("           " + queue_health(pendentes))
     if SESSION.historico:
-        _emit(_c(C.DIM, f"           trilha  {SESSION.spark()}"))
+        _emit("           trilha  " + SESSION.spark_colored())
 
 
 def cockpit(
@@ -431,12 +500,20 @@ def cockpit(
     ]
     if pendentes is not None or fila is not None:
         eta = SESSION.eta_fila(pendentes) if pendentes else None
+        clock = SESSION.eta_relogio(pendentes) if pendentes else None
+        lines.append(queue_health(pendentes if pendentes is not None else None))
         lines.append(
             f"pendentes {_c(C.BRIGHT_YELLOW, str(pendentes if pendentes is not None else '—'))}   "
             f"fila {_c(C.BRIGHT_WHITE, str(fila if fila is not None else '—'))}   "
             f"quarentena {_c(C.BRIGHT_YELLOW, str(quarentena or 0))}"
             + (f"   ETA ~{_c(C.BRIGHT_CYAN, eta)}" if eta else "")
+            + (f"   🕒 {_c(C.BRIGHT_CYAN, clock)}" if clock else "")
         )
+        if SESSION.combo_inaja or SESSION.max_combo_inaja:
+            lines.append(
+                f"combo Inajá {_c(C.BRIGHT_GREEN, f'x{SESSION.combo_inaja}')}   "
+                f"recorde {_c(C.BRIGHT_YELLOW, f'x{SESSION.max_combo_inaja}')}"
+            )
     hr = SESSION.hit_rate()
     if hr is not None:
         lines.append(
@@ -490,16 +567,22 @@ def edition_start(
         eta = SESSION.eta_fila(pendentes_restantes)
         if eta:
             meta.append(f"ETA fila ~{eta}")
+        clock = SESSION.eta_relogio(pendentes_restantes)
+        if clock:
+            meta.append(f"🕒 ~{clock}")
     media = SESSION.media_seg()
     if media is not None:
         meta.append(f"⌀ {_fmt_dur(media)}")
     hr = SESSION.hit_rate()
     if hr is not None:
         meta.append(f"🎯 {hr:.0f}% Inajá")
+    if SESSION.combo_inaja >= 2:
+        meta.append(f"🔥 combo x{SESSION.combo_inaja}")
     if meta:
         _emit(_c(C.DIM, "  " + "  ·  ".join(meta)))
     _emit(_c(C.DIM, f"  ▶ {_now()}"))
     _draw_phase_rail()
+    _journal_line(f"EDICAO_START {titulo[:60]} id={edicao_id} data={data}")
     return t0
 
 
@@ -546,18 +629,23 @@ def progress(
     extra_s = f"  {_c(C.DIM, extra)}" if extra else ""
 
     eta_s = ""
-    if _progress_t0 and current > 0 and total > current:
+    speed_s = ""
+    if _progress_t0 and current > 0:
         elapsed = time.time() - _progress_t0
         rate = current / elapsed if elapsed > 0 else 0
         if rate > 0:
-            rem = (total - current) / rate
-            eta_s = f"  {_c(C.YELLOW, 'ETA ' + _fmt_dur(rem))}"
+            # páginas por minuto
+            ppm = rate * 60
+            speed_s = f"  {_c(C.DIM, f'{ppm:.1f} pág/min')}"
+            if total > current:
+                rem = (total - current) / rate
+                eta_s = f"  {_c(C.YELLOW, 'ETA ' + _fmt_dur(rem))}"
 
     body = (
         f"  {_c(C.DIM, '│')} {_c(color, b)} "
         f"{_c(C.BOLD, f'{p:3d}%')}  "
         f"{_c(C.WHITE, f'{current:>3}/{total:<3}')}  "
-        f"{_c(C.CYAN, label)}{eta_s}{extra_s}"
+        f"{_c(C.CYAN, label)}{eta_s}{speed_s}{extra_s}"
     )
     with _lock:
         if body != _last_progress_line:
@@ -659,11 +747,28 @@ def edition_end(
         dur = _fmt_dur(secs)
 
     titulo_curto = (SESSION.ultima_edicao or "?")[:36]
+    # ritmo vs média (antes de append da duração atual, media já inclui esta)
+    pace = ""
+    media_antes = None
+    if len(SESSION.duracoes) >= 2 and secs > 0:
+        # média sem a última (acabou de append)
+        prev = list(SESSION.duracoes)[:-1]
+        if prev:
+            media_antes = sum(prev) / len(prev)
+            if secs < media_antes * 0.85:
+                pace = _c(C.BRIGHT_GREEN, f"⚡ mais rápida que a média ({_fmt_dur(media_antes)})")
+            elif secs > media_antes * 1.25:
+                pace = _c(C.BRIGHT_YELLOW, f"🐢 mais lenta que a média ({_fmt_dur(media_antes)})")
+
     if ok:
         SESSION.processadas += 1
+        SESSION.combo_ok += 1
+        SESSION.max_combo_ok = max(SESSION.max_combo_ok, SESSION.combo_ok)
         if tem_inaja:
             SESSION.com_inaja += 1
             SESSION.historico.append("I")
+            SESSION.combo_inaja += 1
+            SESSION.max_combo_inaja = max(SESSION.max_combo_inaja, SESSION.combo_inaja)
             flag = "I"
             if not SESSION.primeiro_inaja:
                 SESSION.primeiro_inaja = True
@@ -673,8 +778,29 @@ def edition_end(
                         "  ★ PRIMEIRO INAJÁ DA SESSÃO ★  ",
                     )
                 )
+            # Breaking news
+            _emit(
+                _c(
+                    C.BG_GREEN + C.BOLD + C.BLACK,
+                    f"  ✦ BREAKING · INAJÁ · {n_pubs} ATO(S) · {titulo_curto}  ",
+                )
+            )
+            if SESSION.combo_inaja >= 2:
+                _emit(
+                    _c(
+                        C.BRIGHT_YELLOW + C.BOLD,
+                        f"  🔥 COMBO INAJÁ x{SESSION.combo_inaja}"
+                        + (
+                            f"  ·  RECORDE!"
+                            if SESSION.combo_inaja == SESSION.max_combo_inaja
+                            and SESSION.combo_inaja >= 3
+                            else ""
+                        ),
+                    )
+                )
         else:
             SESSION.historico.append(".")
+            SESSION.combo_inaja = 0
             flag = "."
         SESSION.publicacoes += n_pubs
         if from_cache:
@@ -705,6 +831,8 @@ def edition_end(
                 badge += f"  {_c(C.YELLOW, f'{n_mencoes} menção(ões)')}"
 
         _emit(f"  {_c(C.BRIGHT_GREEN + C.BOLD, '✓ CONCLUÍDA')}  {badge}")
+        if pace:
+            _emit(f"  {pace}")
         bits = []
         if dur:
             bits.append(f"⏱ {dur}")
@@ -720,6 +848,8 @@ def edition_end(
         if hr is not None:
             bits.append(f"🎯 {hr:.0f}%")
         bits.append(f"pts {SESSION.score()}")
+        if SESSION.combo_ok >= 5:
+            bits.append(f"// streak ok x{SESSION.combo_ok}")
         _emit(_c(C.DIM, "  " + "  ·  ".join(bits)))
         _scoreboard.appendleft(
             {
@@ -729,12 +859,18 @@ def edition_end(
                 "pubs": n_pubs,
             }
         )
+        _journal_line(
+            f"EDICAO_OK inaja={int(tem_inaja)} pubs={n_pubs} dur={dur} "
+            f"titulo={titulo_curto} score={SESSION.score()} comboI={SESSION.combo_inaja}"
+        )
         _maybe_milestone()
-        if SESSION.processadas % 3 == 0:
+        if SESSION.processadas % 3 == 0 or tem_inaja:
             show_scoreboard()
     else:
         SESSION.falhas += 1
         SESSION.historico.append("x")
+        SESSION.combo_inaja = 0
+        SESSION.combo_ok = 0
         # marca fase em run como fail
         for p, st in list(_phase_state.items()):
             if st == "run":
@@ -746,6 +882,8 @@ def edition_end(
         )
         if dur:
             _emit(_c(C.DIM, f"  ⏱ {dur}  ·  falhas sessão: {SESSION.falhas}"))
+        if pace:
+            _emit(f"  {pace}")
         _scoreboard.appendleft(
             {
                 "titulo": titulo_curto,
@@ -754,6 +892,7 @@ def edition_end(
                 "pubs": 0,
             }
         )
+        _journal_line(f"EDICAO_FAIL dur={dur} titulo={titulo_curto} erro={erro[:120]}")
     rule(color=C.DIM)
 
 
@@ -800,12 +939,24 @@ def session_summary(*, reason: str = "sessão encerrada") -> None:
     ]
     if thr:
         lines.append(f"ritmo {_c(C.CYAN, f'{thr:.1f} ed/h')}")
+    if SESSION.max_combo_inaja:
+        lines.append(
+            f"melhor combo Inajá {_c(C.BRIGHT_GREEN + C.BOLD, f'x{SESSION.max_combo_inaja}')}   "
+            f"streak ok máx {_c(C.CYAN, f'x{SESSION.max_combo_ok}')}"
+        )
     if SESSION.historico:
         lines.append("trilha " + SESSION.spark_colored())
     if SESSION.ultima_edicao:
         lines.append(_c(C.DIM, f"última: {SESSION.ultima_edicao[:50]}"))
+    lines.append(_c(C.DIM, "diário: logs/sessao_terminal.log"))
     box(lines, color=C.BRIGHT_MAGENTA, title="FIM DE SESSÃO")
     show_scoreboard()
+    _journal_line(
+        f"END reason={reason} processadas={SESSION.processadas} "
+        f"inaja={SESSION.com_inaja} pubs={SESSION.publicacoes} "
+        f"falhas={SESSION.falhas} score={SESSION.score()} "
+        f"combo_max={SESSION.max_combo_inaja}"
+    )
 
 
 def ciclo_banner(titulo: str, detalhe: str = "") -> None:

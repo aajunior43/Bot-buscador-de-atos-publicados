@@ -38,8 +38,15 @@ def test_session_eta_and_spark():
     s.historico.extend(["I", ".", "x", "I"])
     assert s.media_seg() == 90.0
     assert s.eta_fila(2) is not None
+    assert s.eta_relogio(2) is not None
+    assert ":" in s.eta_relogio(2)
     spark = s.spark()
     assert "█" in spark and "▒" in spark and "░" in spark
+
+
+def test_queue_health():
+    assert "zerada" in console_ui.queue_health(0) or "0" in console_ui.queue_health(0)
+    assert "pesada" in console_ui.queue_health(500)
 
 
 def test_fmt_publicacoes_nao_quebra(capsys):
