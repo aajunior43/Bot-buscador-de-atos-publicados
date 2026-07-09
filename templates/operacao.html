@@ -230,7 +230,9 @@
         <strong>Automação OCR (BOT)</strong>
         <span>
           {% if saude.auto_process %}
-            Ligada · até {{ saude.auto_process_limit }}/ciclo · {{ saude.auto_process_dias }} dias
+            Ligada · lote {{ saude.auto_process_limit }} · máx {{ saude.auto_process_max_por_ciclo }}/ciclo
+            · {{ saude.auto_process_dias }} dias
+            {% if saude.auto_process_continuo %} · fila contínua{% endif %}
           {% else %}
             Desligada (AUTO_PROCESS=false)
           {% endif %}

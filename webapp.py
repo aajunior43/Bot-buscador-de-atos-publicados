@@ -342,6 +342,8 @@ def _saude_sistema() -> dict:
         "app_env": SETTINGS.app_env or "development",
         "auto_process": bool(SETTINGS.auto_process),
         "auto_process_limit": int(SETTINGS.auto_process_limit),
+        "auto_process_max_por_ciclo": int(SETTINGS.auto_process_max_por_ciclo),
+        "auto_process_continuo": bool(SETTINGS.auto_process_continuo),
         "auto_process_dias": int(SETTINGS.auto_process_dias),
         "bot_vivo": bool(auto.get("bot_vivo")),
         "bot_heartbeat_rel": auto.get("bot_heartbeat_rel") or "sem sinal",

@@ -86,8 +86,13 @@ class Settings:
     max_edicoes_por_ciclo: int = _int_env("MAX_EDICOES_POR_CICLO", 10)
     # Automação total: processa OCR/notificação sem clique manual
     auto_process: bool = _bool_env("AUTO_PROCESS", True)
-    # Quantas edições pendentes (ocr_processado=0) processar por ciclo
+    # Quantas edições pendentes por *lote* (evita lock longo demais)
     auto_process_limit: int = _int_env("AUTO_PROCESS_LIMIT", 5)
+    # Máximo de edições da fila no ciclo completo (0 = sem teto extra, só o lote)
+    # Com AUTO_PROCESS_CONTINUO o BOT esvazia a fila em vários lotes entre ciclos.
+    auto_process_max_por_ciclo: int = _int_env("AUTO_PROCESS_MAX_POR_CICLO", 40)
+    # Entre ciclos de 6h, continua processando a fila (um lote por vez)
+    auto_process_continuo: bool = _bool_env("AUTO_PROCESS_CONTINUO", True)
     # Só auto-processa edições com data nos últimos N dias (0 = todas)
     auto_process_dias: int = _int_env("AUTO_PROCESS_DIAS", 120)
     # Intervalo do scheduler da web (horas entre varreduras; padrão 6 = 4x/dia)

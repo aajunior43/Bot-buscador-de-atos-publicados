@@ -94,12 +94,45 @@ def test_processar_pendentes_automatico(db, mock_settings, tmp_path):
 
     def fake_processar(edicao, **kwargs):
         calls.append(edicao.url)
+        # Marca como processada para não reentrar no loop de lotes
+        database.update_ocr(int(kwargs.get("edicao_id") or eid), "x.txt", tem_inaja=False)
         return _resultado(kwargs.get("edicao_id") or eid)
 
     with patch("pipeline.processar_edicao", side_effect=fake_processar):
-        n = pipeline.processar_pendentes_automatico(limit=5, recent_days=400)
+        n = pipeline.processar_pendentes_automatico(
+            limit=5, recent_days=400, max_total=5
+        )
     assert n >= 1
     assert any("pend.pdf" in u for u in calls)
+
+
+def test_processar_pendentes_varios_lotes(db, mock_settings):
+    import database
+    import pipeline
+
+    ids = []
+    for i in range(7):
+        ids.append(
+            database.insert_or_get_edicao(
+                f"https://example.com/lote{i}.pdf",
+                f"L{i}",
+                "2026-07-01",
+            )
+        )
+    processed = []
+
+    def fake_processar(edicao, **kwargs):
+        eid = int(kwargs.get("edicao_id") or 0)
+        processed.append(eid)
+        database.update_ocr(eid, "x.txt", tem_inaja=False)
+        return _resultado(eid)
+
+    with patch("pipeline.processar_edicao", side_effect=fake_processar):
+        n = pipeline.processar_pendentes_automatico(
+            limit=3, recent_days=400, max_total=7, lotes=True
+        )
+    assert n == 7
+    assert len(processed) == 7
 
 
 def test_reprocessar_deteccao_de_cache(db, mock_settings, tmp_path):

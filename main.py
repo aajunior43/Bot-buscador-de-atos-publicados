@@ -11,7 +11,7 @@ import schedule
 import database
 from config import SETTINGS
 from notifier import enviar_teste
-from pipeline import executar_ciclo
+from pipeline import executar_ciclo, processar_pendentes_automatico
 
 
 logger = logging.getLogger(__name__)
@@ -90,8 +90,13 @@ def main() -> None:
         return
 
     logger.info(
-        "Agendando verificação a cada %s hora(s). Heartbeat a cada 30s.",
+        "Agendando verificação a cada %s hora(s). Heartbeat a cada 30s. "
+        "Fila contínua=%s (lote=%s, máx/ciclo=%s, dias=%s).",
         SETTINGS.check_interval_hours,
+        SETTINGS.auto_process_continuo,
+        SETTINGS.auto_process_limit,
+        SETTINGS.auto_process_max_por_ciclo,
+        SETTINGS.auto_process_dias,
     )
     executar_ciclo()
     schedule.every(SETTINGS.check_interval_hours).hours.do(executar_ciclo)
@@ -101,6 +106,23 @@ def main() -> None:
         except Exception:
             logger.debug("Falha ao gravar heartbeat do BOT", exc_info=True)
         schedule.run_pending()
+
+        # Entre ciclos: esvazia a fila de OCR lote a lote (sem esperar 6h)
+        if SETTINGS.auto_process and SETTINGS.auto_process_continuo:
+            try:
+                n = processar_pendentes_automatico(
+                    force_ocr=True,
+                    fast_ocr=True,
+                    # Um lote por vez no idle; o próximo loop pega o seguinte
+                    max_total=SETTINGS.auto_process_limit,
+                    lotes=False,
+                )
+                if n > 0:
+                    # Continua na hora se ainda houver trabalho
+                    continue
+            except Exception:
+                logger.exception("Falha no processamento contínuo da fila.")
+
         time.sleep(30)
 
 

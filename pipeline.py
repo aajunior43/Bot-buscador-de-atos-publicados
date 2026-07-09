@@ -438,56 +438,99 @@ def processar_pendentes_automatico(
     recent_days: int | None = None,
     force_ocr: bool = True,
     fast_ocr: bool = True,
+    max_total: int | None = None,
+    lotes: bool = True,
 ) -> int:
     """Processa edições com ocr_processado=0 (mais recentes primeiro).
 
-    Returns:
-        Quantidade de edições em que o pipeline foi invocado.
-    """
-    lim = limit if limit is not None else SETTINGS.auto_process_limit
-    dias = recent_days if recent_days is not None else SETTINGS.auto_process_dias
-    rows = database.get_pending_edicoes(
-        process_all=False,
-        limit=max(0, int(lim)),
-        recent_days=int(dias) if dias else None,
-    )
-    if not rows:
-        logger.info("Automação: nenhuma edição pendente de OCR.")
-        return 0
+    Args:
+        limit: tamanho de cada lote (padrão AUTO_PROCESS_LIMIT).
+        max_total: teto de edições nesta chamada. None usa
+            AUTO_PROCESS_MAX_POR_CICLO; 0 = só um lote (limit).
+        lotes: se True, repete lotes até esgotar a fila (na janela de dias)
+            ou atingir max_total.
 
-    job = database.start_job(
-        "auto-processando pendentes",
-        mensagem=f"{len(rows)} edição(ões) (limite={lim}, dias={dias or 'todos'})",
-    )
-    ok = 0
-    for row in rows:
-        edicao = Edicao(
-            url=row["url"],
-            titulo=row["titulo"] or f"Edição {row['id']}",
-            data_publicacao=row["data_publicacao"],
+    Returns:
+        Quantidade de edições em que o pipeline foi invocado com sucesso.
+    """
+    lim = max(1, int(limit if limit is not None else SETTINGS.auto_process_limit))
+    dias = recent_days if recent_days is not None else SETTINGS.auto_process_dias
+    if max_total is None:
+        max_total = int(SETTINGS.auto_process_max_por_ciclo or 0)
+    teto = int(max_total) if max_total and max_total > 0 else lim
+
+    total_ok = 0
+    lote_n = 0
+    while total_ok < teto:
+        restante = teto - total_ok
+        batch = min(lim, restante)
+        rows = database.get_pending_edicoes(
+            process_all=False,
+            limit=batch,
+            recent_days=int(dias) if dias else None,
         )
-        try:
-            resultado = processar_edicao(
-                edicao,
-                force_ocr=force_ocr,
-                fast_ocr=fast_ocr,
-                edicao_id=int(row["id"]),
-                notificar_se_encontrado=True,
+        if not rows:
+            if lote_n == 0:
+                logger.info("Automação: nenhuma edição pendente de OCR.")
+            break
+
+        lote_n += 1
+        job = database.start_job(
+            "auto-processando pendentes",
+            mensagem=(
+                f"lote {lote_n}: {len(rows)} edição(ões) "
+                f"(limite_lote={lim}, teto={teto}, dias={dias or 'todos'})"
+            ),
+        )
+        ok = 0
+        for row in rows:
+            database.registrar_heartbeat_bot()
+            edicao = Edicao(
+                url=row["url"],
+                titulo=row["titulo"] or f"Edição {row['id']}",
+                data_publicacao=row["data_publicacao"],
             )
-            if resultado is not None:
-                ok += 1
-        except Exception:
-            logger.exception(
-                "Automação: falha na edição id=%s", row["id"]
+            try:
+                resultado = processar_edicao(
+                    edicao,
+                    force_ocr=force_ocr,
+                    fast_ocr=fast_ocr,
+                    edicao_id=int(row["id"]),
+                    notificar_se_encontrado=True,
+                )
+                if resultado is not None:
+                    ok += 1
+                    total_ok += 1
+            except Exception:
+                logger.exception(
+                    "Automação: falha na edição id=%s", row["id"]
+                )
+                continue
+        database.update_job(
+            job,
+            "concluido",
+            mensagem=f"Lote {lote_n}: {ok}/{len(rows)} ok (acumulado {total_ok})",
+        )
+        logger.info(
+            "Automação: lote %s → %s/%s ok (acumulado %s/%s)",
+            lote_n,
+            ok,
+            len(rows),
+            total_ok,
+            teto,
+        )
+        if not lotes:
+            break
+        # Evita loop infinito se OCR falhar e ocr_processado continuar 0
+        if ok == 0:
+            logger.warning(
+                "Automação: lote sem progresso — interrompendo para evitar loop."
             )
-            continue
-    database.update_job(
-        job,
-        "concluido",
-        mensagem=f"Processadas {ok}/{len(rows)} edição(ões) pendentes",
-    )
-    logger.info("Automação: %s/%s edições pendentes processadas", ok, len(rows))
-    return ok
+            break
+
+    if total_ok:
+        logger.info("Automação: total processado nesta rodada: %s", total_ok)
+    return total_ok
 
 
 def executar_ciclo(
