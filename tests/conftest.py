@@ -47,6 +47,8 @@ def mock_settings(tmp_path):
     object.__setattr__(settings, "atos_espelhar", True)
     object.__setattr__(settings, "atos_por_tipo", True)
     object.__setattr__(settings, "atos_por_orgao", True)
+    object.__setattr__(settings, "atos_exportar_midia", False)
+    object.__setattr__(settings, "atos_pagina_dpi", 150)
     object.__setattr__(settings, "db_path", tmp_path / "test.db")
     object.__setattr__(settings, "request_timeout", 10)
     object.__setattr__(settings, "max_retries", 1)

@@ -5,9 +5,12 @@ Estrutura::
     atos/
       README.md
       INDICE.md
-      por-data/AAAA/MM/DD/{nn}_{Tipo}_{Numero}__{Orgao}.md|.json
-      por-tipo/{Tipo}/AAAA/...
-      por-orgao/{Orgao}/AAAA/...
+      por-data/AAAA/MM/DD/
+        {nn}_{Tipo}_{Numero}__{Orgao}.md
+        {nn}_{Tipo}_{Numero}__{Orgao}.json
+        {nn}_{Tipo}_{Numero}__{Orgao}.png      ← página do jornal (alta qualidade)
+        {nn}_{Tipo}_{Numero}__{Orgao}.pdf      ← só a página do ato
+      por-tipo/…  por-orgao/…  (mesmos arquivos + mídia)
 
 A fonte da verdade continua sendo o SQLite; esta pasta é regenerável.
 """
@@ -28,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 _INVALID_WIN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _MULTI_DASH = re.compile(r"-{2,}")
+_MIDIA_SUFIXOS = (".md", ".json", ".png", ".pdf")
 
 
 def slugify(texto: str | None, *, default: str = "sem-nome", max_len: int = 60) -> str:
@@ -104,13 +108,22 @@ Pasta **gerada automaticamente** pelo monitor (espelho do banco SQLite).
 | `por-orgao/` | Atalho por órgão (Prefeitura, Câmara…) |
 | `INDICE.md` | Visão geral e totais |
 
-Cada ato tem um arquivo `.md` (leitura) e `.json` (dados estruturados).
+## Arquivos de cada ato
+
+| Extensão | Conteúdo |
+|----------|----------|
+| `.md` | Leitura (resumo, metadados, trecho OCR) |
+| `.json` | Dados estruturados |
+| `.png` | **Página do jornal** em boa qualidade (onde o ato foi detectado) |
+| `.pdf` | **Só essa página** extraída do PDF da edição |
 
 ## Rebuild completo
 
 ```bash
 python scripts/reconstruir_atos.py
 ```
+
+Requer PDF local da edição em `edicoes/` e Poppler configurado (`POPPLER_PATH`).
 
 Não edite estes arquivos à mão — rode o rebuild ou reprocesse a edição.
 """,
@@ -158,6 +171,13 @@ def _conteudo_markdown(pub: dict, edicao: dict, seq: int) -> str:
         f"**Página no jornal:** {pub.get('pagina') or '—'}",
         f"**Valor:** {pub.get('valor') or '—'}",
         "",
+        "## Página do jornal",
+        "",
+        f"![Página {pub.get('pagina') or '?'} do jornal](./{{{{BASE}}}}.png)",
+        "",
+        f"- Imagem: `{{{{BASE}}}}.png`",
+        f"- PDF da página: `{{{{BASE}}}}.pdf`",
+        "",
         "## Resumo",
         "",
         resumo or "_Sem resumo._",
@@ -170,6 +190,10 @@ def _conteudo_markdown(pub: dict, edicao: dict, seq: int) -> str:
         "",
     ]
     return "\n".join(linhas)
+
+
+def _md_com_base(md_template: str, base_name: str) -> str:
+    return md_template.replace("{{BASE}}", base_name)
 
 
 def _payload_json(pub: dict, edicao: dict, seq: int) -> dict:
@@ -198,11 +222,128 @@ def _payload_json(pub: dict, edicao: dict, seq: int) -> dict:
 
 def _escrever_par(path_base: Path, md: str, data: dict) -> None:
     path_base.parent.mkdir(parents=True, exist_ok=True)
-    path_base.with_suffix(".md").write_text(md, encoding="utf-8")
+    path_base.with_suffix(".md").write_text(
+        _md_com_base(md, path_base.name), encoding="utf-8"
+    )
     path_base.with_suffix(".json").write_text(
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _apagar_arquivos_ato(path_base: Path) -> None:
+    for suf in _MIDIA_SUFIXOS:
+        path_base.with_suffix(suf).unlink(missing_ok=True)
+
+
+def _copiar_midia(src_base: Path, dst_base: Path) -> None:
+    """Copia .png e .pdf da página se existirem."""
+    dst_base.parent.mkdir(parents=True, exist_ok=True)
+    for suf in (".png", ".pdf"):
+        src = src_base.with_suffix(suf)
+        if src.exists():
+            shutil.copy2(src, dst_base.with_suffix(suf))
+
+
+def _exportar_pdf_pagina(pdf_src: Path, pagina: int, dest_pdf: Path) -> bool:
+    """Extrai uma única página do PDF da edição."""
+    try:
+        from pypdf import PdfReader, PdfWriter
+
+        reader = PdfReader(str(pdf_src))
+        n = len(reader.pages)
+        if pagina < 1 or pagina > n:
+            logger.warning(
+                "Página %s fora do intervalo 1..%s em %s", pagina, n, pdf_src.name
+            )
+            return False
+        writer = PdfWriter()
+        writer.add_page(reader.pages[pagina - 1])
+        dest_pdf.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest_pdf, "wb") as fh:
+            writer.write(fh)
+        return True
+    except Exception:
+        logger.exception("Falha ao extrair PDF página %s de %s", pagina, pdf_src)
+        return False
+
+
+def _exportar_png_pagina(pdf_src: Path, pagina: int, dest_png: Path) -> bool:
+    """Renderiza a página em PNG de boa qualidade (Poppler/pdf2image)."""
+    try:
+        from pdf2image import convert_from_path
+
+        dpi = max(120, int(getattr(SETTINGS, "atos_pagina_dpi", 200) or 200))
+        imagens = convert_from_path(
+            str(pdf_src),
+            dpi=dpi,
+            first_page=pagina,
+            last_page=pagina,
+            poppler_path=SETTINGS.poppler_path or None,
+            fmt="png",
+        )
+        if not imagens:
+            return False
+        dest_png.parent.mkdir(parents=True, exist_ok=True)
+        # PNG com compressão razoável, sem perder nitidez demais
+        img = imagens[0]
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        img.save(dest_png, "PNG", optimize=True)
+        return True
+    except Exception:
+        logger.exception("Falha ao renderizar PNG página %s de %s", pagina, pdf_src)
+        return False
+
+
+def exportar_midia_pagina(
+    pdf_src: Path | str | None,
+    pagina: int | None,
+    dest_base: Path,
+    *,
+    cache: dict[int, tuple[Path, Path]] | None = None,
+) -> dict[str, bool]:
+    """Gera ``dest_base.png`` e ``dest_base.pdf`` da página do jornal.
+
+    ``cache`` reutiliza a mesma página se vários atos caem nela.
+    """
+    out = {"png": False, "pdf": False}
+    if not getattr(SETTINGS, "atos_exportar_midia", True):
+        return out
+    if not pdf_src or not pagina:
+        return out
+    try:
+        pag = int(pagina)
+    except (TypeError, ValueError):
+        return out
+    if pag < 1:
+        return out
+
+    pdf_path = Path(pdf_src)
+    if not pdf_path.exists():
+        logger.warning("PDF da edição não encontrado: %s", pdf_path)
+        return out
+
+    dest_png = dest_base.with_suffix(".png")
+    dest_pdf = dest_base.with_suffix(".pdf")
+
+    if cache is not None and pag in cache:
+        src_png, src_pdf = cache[pag]
+        if src_png.exists():
+            dest_base.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_png, dest_png)
+            out["png"] = True
+        if src_pdf.exists():
+            dest_base.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_pdf, dest_pdf)
+            out["pdf"] = True
+        return out
+
+    out["png"] = _exportar_png_pagina(pdf_path, pag, dest_png)
+    out["pdf"] = _exportar_pdf_pagina(pdf_path, pag, dest_pdf)
+    if cache is not None and (out["png"] or out["pdf"]):
+        cache[pag] = (dest_png, dest_pdf)
+    return out
 
 
 def espelhar_edicao(
@@ -230,32 +371,36 @@ def espelhar_edicao(
     meta = dict(edicao_meta or {})
     if not meta.get("id"):
         meta["id"] = edicao_id
-    if not meta.get("data_publicacao") or not meta.get("titulo"):
+    if not meta.get("data_publicacao") or not meta.get("titulo") or not meta.get(
+        "caminho_local"
+    ):
         with database.connect() as conn:
             row = conn.execute(
-                "SELECT id, titulo, data_publicacao, url FROM edicoes WHERE id = ?",
+                """
+                SELECT id, titulo, data_publicacao, url, caminho_local
+                FROM edicoes WHERE id = ?
+                """,
                 (edicao_id,),
             ).fetchone()
             if row:
                 meta.setdefault("titulo", row["titulo"])
                 meta.setdefault("data_publicacao", row["data_publicacao"])
                 meta.setdefault("url", row["url"])
+                meta.setdefault("caminho_local", row["caminho_local"])
                 meta["id"] = row["id"]
 
     ano, mes, dia = _parse_data_edicao(meta.get("data_publicacao"))
     data_iso = _data_iso(ano, mes, dia)
     dia_dir = root / "por-data" / ano / mes / dia
+    pdf_edicao = meta.get("caminho_local")
 
-    # Limpa só o dia desta edição (evita lixo de rebuilds parciais do mesmo dia+edição)
-    # Estratégia: reescreve todos os atos do dia a partir do banco no rebuild;
-    # aqui, remove arquivos que batem com esta edicao_id nos json existentes.
+    # Limpa arquivos desta edição no dia (md/json/png/pdf)
     if dia_dir.exists():
         for jp in dia_dir.glob("*.json"):
             try:
                 d = json.loads(jp.read_text(encoding="utf-8"))
                 if int(d.get("edicao_id") or 0) == int(edicao_id):
-                    jp.unlink(missing_ok=True)
-                    jp.with_suffix(".md").unlink(missing_ok=True)
+                    _apagar_arquivos_ato(jp.with_suffix(""))
             except Exception:
                 continue
 
@@ -265,6 +410,8 @@ def espelhar_edicao(
 
     escritos = 0
     entradas_dia: list[tuple[str, dict]] = []
+    # Cache: mesma página do jornal reutilizada se vários atos nela
+    midia_cache: dict[int, tuple[Path, Path]] = {}
 
     for i, pub in enumerate(publicacoes, start=1):
         seq = seq0 + i
@@ -275,6 +422,14 @@ def espelhar_edicao(
         md = _conteudo_markdown(pub, meta, seq)
         payload = _payload_json(pub, meta, seq)
         _escrever_par(path_data, md, payload)
+        midia = exportar_midia_pagina(
+            pdf_edicao, pub.get("pagina"), path_data, cache=midia_cache
+        )
+        payload["midia_png"] = bool(midia.get("png"))
+        payload["midia_pdf"] = bool(midia.get("pdf"))
+        path_data.with_suffix(".json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         escritos += 1
         entradas_dia.append((base_name, payload))
 
@@ -288,6 +443,7 @@ def espelhar_edicao(
                 / f"{data_iso}__{base_name}"
             )
             _escrever_par(atalho, md, payload)
+            _copiar_midia(path_data, atalho)
 
         if getattr(SETTINGS, "atos_por_orgao", True):
             org_slug = slugify(
@@ -301,6 +457,7 @@ def espelhar_edicao(
                 / f"{data_iso}__{base_name}"
             )
             _escrever_par(atalho, md, payload)
+            _copiar_midia(path_data, atalho)
 
     _atualizar_indice_dia(dia_dir, data_iso, meta, entradas_dia)
     _atualizar_indice_mes(root / "por-data" / ano / mes, ano, mes)
@@ -339,14 +496,21 @@ def _atualizar_indice_dia(
         f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
         f"Total neste dia: **{len(todos)}** ato(s)",
         "",
-        "| # | Tipo | Número | Órgão | Valor | Arquivo |",
-        "|---|------|--------|-------|-------|---------|",
+        "| # | Tipo | Número | Órgão | Valor | Arquivos |",
+        "|---|------|--------|-------|-------|----------|",
     ]
     for stem, p in todos:
+        mid = []
+        mid.append(f"[md](./{stem}.md)")
+        mid.append(f"[json](./{stem}.json)")
+        if (dia_dir / f"{stem}.png").exists() or p.get("midia_png"):
+            mid.append(f"[png](./{stem}.png)")
+        if (dia_dir / f"{stem}.pdf").exists() or p.get("midia_pdf"):
+            mid.append(f"[pdf](./{stem}.pdf)")
         linhas.append(
             f"| {p.get('seq') or '—'} | {p.get('tipo') or '—'} | {p.get('numero') or '—'} | "
             f"{(p.get('orgao') or '—')[:40]} | {p.get('valor') or '—'} | "
-            f"[md](./{stem}.md) · [json](./{stem}.json) |"
+            f"{' · '.join(mid)} |"
         )
     linhas.append("")
     (dia_dir / "_indice-dia.md").write_text("\n".join(linhas), encoding="utf-8")
@@ -479,7 +643,8 @@ def reconstruir_tudo_do_banco(
     with database.connect() as conn:
         rows = conn.execute(
             """
-            SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao, e.url AS edicao_url
+            SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao,
+                   e.url AS edicao_url, e.caminho_local
             FROM publicacoes p
             JOIN edicoes e ON e.id = p.edicao_id
             ORDER BY e.data_publicacao ASC, p.edicao_id ASC, p.id ASC
@@ -499,6 +664,7 @@ def reconstruir_tudo_do_banco(
             "titulo": d.get("edicao_titulo"),
             "data_publicacao": d.get("data_publicacao"),
             "url": d.get("edicao_url"),
+            "caminho_local": d.get("caminho_local"),
         }
 
     total = 0
@@ -548,13 +714,14 @@ def _espelhar_edicao_rebuild(
     meta: dict,
     root: Path,
 ) -> int:
-    """Como espelhar_edicao, mas sempre começa seq em 1 (rebuild limpo do dia parcial)."""
-    # Temporariamente limpa só desta edicao no dia — já limpamos árvores no rebuild
+    """Como espelhar_edicao, mas sempre começa seq em 1 (rebuild limpo)."""
     ano, mes, dia = _parse_data_edicao(meta.get("data_publicacao"))
     data_iso = _data_iso(ano, mes, dia)
     dia_dir = root / "por-data" / ano / mes / dia
+    pdf_edicao = meta.get("caminho_local")
     escritos = 0
     entradas: list[tuple[str, dict]] = []
+    midia_cache: dict[int, tuple[Path, Path]] = {}
     for i, pub in enumerate(publicacoes, start=1):
         base_name = _nome_base_ato(
             i, pub.get("tipo"), pub.get("numero"), pub.get("orgao")
@@ -563,23 +730,31 @@ def _espelhar_edicao_rebuild(
         md = _conteudo_markdown(pub, meta, i)
         payload = _payload_json(pub, meta, i)
         _escrever_par(path_data, md, payload)
+        midia = exportar_midia_pagina(
+            pdf_edicao, pub.get("pagina"), path_data, cache=midia_cache
+        )
+        payload["midia_png"] = bool(midia.get("png"))
+        payload["midia_pdf"] = bool(midia.get("pdf"))
+        path_data.with_suffix(".json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         escritos += 1
         entradas.append((base_name, payload))
         if getattr(SETTINGS, "atos_por_tipo", True):
             tipo_slug = slugify(pub.get("tipo"), default="Outros", max_len=40)
-            _escrever_par(
-                root / "por-tipo" / tipo_slug / ano / f"{data_iso}__{base_name}",
-                md,
-                payload,
+            atalho = (
+                root / "por-tipo" / tipo_slug / ano / f"{data_iso}__{base_name}"
             )
+            _escrever_par(atalho, md, payload)
+            _copiar_midia(path_data, atalho)
         if getattr(SETTINGS, "atos_por_orgao", True):
             org_slug = slugify(
                 pub.get("orgao"), default="Orgao-nao-identificado", max_len=50
             )
-            _escrever_par(
-                root / "por-orgao" / org_slug / ano / f"{data_iso}__{base_name}",
-                md,
-                payload,
+            atalho = (
+                root / "por-orgao" / org_slug / ano / f"{data_iso}__{base_name}"
             )
+            _escrever_par(atalho, md, payload)
+            _copiar_midia(path_data, atalho)
     _atualizar_indice_dia(dia_dir, data_iso, meta, entradas)
     return escritos

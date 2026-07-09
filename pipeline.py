@@ -250,6 +250,9 @@ def _processar_edicao_unlocked(
                     "titulo": edicao.titulo,
                     "data_publicacao": edicao.data_publicacao,
                     "url": edicao.url,
+                    "caminho_local": str(download.caminho)
+                    if getattr(download, "caminho", None)
+                    else None,
                 },
             )
         except Exception:

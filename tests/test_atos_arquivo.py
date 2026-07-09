@@ -84,6 +84,42 @@ def test_espelhar_edicao_cria_arvore(tmp_path, mock_settings, db):
     assert "Prefeitura" in text or "Inaja" in text or "Inajá" in text
 
 
+def test_exportar_midia_pagina(tmp_path, mock_settings, monkeypatch):
+    import atos_arquivo as aa
+    import config as cfg
+    from PIL import Image
+
+    object.__setattr__(cfg.SETTINGS, "atos_exportar_midia", True)
+    object.__setattr__(cfg.SETTINGS, "atos_pagina_dpi", 72)
+    object.__setattr__(cfg.SETTINGS, "poppler_path", "")
+
+    # PDF mínimo válido
+    try:
+        from pypdf import PdfWriter
+
+        pdf = tmp_path / "ed.pdf"
+        w = PdfWriter()
+        w.add_blank_page(width=200, height=200)
+        with open(pdf, "wb") as f:
+            w.write(f)
+    except Exception:
+        return  # ambiente sem pypdf — skip
+
+    dest = tmp_path / "ato01"
+
+    def fake_convert(*a, **k):
+        return [Image.new("RGB", (100, 140), color=(255, 255, 255))]
+
+    monkeypatch.setattr(
+        "pdf2image.convert_from_path", fake_convert
+    )
+    r = aa.exportar_midia_pagina(pdf, 1, dest)
+    assert r["pdf"] is True
+    assert dest.with_suffix(".pdf").exists()
+    assert r["png"] is True
+    assert dest.with_suffix(".png").exists()
+
+
 def test_reconstruir_do_banco(tmp_path, mock_settings, db):
     import database
     import atos_arquivo as aa
