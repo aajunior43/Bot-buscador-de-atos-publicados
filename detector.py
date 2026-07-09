@@ -5,7 +5,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from config import SETTINGS, MUNICIPIOS_VIZINHOS
+from config import CNPJ_INAJA_PREFIXES, MUNICIPIOS_VIZINHOS, SETTINGS
 from ocr.models import PageText, TextBlock
 from ai_processor import normalizar_tipo_ato, refinar_publicacoes
 
@@ -569,16 +569,81 @@ def _mencao_generica_sem_palavra_isolada(texto: str, inicio: int, fim: int) -> b
     return antes.isalpha() or depois.isalpha()
 
 
+def _cnpj_digits(texto: str) -> str:
+    return re.sub(r"\D", "", texto or "")
+
+
+def _tem_cnpj_inaja(texto: str) -> bool:
+    digits = _cnpj_digits(texto)
+    return any(p in digits for p in CNPJ_INAJA_PREFIXES)
+
+
+def _mencao_orgao_municipio(texto_norm: str, municipio: str) -> bool:
+    """Prefeitura/Câmara/Município/Prefeito de <município> no texto normalizado."""
+    mun = re.escape(municipio)
+    padroes = [
+        rf"\bprefeitura(\s+municipal)?(\s+do)?(\s+municipio)?\s+(de\s+)?{mun}\b",
+        rf"\bcamara(\s+municipal)?\s+(de\s+)?{mun}\b",
+        rf"\bmunicipio\s+(de\s+)?{mun}\b",
+        rf"\bprefeito(\s+municipal)?\s+(de\s+)?{mun}\b",
+        rf"\bprefeita(\s+municipal)?\s+(de\s+)?{mun}\b",
+    ]
+    return any(re.search(p, texto_norm) for p in padroes)
+
+
 def _orgao_de_outro_municipio(texto: str) -> bool:
-    """Detecta se o segmento começa com órgão de outro município (não-Inajá)."""
-    inicio = _sem_acentos(_limpar(texto)[:220]).casefold()
-    if not inicio:
+    """Detecta publicação/órgão de município vizinho (hard-filter, sem IA).
+
+    Regras:
+    - Se há CNPJ oficial de Inajá e não há órgão de vizinho explícito → não descarta.
+    - Se o trecho é claramente de Inajá (prefeitura/câmara/município de Inajá) → não descarta.
+    - Se há prefeitura/câmara/prefeito de município vizinho → descarta.
+    - Cabeçalho curto com prefeitura/câmara/município + nome de vizinho → descarta.
+    """
+    if not (texto or "").strip():
         return False
-    if "inaja" in inicio[:120]:
+    full = _sem_acentos(_limpar(texto)).casefold()
+    if not full:
         return False
-    if not re.search(r"(prefeitura|camara|municipio)", inicio[:80]):
+
+    tem_inaja_orgao = bool(
+        re.search(
+            r"\b(prefeitura|camara|municipio|prefeito)(\s+\w+){0,4}\s+inaja\b",
+            full[:500],
+        )
+        or "prefeitura municipal de inaja" in full[:400]
+        or "camara municipal de inaja" in full[:400]
+        or "municipio de inaja" in full[:400]
+    )
+    tem_cnpj_inaja = _tem_cnpj_inaja(texto)
+
+    # Vizinho explícito como órgão emissor
+    for mun in MUNICIPIOS_VIZINHOS:
+        if _mencao_orgao_municipio(full[:600], mun):
+            # Exceção: documento misto com CNPJ/órgão de Inajá dominante no início
+            if tem_cnpj_inaja and tem_inaja_orgao and mun not in full[:120]:
+                continue
+            return True
+
+    # Cabeçalho clássico: primeiros 140 chars com órgão + vizinho
+    inicio = full[:140]
+    if re.search(r"(prefeitura|camara|municipio)", inicio[:80]):
+        if "inaja" not in inicio[:120]:
+            if any(mun in inicio for mun in MUNICIPIOS_VIZINHOS):
+                return True
+
+    return False
+
+
+def _publicacao_suspeita_outro_municipio(pub: dict) -> bool:
+    """Pós-check: órgão extraído não é Inajá e texto aponta vizinho."""
+    orgao = _sem_acentos(pub.get("orgao") or "").casefold()
+    trecho = pub.get("trecho") or ""
+    if orgao and "inaja" in orgao:
         return False
-    return any(mun in inicio[:140] for mun in MUNICIPIOS_VIZINHOS)
+    if _tem_cnpj_inaja(trecho) and (not orgao or "inaja" in orgao):
+        return False
+    return _orgao_de_outro_municipio(trecho)
 
 
 def _publicacao_do_segmento(segmento: TextBlock, termos: set[str]) -> dict | None:
@@ -748,9 +813,22 @@ def detectar(
 
             publicacao = _publicacao_do_segmento(segmento, termos_segmento)
             if publicacao:
+                if _publicacao_suspeita_outro_municipio(publicacao):
+                    descartes_vizinho += 1
+                    continue
                 publicacoes.append(publicacao)
 
     publicacoes_brutas = len(publicacoes)
+    # Hard-filter final (redundante, barato) — garante lista limpa antes da IA
+    filtradas: list[dict] = []
+    for pub in publicacoes:
+        if _publicacao_suspeita_outro_municipio(pub) or _orgao_de_outro_municipio(
+            pub.get("trecho") or ""
+        ):
+            descartes_vizinho += 1
+            continue
+        filtradas.append(pub)
+    publicacoes = filtradas
     descartes_ia = 0
     if publicacoes:
         logger.info("Chamando IA para refinar %s publicacoes...", len(publicacoes))

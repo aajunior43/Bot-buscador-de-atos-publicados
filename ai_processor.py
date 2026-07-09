@@ -14,6 +14,10 @@ import database as db
 
 logger = logging.getLogger(__name__)
 
+# Circuit breaker: após 401/AuthError, não dispara dezenas de requisições no mesmo processo.
+_auth_bloqueada: bool = False
+_auth_aviso_emitido: bool = False
+
 
 def _api_key() -> str:
     key = db.get_setting("opencode_api_key", "")
@@ -21,7 +25,7 @@ def _api_key() -> str:
         key = db.get_setting("openrouter_api_key", "")
     if not key:
         key = SETTINGS.opencode_api_key
-    return key
+    return (key or "").strip()
 
 
 def _headers() -> dict[str, str]:
@@ -30,6 +34,39 @@ def _headers() -> dict[str, str]:
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
+
+
+def _marcar_auth_invalida(detalhe: str = "") -> None:
+    """Bloqueia novas chamadas de IA neste processo após chave inválida."""
+    global _auth_bloqueada, _auth_aviso_emitido
+    _auth_bloqueada = True
+    if _auth_aviso_emitido:
+        return
+    _auth_aviso_emitido = True
+    logger.error(
+        "IA desativada neste processo: API key inválida/expirada (401). "
+        "Renove OPENCODE_API_KEY no .env ou em /admin e reinicie o serviço. "
+        "Detalhe: %s | URL=%s modelo=%s",
+        detalhe or "Unauthorized",
+        SETTINGS.opencode_api_url,
+        SETTINGS.opencode_model,
+    )
+
+
+def reset_auth_circuit() -> None:
+    """Permite nova tentativa após o usuário atualizar a chave (ex.: admin)."""
+    global _auth_bloqueada, _auth_aviso_emitido
+    _auth_bloqueada = False
+    _auth_aviso_emitido = False
+
+
+def ia_disponivel() -> bool:
+    """True se refine está ligado, há chave e o circuit breaker não disparou."""
+    return bool(
+        SETTINGS.ai_refine_publications
+        and _api_key()
+        and not _auth_bloqueada
+    )
 
 
 _SYSTEM_PROMPT_TEMPLATE = """Você é um especialista em análise de publicações oficiais do jornal "O Regional" (Norte do Paraná), com foco no município de Inajá-PR.
@@ -117,6 +154,8 @@ def _limpar_trecho_ocr(trecho: str) -> str:
 
 
 def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
+    if _auth_bloqueada:
+        return None
     trecho_limpo = _limpar_trecho_ocr(trecho)
     content = ""
     try:
@@ -126,7 +165,12 @@ def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
             json={
                 "model": SETTINGS.opencode_model,
                 "messages": [
-                    {"role": "system", "content": _SYSTEM_PROMPT_TEMPLATE.format(vizinhos=', '.join(m.title() for m in MUNICIPIOS_VIZINHOS))},
+                    {
+                        "role": "system",
+                        "content": _SYSTEM_PROMPT_TEMPLATE.format(
+                            vizinhos=", ".join(m.title() for m in MUNICIPIOS_VIZINHOS)
+                        ),
+                    },
                     {"role": "user", "content": _prompt_usuario(trecho_limpo)},
                 ],
                 "max_tokens": SETTINGS.ai_max_tokens,
@@ -135,6 +179,18 @@ def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
             },
             timeout=timeout,
         )
+        if resp.status_code in (401, 403):
+            try:
+                body = resp.json()
+                msg = (
+                    body.get("error", {}).get("message")
+                    or body.get("message")
+                    or resp.text[:200]
+                )
+            except Exception:
+                msg = resp.text[:200]
+            _marcar_auth_invalida(f"HTTP {resp.status_code}: {msg}")
+            return None
         resp.raise_for_status()
         data = resp.json()
         content = data["choices"][0]["message"].get("content") or ""
@@ -175,7 +231,9 @@ def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
             )
             return None
     except requests.Timeout:
-        logger.warning("Timeout ao chamar OpenCode Go para trecho de %s chars", len(trecho))
+        logger.warning(
+            "Timeout ao chamar OpenCode Go para trecho de %s chars", len(trecho)
+        )
     except json.JSONDecodeError as exc:
         logger.error(
             "Erro JSON do OpenCode Go: %s | content_recebido=%s",
@@ -183,7 +241,12 @@ def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
             content[:500] if content else "N/A",
         )
     except requests.RequestException as exc:
-        logger.warning("Erro na requisição ao OpenCode Go: %s", exc)
+        # Fallback se status não veio no resp (rede etc.)
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status in (401, 403):
+            _marcar_auth_invalida(str(exc))
+        else:
+            logger.warning("Erro na requisição ao OpenCode Go: %s", exc)
     except Exception:
         logger.exception("Erro inesperado ao processar IA para trecho")
     return None
@@ -318,12 +381,15 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
         stats: descartes_ia, descartes_vizinho
     """
     stats: dict[str, int] = {"descartes_ia": 0, "descartes_vizinho": 0}
-    key = _api_key()
-    if not key or not SETTINGS.ai_refine_publications:
-        logger.info(
-            "IA desativada: key=%s, refine=%s",
-            bool(key),
-            SETTINGS.ai_refine_publications,
+    if not SETTINGS.ai_refine_publications:
+        logger.info("IA desativada: AI_REFINE_PUBLICATIONS=false")
+        return publicacoes, stats
+    if not _api_key():
+        logger.info("IA desativada: OPENCODE_API_KEY vazia (.env e settings)")
+        return publicacoes, stats
+    if _auth_bloqueada:
+        logger.debug(
+            "IA ignorada: circuit breaker de autenticação ativo (chave inválida)."
         )
         return publicacoes, stats
 
@@ -448,37 +514,72 @@ def retry_pending_ia() -> int:
 
     Publicações com ``ia_processado=0`` (ou ``resumo_ia`` nulo) são buscadas no
     banco, reagrupadas pela edição de origem e enviadas novamente à API.
-    Retorna o número de publicações atualizadas com sucesso.
+    Retorna o número de publicações atualizadas com sucesso (com resumo_ia).
     """
-    if not _api_key():
-        logger.debug("retry_pending_ia: API key ausente, pulando.")
+    if not ia_disponivel():
+        logger.debug(
+            "retry_pending_ia: IA indisponível (key/auth/refine) — pulando."
+        )
         return 0
 
     pendentes = db.get_publicacoes_sem_ia()
     if not pendentes:
         return 0
 
-    logger.info("retry_pending_ia: %d publicação(ões) pendente(s) de refinamento IA.", len(pendentes))
+    logger.info(
+        "retry_pending_ia: %d publicação(ões) pendente(s) de refinamento IA.",
+        len(pendentes),
+    )
 
-    # Agrupa por edicao_id para chamar a IA em lote por edição
     from collections import defaultdict
+
     por_edicao: dict[int, list[dict]] = defaultdict(list)
     for pub in pendentes:
         por_edicao[pub["edicao_id"]].append(dict(pub))
 
     total_atualizadas = 0
     for edicao_id, pubs in por_edicao.items():
+        if _auth_bloqueada:
+            logger.warning(
+                "retry_pending_ia: interrompido (auth inválida) após %s atualização(ões).",
+                total_atualizadas,
+            )
+            break
         try:
+            ids_antes = {
+                int(p["id"]) for p in pubs if p.get("id") is not None
+            }
             refinadas, _stats = refinar_publicacoes(pubs)
+            ids_mantidas = {
+                int(p["id"]) for p in refinadas if p.get("id") is not None
+            }
             for pub in refinadas:
-                if pub.get("resumo_ia") or pub.get("tipo"):
+                # Só persiste se a IA realmente gerou resumo (evita falso "N atualizadas")
+                if pub.get("resumo_ia"):
                     db.update_publicacao_ia(pub)
                     total_atualizadas += 1
+            # Removidas da lista = descartadas pela IA (vizinho / sem menção)
+            descartadas = ids_antes - ids_mantidas
+            if descartadas:
+                with db.connect() as conn:
+                    for pid in descartadas:
+                        conn.execute(
+                            "DELETE FROM publicacoes WHERE id = ?", (pid,)
+                        )
+                logger.info(
+                    "retry_pending_ia: removidas %s pub(s) descartadas edicao_id=%s",
+                    len(descartadas),
+                    edicao_id,
+                )
         except Exception:
-            logger.exception("retry_pending_ia: falha ao refinar edicao_id=%s", edicao_id)
-            # Continuamos com as outras edições
+            logger.exception(
+                "retry_pending_ia: falha ao refinar edicao_id=%s", edicao_id
+            )
             continue
 
-    logger.info("retry_pending_ia: %d publicação(ões) atualizadas.", total_atualizadas)
+    logger.info(
+        "retry_pending_ia: %d publicação(ões) com resumo_ia atualizado.",
+        total_atualizadas,
+    )
     return total_atualizadas
 

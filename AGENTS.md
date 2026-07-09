@@ -22,7 +22,7 @@ Orchestration lives in **`pipeline.py`** (`processar_edicao` / `executar_ciclo`)
 | `pipeline.py` | Shared orchestrator used by CLI and webapp |
 | `webapp.py` | FastAPI dashboard (Jinja2 templates). Port 8000 internal, 8001 external via docker-compose |
 | `run_interface.py` | Dev launcher for webapp on port 8001 with hot-reload. Uses a filtered logging formatter ignoring noise like `/api/atividade` |
-| `telegram_bot.py` | Standalone interactive Telegram bot (not the notifier — this is a separate interactive session) |
+| `telegram_bot.py` | Optional interactive Telegram bot (not started by `iniciar.bat`; separate from notifier alerts) |
 
 ## Dev commands
 

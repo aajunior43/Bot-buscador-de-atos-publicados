@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -281,6 +282,37 @@ async def cmd_desconhecido(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 import asyncio
 
+import requests
+from telegram.error import NetworkError, TimedOut
+from telegram.request import HTTPXRequest
+
+
+def _telegram_api_alcancavel(token: str, tentativas: int = 3) -> bool:
+    """Testa GET getMe com requests (mais estável que o bootstrap do PTB em rede lenta)."""
+    url = f"https://api.telegram.org/bot{token}/getMe"
+    for n in range(1, tentativas + 1):
+        try:
+            resp = requests.get(url, timeout=20)
+            if resp.status_code == 200 and resp.json().get("ok"):
+                return True
+            logger.warning(
+                "Telegram getMe HTTP %s (tentativa %s/%s): %s",
+                resp.status_code,
+                n,
+                tentativas,
+                resp.text[:200],
+            )
+        except requests.RequestException as exc:
+            logger.warning(
+                "Telegram indisponível (tentativa %s/%s): %s",
+                n,
+                tentativas,
+                exc,
+            )
+        time.sleep(min(3 * n, 10))
+    return False
+
+
 def main() -> None:
     token = SETTINGS.telegram_bot_token
     if not token:
@@ -289,7 +321,38 @@ def main() -> None:
 
     logger.info("Iniciando bot Telegram com polling...")
 
-    app = Application.builder().token(token).build()
+    # Se a API não responde, sai limpo (código 0) — não quebra o launcher nem
+    # gera RuntimeError de event loop em retries do run_polling.
+    if not _telegram_api_alcancavel(token):
+        logger.error(
+            "Não foi possível conectar em api.telegram.org (timeout/firewall/DNS). "
+            "Bot interativo desligado. WEB e rastreador continuam. "
+            "Alertas automáticos usam o notifier com TELEGRAM_CHAT_ID, se configurado."
+        )
+        sys.exit(0)
+
+    # Timeouts maiores — redes com latência alta (comum no Windows + proxy)
+    request = HTTPXRequest(
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
+    )
+
+    # Loop limpo (Python 3.12+/3.14)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    app = (
+        Application.builder()
+        .token(token)
+        .request(request)
+        .get_updates_request(request)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("ajuda", cmd_ajuda))
@@ -298,19 +361,21 @@ def main() -> None:
     app.add_handler(CommandHandler("edicoes", cmd_edicoes))
     app.add_handler(CommandHandler("alertas", cmd_alertas))
     app.add_handler(CommandHandler("teste", cmd_teste))
-    # Captura qualquer mensagem que não seja comando
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_desconhecido))
 
-    # No Python 3.12+ (especialmente 3.14), asyncio.get_event_loop() pode falhar 
-    # se não houver um loop ativo no thread principal. 
-    # Usar loop explicitamente ou criar um se run_polling() reclamar.
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+        app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+            close_loop=True,
+        )
+    except (TimedOut, NetworkError, OSError) as exc:
+        logger.error(
+            "Bot Telegram encerrou por rede: %s. "
+            "WEB e BOT seguem; reinicie o bat quando a internet com o Telegram estabilizar.",
+            exc,
+        )
+        sys.exit(0)
 
 
 if __name__ == "__main__":

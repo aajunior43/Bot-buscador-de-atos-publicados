@@ -40,6 +40,7 @@
     </form>
     {% endif %}
     <a class="btn btn-secondary" href="/edicoes-detectadas">Abrir lista de edições</a>
+    <a class="btn btn-secondary" href="/revisao/so-mencao">Revisão só menção</a>
     <a class="btn btn-secondary" href="/status">Abrir fila de jobs</a>
     <a class="btn btn-secondary" href="/admin">Administração</a>
     <a class="btn btn-secondary" href="/">← Voltar aos atos</a>
@@ -86,9 +87,15 @@
         <strong>Telegram</strong>
         <span>{% if saude.telegram_ok %}Configurado{% else %}Token ou chat ausente{% endif %}</span>
       </li>
-      <li class="health-item {% if saude.ai_key %}ok{% else %}warn{% endif %}">
+      <li class="health-item {% if saude.ai_disponivel %}ok{% elif saude.ai_key and not saude.ai_auth_ok %}warn{% elif not saude.ai_key %}warn{% else %}warn{% endif %}">
         <strong>API de IA</strong>
-        <span>{% if saude.ai_key %}Chave presente{% else %}Sem chave{% endif %}{% if not saude.ai_refine %} · refine off{% endif %}</span>
+        <span>
+          {% if saude.ai_disponivel %}Pronta
+          {% elif not saude.ai_key %}Sem chave
+          {% elif not saude.ai_auth_ok %}Chave inválida (401) — renove no Admin/.env
+          {% elif not saude.ai_refine %}Refine desligado
+          {% else %}Indisponível{% endif %}
+        </span>
       </li>
       <li class="health-item {% if saude.web_auth %}ok{% else %}warn{% endif %}">
         <strong>Auth da interface</strong>

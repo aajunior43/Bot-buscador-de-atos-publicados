@@ -29,6 +29,34 @@ def test_operacao_hub(db):
     assert "Saúde do sistema" in response.text
 
 
+def test_revisao_so_mencao(db):
+    eid = database.insert_or_get_edicao(
+        "https://example.com/so_mencao.pdf",
+        "Edicao So Mencao",
+        "2026-06-11",
+    )
+    database.update_ocr(eid, "dummy.txt", tem_inaja=True)
+    database.insert_mencoes(
+        eid, [{"pagina": 1, "trecho": "...Inajá...", "termo": "Inajá"}]
+    )
+    client = TestClient(app)
+    r = client.get("/revisao/so-mencao")
+    assert r.status_code == 200
+    assert "Só menção" in r.text or "só menção" in r.text.lower()
+    assert "So Mencao" in r.text or "Mencao" in r.text
+
+    r2 = client.post(
+        f"/revisao/so-mencao/{eid}",
+        data={"status": "ignorada", "next": "/revisao/so-mencao"},
+        follow_redirects=False,
+    )
+    assert r2.status_code in (302, 303)
+    # After ignorada, default list (pendentes only) should not show it
+    r3 = client.get("/revisao/so-mencao")
+    assert r3.status_code == 200
+
+
+
 def test_edicoes_detectadas_vazia(db):
     client = TestClient(app)
     response = client.get("/edicoes-detectadas")

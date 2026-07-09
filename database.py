@@ -134,6 +134,8 @@ _MIGRATIONS: list[tuple[int, str]] = [
     (6, "ALTER TABLE jobs ADD COLUMN progress_current INTEGER"),
     (7, "ALTER TABLE jobs ADD COLUMN progress_total INTEGER"),
     (8, "ALTER TABLE jobs ADD COLUMN progress_step TEXT"),
+    # null | pendente | revisada | ignorada — edições com menção e 0 publicações
+    (9, "ALTER TABLE edicoes ADD COLUMN revisao_so_mencao TEXT"),
 ]
 
 # Colunas esperadas por migração — usadas para marcar versões já aplicadas
@@ -144,6 +146,10 @@ _MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
     3: ("publicacoes", "texto_corrigido"),
     4: ("publicacoes", "ia_processado"),
     5: ("mencoes", "hash_trecho"),
+    6: ("jobs", "progress_current"),
+    7: ("jobs", "progress_total"),
+    8: ("jobs", "progress_step"),
+    9: ("edicoes", "revisao_so_mencao"),
 }
 
 
@@ -787,7 +793,8 @@ def get_publicacoes_sem_ia(limit: int = 100) -> list[sqlite3.Row]:
                    p.ia_processado
             FROM publicacoes p
             WHERE p.ia_processado = 0
-               OR (p.resumo_ia IS NULL AND p.tipo IS NULL)
+               OR p.resumo_ia IS NULL
+               OR p.resumo_ia = ''
             ORDER BY p.edicao_id, p.id
             LIMIT ?
             """,
@@ -1024,3 +1031,65 @@ def get_metricas_qualidade() -> dict[str, float | int]:
         "publicacoes_sem_ia": int(ia["sem_ia"] or 0),
         "publicacoes_total": total_pub,
     }
+
+
+def listar_edicoes_so_mencao(
+    *,
+    incluir_revisadas: bool = False,
+    limit: int = 200,
+) -> list[sqlite3.Row]:
+    """Edições com tem_inaja=1 e zero publicações (candidatas a FN ou menção legítima)."""
+    filtro_revisao = ""
+    if not incluir_revisadas:
+        filtro_revisao = (
+            "AND (e.revisao_so_mencao IS NULL OR e.revisao_so_mencao = '' "
+            "OR e.revisao_so_mencao = 'pendente')"
+        )
+    with connect() as conn:
+        return list(
+            conn.execute(
+                f"""
+                SELECT e.id, e.titulo, e.data_publicacao, e.url, e.ocr_processado,
+                       e.revisao_so_mencao,
+                       (SELECT COUNT(*) FROM mencoes m WHERE m.edicao_id = e.id) AS mencoes_count,
+                       (SELECT GROUP_CONCAT(DISTINCT m2.termo_encontrado)
+                          FROM mencoes m2 WHERE m2.edicao_id = e.id) AS termos
+                FROM edicoes e
+                WHERE e.tem_inaja = 1
+                  AND NOT EXISTS (
+                    SELECT 1 FROM publicacoes p WHERE p.edicao_id = e.id
+                  )
+                  {filtro_revisao}
+                ORDER BY e.data_publicacao DESC, e.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        )
+
+
+def marcar_revisao_so_mencao(edicao_id: int, status: str) -> None:
+    """status: pendente | revisada | ignorada"""
+    status = (status or "pendente").strip().casefold()
+    if status not in {"pendente", "revisada", "ignorada"}:
+        raise ValueError(f"Status de revisão inválido: {status}")
+    with connect() as conn:
+        conn.execute(
+            "UPDATE edicoes SET revisao_so_mencao = ? WHERE id = ?",
+            (status, edicao_id),
+        )
+
+
+def backup_database(destino_dir: Path | None = None) -> Path:
+    """Cópia de segurança do SQLite (usa backup API; seguro com WAL)."""
+    dest_dir = destino_dir or (SETTINGS.log_dir / "backups")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = dest_dir / f"jornal_monitor_{stamp}.db"
+    src = str(SETTINGS.db_path)
+    with sqlite3.connect(src) as src_conn:
+        with sqlite3.connect(str(dest)) as dst_conn:
+            src_conn.backup(dst_conn)
+    logger.info("Backup SQLite gravado em %s", dest)
+    return dest
+

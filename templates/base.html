@@ -36,6 +36,7 @@
             <span class="nav-group-label">Operação</span>
             <a href="/operacao" {% if request.url.path == '/operacao' %}class="active"{% endif %}>Painel</a>
             <a href="/edicoes-detectadas" {% if '/edicoes-detectadas' in request.url.path %}class="active"{% endif %}>Edições</a>
+            <a href="/revisao/so-mencao" {% if '/revisao/so-mencao' in request.url.path %}class="active"{% endif %}>Só menção</a>
             <a href="/status" {% if request.url.path == '/status' %}class="active"{% endif %}>Fila</a>
             <a href="/notificacoes" {% if request.url.path == '/notificacoes' %}class="active"{% endif %}>Alertas</a>
             <a href="/admin" {% if request.url.path == '/admin' %}class="active"{% endif %}>Admin</a>

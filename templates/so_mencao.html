@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Revisão só-menção - Monitor Inajá{% endblock %}
+{% block content %}
+
+<section class="detail-hero fade-in">
+  <a class="backlink" href="/operacao">← Operação</a>
+  <p class="eyebrow">Operação · Revisão humana</p>
+  <h1>Edições só menção</h1>
+  <p class="hero-copy">
+    Inajá detectado, mas <strong>nenhuma publicação estruturada</strong>.
+    Pode ser menção legítima (matéria) ou falso negativo (ato perdido no OCR).
+  </p>
+  <div class="actions">
+    <a class="btn btn-secondary" href="/revisao/so-mencao{% if not incluir_revisadas %}?todas=1{% endif %}">
+      {% if incluir_revisadas %}Só pendentes{% else %}Incluir revisadas{% endif %}
+    </a>
+  </div>
+</section>
+
+<section class="stats-grid stats-grid-compact fade-in">
+  <article><strong>{{ stats.pendentes }}</strong><span>Pendentes</span></article>
+  <article><strong>{{ stats.revisadas }}</strong><span>Revisadas</span></article>
+  <article><strong>{{ stats.ignoradas }}</strong><span>Ignoradas</span></article>
+  <article><strong>{{ stats.total }}</strong><span>Nesta lista</span></article>
+</section>
+
+<section class="panel fade-in">
+  <div class="panel-head">
+    <h2>Lista</h2>
+    <span>{{ edicoes|length }} edição(ões)</span>
+  </div>
+  {% if edicoes %}
+  <div class="edition-list">
+    {% for e in edicoes %}
+    <article class="edition-row so-mencao-row">
+      <div class="so-mencao-main">
+        <a href="/edicoes/{{ e.id }}">
+          <strong>{{ e.titulo or ("Edição " ~ e.id) }}</strong>
+          <small>{{ e.data_publicacao or "sem data" }} · {{ e.mencoes_count or 0 }} menção(ões)</small>
+        </a>
+        {% if e.termos %}
+        <p class="so-mencao-termos">{{ e.termos }}</p>
+        {% endif %}
+        <span class="chip-status">{{ e.revisao_so_mencao or "pendente" }}</span>
+      </div>
+      <div class="so-mencao-actions">
+        <a class="btn btn-secondary btn-small" href="/edicoes/{{ e.id }}">Abrir</a>
+        <form method="post" action="/revisao/so-mencao/{{ e.id }}">
+          <input type="hidden" name="status" value="revisada">
+          <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+          <button type="submit" class="btn btn-small">Marcar revisada</button>
+        </form>
+        <form method="post" action="/revisao/so-mencao/{{ e.id }}">
+          <input type="hidden" name="status" value="ignorada">
+          <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+          <button type="submit" class="btn btn-secondary btn-small">Ignorar (só menção)</button>
+        </form>
+        <form method="post" action="/edicoes/{{ e.id }}/analisar" onsubmit="return startProcessing(this, 'Reanalisando…', {{ e.id }})">
+          <button type="submit" class="btn btn-secondary btn-small">Reanalisar</button>
+        </form>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty empty-pad">Nenhuma edição pendente nesta fila. Bom sinal.</p>
+  {% endif %}
+</section>
+
+{% endblock %}

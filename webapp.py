@@ -312,12 +312,17 @@ def _stats_basicos(conn: sqlite3.Connection) -> dict:
 
 
 def _saude_sistema() -> dict:
+    from ai_processor import _api_key, _auth_bloqueada, ia_disponivel
+
+    key = _api_key()
     return {
         "telegram_ok": bool(
             SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id
         ),
-        "ai_key": bool(SETTINGS.opencode_api_key),
+        "ai_key": bool(key),
         "ai_refine": bool(SETTINGS.ai_refine_publications),
+        "ai_auth_ok": bool(key) and not _auth_bloqueada,
+        "ai_disponivel": ia_disponivel(),
         "web_auth": bool(SETTINGS.webapp_user and SETTINGS.webapp_password),
         "app_env": SETTINGS.app_env or "development",
     }
@@ -406,6 +411,68 @@ def operacao(request: Request) -> HTMLResponse:
 def detecoes_redirect() -> RedirectResponse:
     """Rota legada: lista de detecções virou a home de Atos."""
     return RedirectResponse(url="/", status_code=302)
+
+
+@app.get("/revisao/so-mencao", response_class=HTMLResponse)
+def revisao_so_mencao(
+    request: Request,
+    todas: str = Query("", description="1 = inclui revisadas/ignoradas"),
+) -> HTMLResponse:
+    """Fila humana: tem_inaja sem publicações."""
+    database.init_db()
+    incluir = todas.strip() in {"1", "true", "sim", "yes"}
+    edicoes = database.listar_edicoes_so_mencao(incluir_revisadas=incluir)
+    # Contagens globais
+    with _conn() as conn:
+        base = """
+            SELECT COUNT(*) FROM edicoes e
+            WHERE e.tem_inaja = 1
+              AND NOT EXISTS (SELECT 1 FROM publicacoes p WHERE p.edicao_id = e.id)
+        """
+        total_all = conn.execute(base).fetchone()[0]
+        pendentes = conn.execute(
+            base
+            + " AND (e.revisao_so_mencao IS NULL OR e.revisao_so_mencao = '' "
+            "OR e.revisao_so_mencao = 'pendente')"
+        ).fetchone()[0]
+        revisadas = conn.execute(
+            base + " AND e.revisao_so_mencao = 'revisada'"
+        ).fetchone()[0]
+        ignoradas = conn.execute(
+            base + " AND e.revisao_so_mencao = 'ignorada'"
+        ).fetchone()[0]
+    return templates.TemplateResponse(
+        request,
+        "so_mencao.html",
+        {
+            "edicoes": edicoes,
+            "incluir_revisadas": incluir,
+            "stats": {
+                "total": len(edicoes),
+                "pendentes": pendentes,
+                "revisadas": revisadas,
+                "ignoradas": ignoradas,
+                "total_all": total_all,
+            },
+        },
+    )
+
+
+@app.post("/revisao/so-mencao/{edicao_id}")
+async def revisao_so_mencao_marcar(
+    edicao_id: int,
+    request: Request,
+) -> RedirectResponse:
+    form = await request.form()
+    status = str(form.get("status", "revisada"))
+    nxt = str(form.get("next", "/revisao/so-mencao"))
+    try:
+        database.marcar_revisao_so_mencao(edicao_id, status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Status inválido")
+    if not nxt.startswith("/"):
+        nxt = "/revisao/so-mencao"
+    return RedirectResponse(nxt, status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -823,21 +890,39 @@ async def admin_salvar(request: Request) -> RedirectResponse:
     for chave, valor in fields.items():
         if valor.strip():
             database.set_setting(chave, valor.strip())
+    # Nova chave pode ser válida — libera circuit breaker de 401
+    if fields.get("opencode_api_key", "").strip():
+        from ai_processor import reset_auth_circuit
+
+        reset_auth_circuit()
     return RedirectResponse("/admin?msg=Configurações salvas com sucesso!", status_code=303)
 
 
 @app.post("/admin/testar")
 def admin_testar(request: Request) -> HTMLResponse:
-    from ai_processor import _api_key, _extrair_publicacao
+    from ai_processor import _api_key, _auth_bloqueada, _extrair_publicacao, reset_auth_circuit
+
+    reset_auth_circuit()
     key = _api_key()
     if not key:
-        resultado = "❌ Nenhuma API Key configurada."
+        resultado = "Nenhuma API Key configurada (.env OPENCODE_API_KEY ou Admin)."
     else:
         try:
-            r = _extrair_publicacao("DECRETO Nº 001/2026 - Prefeitura Municipal de Inajá - PR.", timeout=15)
-            resultado = f"✅ OK — Resposta recebida: {str(r)[:200]}"
+            r = _extrair_publicacao(
+                "DECRETO Nº 001/2026 - Prefeitura Municipal de Inajá - PR.",
+                timeout=15,
+            )
+            if _auth_bloqueada:
+                resultado = (
+                    "Falha de autenticação (401 Invalid API key). "
+                    "Renove a chave em opencode.ai e atualize OPENCODE_API_KEY no .env ou neste Admin."
+                )
+            elif r:
+                resultado = f"OK — Resposta recebida: {str(r)[:200]}"
+            else:
+                resultado = "Sem resposta útil da IA (timeout/JSON). Veja o log do servidor."
         except Exception as exc:
-            resultado = f"❌ Erro: {exc}"
+            resultado = f"Erro: {exc}"
 
     api_key = database.get_setting("opencode_api_key", "") or SETTINGS.opencode_api_key
     model = database.get_setting("opencode_model", "") or SETTINGS.opencode_model

@@ -19,7 +19,7 @@ from detector import (
     _mencao_generica_sem_palavra_isolada,
     detectar,
 )
-from ocr_processor import PageText, TextBlock
+from ocr.models import PageText, TextBlock
 
 
 # ── _extrair_orgao ───────────────────────────────────────────
@@ -310,10 +310,32 @@ class TestMunicipioVizinho:
         texto = "Município de Jardim Olinda\nPORTARIA Nº 003/2026"
         assert _orgao_de_outro_municipio(texto) is True
 
+    def test_prefeito_de_uniflor(self):
+        texto = (
+            "PORTARIA Nº 155/2026 O senhor MAYCON RODRIGO, "
+            "Prefeito Municipal de Uniflor, usando as atribuições"
+        )
+        assert _orgao_de_outro_municipio(texto) is True
+
+    def test_colorado_credito(self):
+        texto = (
+            "Decreto nº 219/2026. O Prefeito Municipal de Colorado, "
+            "Estado do Paraná, abre crédito adicional."
+        )
+        assert _orgao_de_outro_municipio(texto) is True
+
+    def test_cnpj_inaja_nao_descarta(self):
+        texto = (
+            "PREFEITURA MUNICIPAL DE INAJÁ\n"
+            "CNPJ 76.970.318/0001-67\n"
+            "DECRETO Nº 001/2026"
+        )
+        assert _orgao_de_outro_municipio(texto) is False
+
     def test_publicacao_vizinha_filtrada(self, db):
         import database
         from detector import _publicacao_do_segmento
-        from ocr_processor import TextBlock
+        from ocr.models import TextBlock
         database.init_db()
         bloco = TextBlock(
             pagina=1,
@@ -327,6 +349,23 @@ class TestMunicipioVizinho:
         # Mesmo com termo Inajá no segmento, órgão de outro município é filtrado
         pub = _publicacao_do_segmento(bloco, {"Inajá"})
         assert pub is None
+
+    def test_detectar_nao_gera_pub_vizinha(self, db):
+        import database
+        database.init_db()
+        texto = (
+            "PREFEITURA MUNICIPAL DE CRUZEIRO DO SUL\n"
+            "PORTARIA Nº 038/2026\n"
+            "O PREFEITO DO MUNICÍPIO DE CRUZEIRO DO SUL\n"
+            "alguma menção residual a Inajá no rodapé."
+        )
+        resultado = detectar(
+            99,
+            "Ed vizinha",
+            [PageText(pagina=1, texto=texto, metodo="test", blocks=[])],
+        )
+        assert resultado.publicacoes == []
+
 
 
 # ── Menção genérica colada (boundary) ───────────────────────

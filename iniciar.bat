@@ -1,28 +1,25 @@
 @echo off
 title Monitor de Atos
 cd /d "%~dp0"
-set PATH=C:\Program Files\Tesseract-OCR;C:\Poppler\poppler-24.02.0\Library\bin;%PATH%
+
+REM Tesseract / Poppler no PATH (Windows)
+set PATH=C:\Program Files\Tesseract-OCR;C:\Poppler\poppler-24.02.0\Library\bin;C:\poppler\Library\bin;%PATH%
+set PYTHONUNBUFFERED=1
+set DEV_RELOAD=0
 
 echo ============================================================
-echo   Monitor de Atos - Iniciando todos os servicos...
+echo   Monitor de Atos - um unico terminal
+echo   Web: http://localhost:8001
+echo   Servicos: interface web + rastreador
+echo   Ctrl+C encerra tudo
 echo ============================================================
 echo.
 
-REM --- Interface Web ---
-start "Monitor - Interface Web" cmd /k "cd /d "%~dp0" && set PATH=C:\Program Files\Tesseract-OCR;C:\Poppler\poppler-24.02.0\Library\bin;%%PATH%% && title Monitor - Interface Web && python run_interface.py"
+python iniciar_tudo.py
+set ERR=%ERRORLEVEL%
+if %ERR% NEQ 0 (
+  echo.
+  echo Falha ao iniciar ^(codigo %ERR%^). Verifique se o Python esta no PATH.
+  pause
+)
 
-REM --- Bot monitor (ciclo continuo) ---
-start "Monitor - Bot Rastreador" cmd /k "cd /d "%~dp0" && set PATH=C:\Program Files\Tesseract-OCR;C:\Poppler\poppler-24.02.0\Library\bin;%%PATH%% && title Monitor - Bot Rastreador && python main.py"
-
-REM --- Bot Telegram (polling interativo) ---
-start "Monitor - Bot Telegram" cmd /k "cd /d "%~dp0" && set PATH=C:\Program Files\Tesseract-OCR;C:\Poppler\poppler-24.02.0\Library\bin;%%PATH%% && title Monitor - Bot Telegram && python telegram_bot.py"
-
-echo.
-echo  3 janelas abertas:
-echo   [1] Interface Web    -> http://localhost:8001
-echo   [2] Bot Rastreador   -> ciclo de monitoramento
-echo   [3] Bot Telegram     -> polling interativo
-echo.
-echo  Feche esta janela quando quiser. Os servicos continuam rodando.
-echo.
-pause

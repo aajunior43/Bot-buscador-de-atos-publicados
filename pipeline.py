@@ -15,6 +15,7 @@ from detector import DetectionResult, detectar
 from downloader import baixar_edicao
 from notifier import notificar
 from ocr import extrair_texto, extrair_texto_rapido_com_estruturado_candidato
+from process_lock import ProcessLockError, process_lock
 from scraper import Edicao, listar_edicoes
 
 logger = logging.getLogger(__name__)
@@ -36,11 +37,40 @@ def processar_edicao(
     edicao_id: int | None = None,
     notificar_se_encontrado: bool = True,
 ) -> DetectionResult | None:
-    """Processa uma edição completa.
+    """Processa uma edição completa (com lock global de OCR).
 
     Returns:
         DetectionResult se OCR+detecção rodaram; None se o download falhou.
     """
+    try:
+        with process_lock(label=f"edicao:{edicao.titulo or edicao.url}"):
+            return _processar_edicao_unlocked(
+                edicao,
+                force_ocr=force_ocr,
+                fast_ocr=fast_ocr,
+                edicao_id=edicao_id,
+                notificar_se_encontrado=notificar_se_encontrado,
+            )
+    except ProcessLockError as exc:
+        logger.warning("%s", exc)
+        database.log_job(
+            "processando edição",
+            "ignorado",
+            titulo=edicao.titulo,
+            edicao_id=edicao_id,
+            mensagem=str(exc),
+        )
+        return None
+
+
+def _processar_edicao_unlocked(
+    edicao: Edicao,
+    *,
+    force_ocr: bool = False,
+    fast_ocr: bool = True,
+    edicao_id: int | None = None,
+    notificar_se_encontrado: bool = True,
+) -> DetectionResult | None:
     download_job = database.start_job(
         "baixando PDF",
         titulo=edicao.titulo,

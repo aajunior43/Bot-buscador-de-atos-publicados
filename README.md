@@ -141,7 +141,7 @@ Acesse: **http://localhost:8001** (dev) ou a porta mapeada no Docker.
 
 Páginas: dashboard, edições, detecções, status, exportação, **admin** (IA, SMTP, webhooks, termos).
 
-No Windows, `iniciar.bat` sobe web + rastreador + bot Telegram.
+No Windows, `iniciar.bat` sobe **interface web + rastreador** em um único terminal (`iniciar_tudo.py`).
 
 ## Docker
 

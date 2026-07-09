@@ -2174,3 +2174,39 @@ details[open] summary::before { transform: rotate(90deg); }
   letter-spacing: .08em;
 }
 .ocr-debug img { width: 100%; border-radius: var(--radius-sm); }
+
+/* -- Revisão só-menção ------------------------------------- */
+.so-mencao-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1rem 1.5rem;
+}
+.so-mencao-main { flex: 1 1 240px; min-width: 0; }
+.so-mencao-main a { color: inherit; }
+.so-mencao-termos {
+  font-size: .8rem;
+  color: var(--text-3);
+  margin: .35rem 0;
+  word-break: break-word;
+}
+.so-mencao-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  align-items: center;
+}
+.so-mencao-actions form { margin: 0; }
+.chip-status {
+  display: inline-block;
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: .15rem .5rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}

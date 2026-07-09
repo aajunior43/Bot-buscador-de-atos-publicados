@@ -5,6 +5,9 @@ Utilitários de análise e reprocessamento. O fluxo normal continua em `main.py`
 ## Oficiais (manutenção)
 
 ```bash
+# Backup do SQLite
+python scripts/backup_db.py
+
 # Relatório CSV + auditoria das edições só-menção
 python scripts/gerar_relatorios_auditoria.py
 # Saída: ./relatorios/publicacoes_auditoria_latest.csv
@@ -15,6 +18,8 @@ python scripts/reprocessar_cache_ocr.py --falsos-negativos
 python scripts/reprocessar_cache_ocr.py --ids 35508,35517
 python scripts/reprocessar_cache_ocr.py --todas-com-cache --limit 20
 ```
+
+Revisão humana na UI: **Operação → Só menção** (`/revisao/so-mencao`).
 
 ## Ciclo completo
 

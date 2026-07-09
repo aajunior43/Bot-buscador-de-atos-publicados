@@ -153,6 +153,20 @@ MUNICIPIOS_VIZINHOS = [
     "nova londrina",
     "santa cruz de monte castelo",
     "pioneiro jayme canet",
+    # Outros da região frequentemente no O Regional
+    "uniflor",
+    "ourizona",
+    "nova esperanca",
+    "paraiso do norte",
+    "tapejara",
+    "cianorte",
+    "mandaguacu",
+    "mandaguari",
+    "maringa",
+    "sarandi",
+    "paicandu",
+    "astorga",
+    "presidente castelo branco",
 ]
 
 # Ensure fully normalized (no accents, lowercase) at import time
@@ -162,3 +176,9 @@ def _normalize_municipio(m):
     return "".join(c for c in n if not unicodedata.combining(c)).lower().strip()
 
 MUNICIPIOS_VIZINHOS = [_normalize_municipio(m) for m in MUNICIPIOS_VIZINHOS]
+
+# CNPJs oficiais de Inajá-PR (prefixos sem formatação extra)
+CNPJ_INAJA_PREFIXES = (
+    "75771400",   # 75.771.400/0001-48 — Prefeitura
+    "76970318",   # 76.970.318/0001-67 — Município/Câmara
+)
