@@ -1,9 +1,12 @@
-"""Paralelismo de OCR adaptativo ao uso de CPU.
+"""Paralelismo de OCR com CPU estável (sem serrar 100%↔50%).
 
-Objetivo: manter o processador na faixa ~85–90% durante o OCR,
-aumentando workers quando há folga e reduzindo se passar do teto.
+Estratégia:
+- Escolhe workers **uma vez** no início de cada fase (rápido / estruturado)
+- Mantém **um único** ThreadPool até o fim (sem ondas que desligam a CPU)
+- Histerese larga + média móvel se reamostrar
+- ±1 worker no máximo, com cooldown longo
 
-Não exige psutil — usa GetSystemTimes (Windows) ou /proc/stat (Linux).
+Não exige psutil — GetSystemTimes (Windows) ou /proc/stat (Linux).
 """
 from __future__ import annotations
 
@@ -13,7 +16,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, Iterable, Sequence, TypeVar
+from typing import Callable, Sequence, TypeVar
 
 from config import SETTINGS
 
@@ -26,10 +29,9 @@ _lock = threading.Lock()
 _last_workers: int | None = None
 _last_cpu: float | None = None
 _last_sample_mono: float = 0.0
-
-# Amostras anteriores de tempos ociosos/totais (para delta)
-_prev_idle: float | None = None
-_prev_total: float | None = None
+_cpu_ema: float | None = None
+_high_streak: int = 0
+_low_streak: int = 0
 
 
 def _cpu_times() -> tuple[float, float] | None:
@@ -57,7 +59,6 @@ def _cpu_times() -> tuple[float, float] | None:
                 ctypes.byref(user),
             ):
                 return None
-            # kernel inclui idle no Windows
             idle_t = float(_u64(idle))
             kernel_t = float(_u64(kernel))
             user_t = float(_u64(user))
@@ -66,14 +67,12 @@ def _cpu_times() -> tuple[float, float] | None:
         except Exception:
             return None
 
-    # Linux / outros com /proc/stat
     try:
         with open("/proc/stat", encoding="utf-8") as fh:
             line = fh.readline()
         if not line.startswith("cpu "):
             return None
         parts = [float(x) for x in line.split()[1:]]
-        # user nice system idle iowait irq softirq steal ...
         idle = parts[3] + (parts[4] if len(parts) > 4 else 0.0)
         total = sum(parts)
         return idle, total
@@ -81,13 +80,12 @@ def _cpu_times() -> tuple[float, float] | None:
         return None
 
 
-def medir_cpu_percent(intervalo: float = 0.35) -> float | None:
+def medir_cpu_percent(intervalo: float = 0.4) -> float | None:
     """CPU total do sistema 0–100. None se não for possível medir."""
-    global _prev_idle, _prev_total
     t1 = _cpu_times()
     if t1 is None:
         return None
-    time.sleep(max(0.05, intervalo))
+    time.sleep(max(0.08, intervalo))
     t2 = _cpu_times()
     if t2 is None:
         return None
@@ -101,18 +99,30 @@ def medir_cpu_percent(intervalo: float = 0.35) -> float | None:
     return max(0.0, min(100.0, busy * 100.0))
 
 
+def medir_cpu_media(amostras: int = 3, intervalo: float = 0.25) -> float | None:
+    """Média de várias amostras (mais estável que um único snapshot)."""
+    vals: list[float] = []
+    for _ in range(max(1, amostras)):
+        v = medir_cpu_percent(intervalo)
+        if v is not None:
+            vals.append(v)
+    if not vals:
+        return None
+    return sum(vals) / len(vals)
+
+
 def _cores() -> int:
     return max(1, os.cpu_count() or 2)
 
 
 def _max_workers_cfg() -> int:
-    """Teto de workers: OCR_MAX_WORKERS ou todos os cores."""
+    """Teto de workers: OCR_MAX_WORKERS ou cores (estável)."""
     cfg = int(getattr(SETTINGS, "ocr_max_workers", 0) or 0)
     cores = _cores()
     if cfg <= 0:
-        # Deixa 0 cores livres só se houver muitos; em 4 cores usa os 4
-        return cores if cores <= 4 else max(1, cores - 1)
-    return max(1, min(cfg, cores * 2))  # permite um pouco acima se o user forçou
+        # Em máquinas pequenas usa todos; em grandes deixa 1 core para o SO/UI
+        return cores if cores <= 6 else max(2, cores - 1)
+    return max(1, min(cfg, cores * 2))
 
 
 def _min_workers_cfg() -> int:
@@ -129,7 +139,7 @@ def _target_cpu() -> float:
         v = float(raw)
     except (TypeError, ValueError):
         v = 0.88
-    if v > 1.5:  # usuário passou 88 em vez de 0.88
+    if v > 1.5:
         v = v / 100.0
     return max(0.50, min(0.95, v))
 
@@ -138,14 +148,47 @@ def adaptive_enabled() -> bool:
     return bool(getattr(SETTINGS, "ocr_adaptive_cpu", True))
 
 
+def _estimativa_por_ociosidade(cpu: float, max_w: int, min_w: int) -> int:
+    """Escolha estável a partir da CPU **antes** do OCR (sistema em repouso relativo).
+
+    Cada worker Tesseract (OMP=1) ≈ 1 núcleo sob carga.
+    """
+    cores = _cores()
+    alvo = _target_cpu()
+    # Fração já ocupada por outros processos
+    ocupado = max(0.0, min(1.0, cpu / 100.0))
+    # Núcleos que ainda podemos encher até o alvo
+    livres_ate_alvo = max(0.0, cores * alvo - cores * ocupado)
+    # Arredonda para cima se houver folga clara
+    w = int(round(livres_ate_alvo))
+    if livres_ate_alvo > 0.4 and w < 1:
+        w = 1
+    # Preferência: não ficar em metade da máquina se estiver ociosa
+    if cpu < 45 and w < max_w:
+        w = max(w, max_w - (1 if cores >= 6 else 0))
+    if cpu < 30:
+        w = max_w
+    elif cpu < 50:
+        w = max(w, max(min_w, max_w - 1))
+    w = max(min_w, min(max_w, w if w > 0 else min_w))
+    return w
+
+
 def escolher_workers(
     *,
     n_tarefas: int | None = None,
     forcar_amostra: bool = False,
     label: str = "OCR",
+    modo: str = "inicio",
 ) -> int:
-    """Escolhe quantos workers usar agora (1 … max)."""
-    global _last_workers, _last_cpu, _last_sample_mono
+    """Escolhe quantos workers usar (1 … max).
+
+    modo:
+      - ``inicio``: medição com máquina ainda sem o pool OCR (preferido)
+      - ``ajuste``: reamostra com histerese (raro; evita serrar)
+    """
+    global _last_workers, _last_cpu, _last_sample_mono, _cpu_ema
+    global _high_streak, _low_streak
 
     max_w = _max_workers_cfg()
     min_w = min(_min_workers_cfg(), max_w)
@@ -154,49 +197,70 @@ def escolher_workers(
         min_w = min(min_w, max_w)
 
     if not adaptive_enabled():
-        w = max(min_w, min(max_w, int(SETTINGS.ocr_max_workers or max_w) or max_w))
+        cfg = int(SETTINGS.ocr_max_workers or 0)
+        w = max_w if cfg <= 0 else max(min_w, min(max_w, cfg))
         return max(1, w)
 
     agora = time.monotonic()
-    # Reusa decisão recente (evita sleep a cada página)
+    # Cooldown longo: não fica redecidindo a cada onda
+    cooldown = 12.0 if modo == "ajuste" else 1.0
     if (
         not forcar_amostra
         and _last_workers is not None
-        and (agora - _last_sample_mono) < 2.5
+        and (agora - _last_sample_mono) < cooldown
     ):
         return max(min_w, min(max_w, _last_workers))
 
-    cpu = medir_cpu_percent(0.30)
-    alvo = _target_cpu() * 100.0  # 88
-    teto = min(95.0, alvo + 5.0)  # ~93
-    piso = max(50.0, alvo - 8.0)  # ~80
-
-    base = _last_workers if _last_workers is not None else max(min_w, (max_w + 1) // 2)
-
-    if cpu is None:
-        # Sem medição: sobe agressivo até o teto de cores
-        w = max_w
+    if modo == "inicio":
+        cpu = medir_cpu_media(amostras=2, intervalo=0.28)
     else:
-        if cpu < piso:
-            # Muita folga → sobe (mais se estiver bem ocioso)
-            if cpu < piso - 15:
-                w = min(max_w, base + 2)
-            else:
-                w = min(max_w, base + 1)
-            # Se ainda estamos com poucos workers e CPU baixa, salta para estimativa
-            if base <= 2 and cpu < 55 and max_w >= 3:
-                w = max(w, min(max_w, _cores()))
-        elif cpu > teto:
-            w = max(min_w, base - 1)
-            if cpu > 96:
-                w = max(min_w, base - 2)
+        cpu = medir_cpu_percent(0.45)
+
+    if cpu is not None:
+        if _cpu_ema is None:
+            _cpu_ema = cpu
         else:
-            # Na faixa-alvo: mantém, ou sobe 1 se ainda abaixo do centro
-            if cpu < alvo and base < max_w:
-                w = base + 1
-            else:
-                w = base
+            _cpu_ema = 0.55 * cpu + 0.45 * _cpu_ema
+        cpu_ref = _cpu_ema
         _last_cpu = cpu
+    else:
+        cpu_ref = None
+
+    alvo = _target_cpu() * 100.0
+    # Faixa morta larga (histerese) — só mexe fora dela
+    piso = alvo - 18.0   # ex.: 70%
+    teto = min(97.0, alvo + 10.0)  # ex.: 98% só corta se saturar de verdade
+
+    base = _last_workers
+
+    if modo == "inicio" or base is None:
+        if cpu_ref is None:
+            w = max_w
+        else:
+            w = _estimativa_por_ociosidade(cpu_ref, max_w, min_w)
+        _high_streak = 0
+        _low_streak = 0
+    else:
+        # Ajuste fino: ±1 no máximo, e só com 2 leituras seguidas fora da faixa
+        w = base
+        if cpu_ref is None:
+            pass
+        elif cpu_ref > teto:
+            _high_streak += 1
+            _low_streak = 0
+            if _high_streak >= 2:
+                w = max(min_w, base - 1)
+                _high_streak = 0
+        elif cpu_ref < piso:
+            _low_streak += 1
+            _high_streak = 0
+            if _low_streak >= 2:
+                w = min(max_w, base + 1)
+                _low_streak = 0
+        else:
+            _high_streak = 0
+            _low_streak = 0
+            w = base
 
     w = max(min_w, min(max_w, w))
     with _lock:
@@ -204,13 +268,15 @@ def escolher_workers(
         _last_workers = w
         _last_sample_mono = time.monotonic()
 
-    if mudou or forcar_amostra:
-        cpu_s = f"{cpu:.0f}%" if cpu is not None else "?"
+    if mudou or (forcar_amostra and modo == "inicio"):
+        cpu_s = f"{cpu_ref:.0f}%" if cpu_ref is not None else "?"
         logger.info(
-            "OCR workers=%s (cpu=%s alvo=%.0f%% máx=%s) [%s]",
+            "OCR workers=%s estável (cpu=%s alvo=%.0f%% faixa=%.0f–%.0f máx=%s) [%s]",
             w,
             cpu_s,
             alvo,
+            piso,
+            teto,
             max_w,
             label,
         )
@@ -219,7 +285,7 @@ def escolher_workers(
 
             console_ui.step(
                 "CPU/OCR",
-                f"workers={w} · cpu={cpu_s} · alvo={alvo:.0f}% · máx={max_w}",
+                f"workers={w} · cpu={cpu_s} · alvo={alvo:.0f}% · estável",
                 ok=True,
             )
         except Exception:
@@ -235,54 +301,31 @@ def map_parallel(
     on_done: Callable[[int, int, T, R], None] | None = None,
     wave_factor: int = 1,
 ) -> list[R]:
-    """Executa ``fn`` em paralelo com reajuste de workers entre ondas.
-
-    Args:
-        items: tarefas
-        fn: worker
-        on_done: callback (concluidas, total, item, resultado)
-        wave_factor: tamanho da onda ≈ workers * wave_factor
-    """
+    """Executa ``fn`` em paralelo com pool único (sem serrar CPU)."""
     if not items:
         return []
 
     total = len(items)
     results: list[R | None] = [None] * total
-    # lista de (índice original, item)
-    fila = list(enumerate(items))
-    done = 0
+    workers = escolher_workers(
+        n_tarefas=total, forcar_amostra=True, label=label, modo="inicio"
+    )
 
-    workers = escolher_workers(n_tarefas=total, forcar_amostra=True, label=label)
-
-    while fila:
-        tamanho_onda = max(workers * max(1, wave_factor), workers)
-        onda = fila[:tamanho_onda]
-        fila = fila[tamanho_onda:]
-
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            fut_map = {pool.submit(fn, item): (idx, item) for idx, item in onda}
-            for fut in as_completed(fut_map):
-                idx, item = fut_map[fut]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        fut_map = {
+            pool.submit(fn, item): (idx, item) for idx, item in enumerate(items)
+        }
+        done = 0
+        for fut in as_completed(fut_map):
+            idx, item = fut_map[fut]
+            res = fut.result()
+            results[idx] = res
+            done += 1
+            if on_done:
                 try:
-                    res = fut.result()
+                    on_done(done, total, item, res)
                 except Exception:
-                    logger.exception("%s: falha no worker item=%s", label, idx)
-                    raise
-                results[idx] = res
-                done += 1
-                if on_done:
-                    try:
-                        on_done(done, total, item, res)
-                    except Exception:
-                        pass
-
-        if fila:
-            # Reamostra CPU após a onda e ajusta para a próxima
-            workers = escolher_workers(
-                n_tarefas=len(fila),
-                forcar_amostra=True,
-                label=f"{label}-onda",
-            )
+                    pass
 
     return [r for r in results if r is not None]  # type: ignore[misc]
 
@@ -294,35 +337,23 @@ def map_parallel_indexed(
     label: str = "OCR",
     on_done: Callable[[int, int], None] | None = None,
 ) -> dict[int, R]:
-    """Como map_parallel, mas devolve dict índice→resultado (preserva None slots)."""
+    """Pool único do início ao fim — CPU estável em platô alto."""
     if not items:
         return {}
     total = len(items)
     out: dict[int, R] = {}
-    fila = list(enumerate(items))
-    done = 0
-    workers = escolher_workers(n_tarefas=total, forcar_amostra=True, label=label)
+    workers = escolher_workers(
+        n_tarefas=total, forcar_amostra=True, label=label, modo="inicio"
+    )
 
-    while fila:
-        tamanho_onda = max(workers, 1)
-        # Ondas um pouco maiores que workers para manter a fila cheia
-        tamanho_onda = min(len(fila), max(workers * 2, workers))
-        onda = fila[:tamanho_onda]
-        fila = fila[tamanho_onda:]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        fut_map = {pool.submit(fn, item): idx for idx, item in enumerate(items)}
+        done = 0
+        for fut in as_completed(fut_map):
+            idx = fut_map[fut]
+            out[idx] = fut.result()
+            done += 1
+            if on_done:
+                on_done(done, total)
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            fut_map = {pool.submit(fn, item): idx for idx, item in onda}
-            for fut in as_completed(fut_map):
-                idx = fut_map[fut]
-                out[idx] = fut.result()
-                done += 1
-                if on_done:
-                    on_done(done, total)
-
-        if fila:
-            workers = escolher_workers(
-                n_tarefas=len(fila),
-                forcar_amostra=True,
-                label=f"{label}-onda",
-            )
     return out
