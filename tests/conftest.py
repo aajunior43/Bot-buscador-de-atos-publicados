@@ -88,6 +88,9 @@ def mock_settings(tmp_path):
     object.__setattr__(settings, "poppler_path", "")
     object.__setattr__(settings, "tesseract_path", "")
     object.__setattr__(settings, "ocr_max_workers", 1)
+    object.__setattr__(settings, "ocr_min_workers", 1)
+    object.__setattr__(settings, "ocr_adaptive_cpu", False)
+    object.__setattr__(settings, "ocr_cpu_target", 0.88)
     for pasta in (settings.download_dir, settings.alert_dir, settings.log_dir):
         pasta.mkdir(parents=True, exist_ok=True)
 

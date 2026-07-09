@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import pdfplumber
@@ -24,6 +22,7 @@ from PIL import Image
 
 from config import SETTINGS
 from ocr.cache import _carregar_cache_ocr, _salvar_cache_ocr
+from ocr.cpu_workers import escolher_workers, map_parallel_indexed
 from ocr.models import OCRResult, PageText, TextBlock
 from ocr.preprocessing import (
     _ampliar_imagem,
@@ -41,8 +40,6 @@ from ocr.tesseract import (
 )
 
 logger = logging.getLogger(__name__)
-
-_WORKERS = SETTINGS.ocr_max_workers
 
 
 
@@ -99,24 +96,31 @@ def _texto_ocr_paginas(
             imagens_filtradas.append((numero_pagina, imagem))
         numero_pagina += 1
 
-    textos: dict[int, PageText] = {}
     total = len(imagens_filtradas)
-    processadas = 0
-    lock = threading.Lock()
+    avisos_ref = avisos or []
 
-    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
-        future_to_pagina = {
-            pool.submit(_ocr_completo_pagina, num, img, avisos or []): num
-            for num, img in imagens_filtradas
-        }
-        for future in as_completed(future_to_pagina):
-            num = future_to_pagina[future]
-            textos[num] = future.result()
-            with lock:
-                processadas += 1
-                if on_progress:
-                    on_progress({"step": "ocr_structured", "current": processadas, "total": total, "msg": f"[ocr-estruturado] Página {processadas}/{total} processada"})
-    return textos
+    def _job(pair: tuple[int, Image.Image]) -> PageText:
+        num, img = pair
+        return _ocr_completo_pagina(num, img, avisos_ref)
+
+    def _done(done: int, tot: int) -> None:
+        if on_progress:
+            on_progress(
+                {
+                    "step": "ocr_structured",
+                    "current": done,
+                    "total": tot,
+                    "msg": f"[ocr-estruturado] Página {done}/{tot} processada",
+                }
+            )
+
+    indexed = map_parallel_indexed(
+        imagens_filtradas,
+        _job,
+        label="ocr-estruturado",
+        on_done=_done if on_progress else None,
+    )
+    return {imagens_filtradas[i][0]: indexed[i] for i in indexed}
 
 
 def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None, on_progress=None) -> list[PageText]:
@@ -129,21 +133,31 @@ def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None, on_prog
     avisos = avisos if avisos is not None else []
     paginas: list[PageText | None] = [None] * len(imagens)
     total = len(imagens)
-    processadas = 0
-    lock = threading.Lock()
+    itens = list(enumerate(imagens, start=1))
 
-    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
-        futures = {
-            pool.submit(_ocr_completo_pagina, idx, imagem, avisos): idx
-            for idx, imagem in enumerate(imagens, start=1)
-        }
-        for future in as_completed(futures):
-            idx = futures[future]
-            paginas[idx - 1] = future.result()
-            with lock:
-                processadas += 1
-                if on_progress:
-                    on_progress({"step": "ocr_completo", "current": processadas, "total": total, "msg": f"[ocr-completo] Página {processadas}/{total} processada"})
+    def _job(pair: tuple[int, Image.Image]) -> tuple[int, PageText]:
+        idx, imagem = pair
+        return idx, _ocr_completo_pagina(idx, imagem, avisos)
+
+    def _done(done: int, tot: int) -> None:
+        if on_progress:
+            on_progress(
+                {
+                    "step": "ocr_completo",
+                    "current": done,
+                    "total": tot,
+                    "msg": f"[ocr-completo] Página {done}/{tot} processada",
+                }
+            )
+
+    indexed = map_parallel_indexed(
+        itens,
+        _job,
+        label="ocr-completo",
+        on_done=_done if on_progress else None,
+    )
+    for i, (idx, page) in indexed.items():
+        paginas[idx - 1] = page
 
     if SETTINGS.ocr_retry_dpi > SETTINGS.ocr_dpi:
         fracas = [
@@ -263,21 +277,31 @@ def _texto_ocr_rapido_pdf(pdf_path: Path, avisos: list[str], on_progress=None) -
     )
     paginas: list[PageText | None] = [None] * len(imagens)
     total = len(imagens)
-    processadas = 0
-    lock = threading.Lock()
+    itens = list(enumerate(imagens, start=1))
 
-    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
-        futures = {
-            pool.submit(_ocr_rapido_pagina, idx, imagem, avisos): idx
-            for idx, imagem in enumerate(imagens, start=1)
-        }
-        for future in as_completed(futures):
-            idx = futures[future]
-            paginas[idx - 1] = future.result()
-            with lock:
-                processadas += 1
-                if on_progress:
-                    on_progress({"step": "ocr_fast", "current": processadas, "total": total, "msg": f"[ocr-rapido] Página {processadas}/{total} processada"})
+    def _job(pair: tuple[int, Image.Image]) -> tuple[int, PageText]:
+        idx, imagem = pair
+        return idx, _ocr_rapido_pagina(idx, imagem, avisos)
+
+    def _done(done: int, tot: int) -> None:
+        if on_progress:
+            on_progress(
+                {
+                    "step": "ocr_fast",
+                    "current": done,
+                    "total": tot,
+                    "msg": f"[ocr-rapido] Página {done}/{tot} processada",
+                }
+            )
+
+    indexed = map_parallel_indexed(
+        itens,
+        _job,
+        label="ocr-rapido",
+        on_done=_done if on_progress else None,
+    )
+    for _i, (idx, page) in indexed.items():
+        paginas[idx - 1] = page
     return [p for p in paginas if p is not None]
 
 
@@ -328,7 +352,6 @@ def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path, on_progress=N
     paginas: list[PageText | None] = [None] * len(imagens)
     total = len(imagens)
     processadas = 0
-    lock = threading.Lock()
 
     candidatas_ocr = []
     for idx, imagem in enumerate(imagens, start=1):
@@ -339,18 +362,39 @@ def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path, on_progress=N
             candidatas_ocr.append((idx, imagem))
 
     if candidatas_ocr:
-        with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
-            futures = {
-                pool.submit(_ocr_rapido_pagina, idx, imagem, avisos): idx
-                for idx, imagem in candidatas_ocr
-            }
-            for future in as_completed(futures):
-                idx = futures[future]
-                paginas[idx - 1] = future.result()
-                with lock:
-                    processadas += 1
-                    if on_progress:
-                        on_progress(f"OCR rápido: Página {processadas}/{total} processada")
+        escolher_workers(
+            n_tarefas=len(candidatas_ocr),
+            forcar_amostra=True,
+            label="ocr-rapido-inicio",
+        )
+
+        def _job(pair: tuple[int, Image.Image]) -> tuple[int, PageText]:
+            idx, imagem = pair
+            return idx, _ocr_rapido_pagina(idx, imagem, avisos)
+
+        base_cache = processadas
+
+        def _done(done: int, tot: int) -> None:
+            if on_progress:
+                cur = base_cache + done
+                on_progress(
+                    {
+                        "step": "ocr_fast",
+                        "current": min(cur, total),
+                        "total": total,
+                        "msg": f"OCR rápido: Página {min(cur, total)}/{total} processada",
+                    }
+                )
+
+        indexed = map_parallel_indexed(
+            candidatas_ocr,
+            _job,
+            label="ocr-rapido",
+            on_done=_done if on_progress else None,
+        )
+        for _i, (idx, page) in indexed.items():
+            paginas[idx - 1] = page
+            processadas += 1
 
     # Páginas que precisam de OCR estruturado
     paginas_candidatas = [

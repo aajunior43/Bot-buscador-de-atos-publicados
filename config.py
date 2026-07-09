@@ -29,6 +29,13 @@ def _bool_env(name: str, padrao: bool = False) -> bool:
     return valor.strip().casefold() in {"1", "true", "sim", "yes", "on"}
 
 
+def _float_env(name: str, padrao: float) -> float:
+    try:
+        return float(os.getenv(name, str(padrao)))
+    except ValueError:
+        return padrao
+
+
 @dataclass(frozen=True)
 class Settings:
     site_url: str = os.getenv(
@@ -106,8 +113,15 @@ class Settings:
     poppler_path: str = os.getenv("POPPLER_PATH", "").strip()
     # Tesseract OCR (para pytesseract no Windows)
     tesseract_path: str = os.getenv("TESSERACT_PATH", "").strip()
-    # Limite máximo de workers para processamento paralelo do OCR (padrão: metade dos cores disponíveis, min 1)
-    ocr_max_workers: int = _int_env("OCR_MAX_WORKERS", max(1, (os.cpu_count() or 2) // 2))
+    # Teto de workers do OCR. 0 = automático (usa todos os cores, ou cores-1 se >4).
+    # Antes o padrão era cores/2 (~50% CPU); com OCR_ADAPTIVE_CPU o bot sobe sozinho.
+    ocr_max_workers: int = _int_env("OCR_MAX_WORKERS", 0)
+    # Piso de workers (1 = pode reduzir bastante se a CPU saturar)
+    ocr_min_workers: int = _int_env("OCR_MIN_WORKERS", 1)
+    # Ajusta workers medindo CPU (alvo ~85–90%)
+    ocr_adaptive_cpu: bool = _bool_env("OCR_ADAPTIVE_CPU", True)
+    # Alvo de uso de CPU: 0.88 = 88% (também aceita 88)
+    ocr_cpu_target: float = _float_env("OCR_CPU_TARGET", 0.88)
     # Autenticação da interface web (HTTP Basic). Se ambos vazios, o webapp
     # fica aberto e um aviso é emitido no log de inicialização.
     webapp_user: str = os.getenv("WEBAPP_USER", "").strip()
