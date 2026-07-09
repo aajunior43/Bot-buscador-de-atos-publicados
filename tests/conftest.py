@@ -18,6 +18,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 @pytest.fixture(autouse=True)
 def mock_settings(tmp_path):
     """Sobrescreve SETTINGS para usar diretórios temporários e banco em memória."""
+    # Isola o lock de arquivo do BOT em execução (evita hang de 600s nos testes)
+    lock_path = tmp_path / "processamento.lock"
+    os.environ["PROCESS_LOCK_PATH"] = str(lock_path)
+    try:
+        import process_lock as _pl
+
+        _pl.DEFAULT_LOCK = lock_path
+    except Exception:
+        pass
+
     from config import Settings
     settings = Settings.__new__(Settings)
     # Não usar __post_init__ para evitar criar pastas de verdade
@@ -67,6 +77,7 @@ def mock_settings(tmp_path):
     object.__setattr__(settings, "auto_process_continuo", True)
     object.__setattr__(settings, "auto_process_dias", 365)
     object.__setattr__(settings, "auto_process_desde", "")
+    object.__setattr__(settings, "auto_process_max_falhas", 3)
     object.__setattr__(settings, "web_scan_interval_hours", 6)
     object.__setattr__(settings, "notify_email_always", False)
     object.__setattr__(settings, "webapp_user", "")

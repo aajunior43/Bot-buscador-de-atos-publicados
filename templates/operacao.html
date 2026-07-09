@@ -105,22 +105,52 @@
       </dl>
     </article>
   </div>
-  <div class="ciclo-fila">
+  <div class="ciclo-fila ciclo-fila-3">
     <div>
       <strong id="ciclo-pendentes">{{ automacao.pendentes_ocr }}</strong>
-      <span>edição(ões) pendente(s) de OCR no banco</span>
+      <span>pendente(s) de OCR no banco</span>
     </div>
     <div>
       <strong id="ciclo-fila">{{ automacao.fila_proximo_ciclo }}</strong>
       <span>
-        na fila do próximo ciclo BOT
+        na fila do próximo lote BOT
         {% if automacao.auto_process %}
-          (limite {{ automacao.auto_process_limit }}, últimos {{ automacao.auto_process_dias }} dias)
+          (lote {{ automacao.auto_process_limit }}{% if automacao.auto_process_desde %} · desde {{ automacao.auto_process_desde }}{% endif %})
         {% else %}
           <em>· AUTO_PROCESS desligado</em>
         {% endif %}
       </span>
     </div>
+    <div class="{% if automacao.quarentena_count %}stat-alert-inline{% endif %}">
+      <strong id="ciclo-quarentena">{{ automacao.quarentena_count or 0 }}</strong>
+      <span>em quarentena (≥{{ automacao.max_falhas or 3 }} falhas)</span>
+    </div>
+  </div>
+  <div class="ciclo-quarentena-box" id="ciclo-quarentena-box" {% if not automacao.quarentena %}style="display:none"{% endif %}>
+    <h3>Quarentena — fora da fila automática</h3>
+    <p class="ops-advanced-hint">
+      Após {{ automacao.max_falhas or 3 }} falhas de download/OCR a edição para de ser tentada.
+      Use <strong>Liberar</strong> para colocar de novo na fila.
+    </p>
+    <ul class="quarentena-list" id="ciclo-quarentena-list">
+      {% for q in automacao.quarentena or [] %}
+      <li>
+        <div>
+          <strong>{{ q.titulo or ("Edição " ~ q.id) }}</strong>
+          <span>{{ q.data_publicacao or "sem data" }} · {{ q.falhas_processamento }} falha(s)
+            {% if q.ultima_falha_em %} · {{ q.ultima_falha_em }}{% endif %}
+          </span>
+          <p>{{ q.ultima_falha_msg or "—" }}</p>
+        </div>
+        <div class="quarentena-actions">
+          {% if q.id %}<a href="/edicoes/{{ q.id }}">Abrir</a>{% endif %}
+          <form method="post" action="/operacao/quarentena/{{ q.id }}/liberar">
+            <button type="submit" class="btn btn-secondary btn-small">Liberar</button>
+          </form>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
   </div>
   {% if automacao.erros_recentes %}
   <div class="ciclo-erros" id="ciclo-erros">

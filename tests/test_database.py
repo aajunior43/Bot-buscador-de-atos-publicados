@@ -131,6 +131,24 @@ class TestPendingEdicoes:
         assert "2020-01-01" in datas
         assert "2021-06-15" in datas
 
+    def test_quarentena_apos_max_falhas(self, db, mock_settings):
+        import database
+
+        database.init_db()
+        eid = database.insert_or_get_edicao(
+            "https://ex.com/fail.pdf", "Fail", "2026-01-01"
+        )
+        for i in range(3):
+            n = database.registrar_falha_processamento(eid, f"erro {i+1}")
+        assert n >= 3
+        pend = database.get_pending_edicoes(limit=20)
+        assert all(int(r["id"]) != eid for r in pend)
+        assert database.contar_quarentena() >= 1
+        assert database.liberar_quarentena(eid) is True
+        pend2 = database.get_pending_edicoes(limit=20)
+        assert any(int(r["id"]) == eid for r in pend2)
+        assert database.contar_quarentena() == 0
+
 
 class TestSomaValoresDedup:
     def test_deduplica_mesmo_numero(self, db):

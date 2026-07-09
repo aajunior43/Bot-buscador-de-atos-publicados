@@ -98,6 +98,8 @@ class Settings:
     # Data mínima inclusiva (YYYY-MM-DD). Ex.: 2020-01-01 = não processa 2011–2019.
     # Vazio = sem piso de data.
     auto_process_desde: str = os.getenv("AUTO_PROCESS_DESDE", "").strip()
+    # Após N falhas de download/OCR a edição sai da fila (quarentena)
+    auto_process_max_falhas: int = _int_env("AUTO_PROCESS_MAX_FALHAS", 3)
     # Intervalo do scheduler da web (horas entre varreduras; padrão 6 = 4x/dia)
     web_scan_interval_hours: int = _int_env("WEB_SCAN_INTERVAL_HOURS", 6)
     # Poppler (para pdf2image no Windows)

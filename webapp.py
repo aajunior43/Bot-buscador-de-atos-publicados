@@ -484,6 +484,21 @@ def operacao(request: Request) -> HTMLResponse:
     )
 
 
+@app.post("/operacao/quarentena/{edicao_id}/liberar")
+def liberar_quarentena_edicao(edicao_id: int) -> RedirectResponse:
+    """Zera falhas e devolve a edição à fila automática."""
+    database.init_db()
+    ok = database.liberar_quarentena(edicao_id)
+    if ok:
+        database.log_job(
+            "quarentena",
+            "concluido",
+            edicao_id=edicao_id,
+            mensagem="Edição liberada da quarentena — volta à fila",
+        )
+    return RedirectResponse(url="/operacao", status_code=303)
+
+
 @app.get("/detecoes", response_class=RedirectResponse)
 def detecoes_redirect() -> RedirectResponse:
     """Rota legada: lista de detecções virou a home de Atos."""

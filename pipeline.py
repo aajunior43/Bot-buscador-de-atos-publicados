@@ -52,6 +52,7 @@ def processar_edicao(
                 notificar_se_encontrado=notificar_se_encontrado,
             )
     except ProcessLockError as exc:
+        # Lock ocupado não conta como falha da edição
         logger.warning("%s", exc)
         database.log_job(
             "processando edição",
@@ -91,7 +92,7 @@ def _processar_edicao_unlocked(
             progress_current=100,
             progress_total=100,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Falha ao baixar edição %s", edicao.url)
         database.update_job(
             download_job,
@@ -100,6 +101,10 @@ def _processar_edicao_unlocked(
             edicao_id=edicao_id,
             progress_step="download",
         )
+        if edicao_id:
+            database.registrar_falha_processamento(
+                int(edicao_id), f"download: {exc}"
+            )
         return None
 
     ocr_job = database.start_job(
@@ -226,6 +231,7 @@ def _processar_edicao_unlocked(
                 progress_total=100,
             )
 
+        database.limpar_falhas_processamento(download.edicao_id)
         logger.info(
             "Edição processada: id=%s tem_inaja=%s pubs=%s",
             download.edicao_id,
@@ -233,7 +239,7 @@ def _processar_edicao_unlocked(
             len(resultado.publicacoes),
         )
         return resultado
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "Falha ao processar OCR/detecção da edição %s", edicao.url
         )
@@ -244,7 +250,11 @@ def _processar_edicao_unlocked(
             edicao_id=download.edicao_id,
             progress_step="ocr",
         )
-        raise
+        database.registrar_falha_processamento(
+            download.edicao_id, f"ocr/detecção: {exc}"
+        )
+        # Não propaga: falha contada; fila segue para a próxima edição
+        return None
 
 
 def reprocessar_deteccao_de_cache(
@@ -513,10 +523,17 @@ def processar_pendentes_automatico(
                 if resultado is not None:
                     ok += 1
                     total_ok += 1
+                # resultado None: download/OCR já registrou falha (ou lock)
             except Exception:
                 logger.exception(
-                    "Automação: falha na edição id=%s", row["id"]
+                    "Automação: falha inesperada na edição id=%s", row["id"]
                 )
+                try:
+                    database.registrar_falha_processamento(
+                        int(row["id"]), "exceção não tratada no lote"
+                    )
+                except Exception:
+                    pass
                 continue
         database.update_job(
             job,

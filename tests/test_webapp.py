@@ -100,6 +100,22 @@ def test_api_health(db):
     assert "pendentes_ocr" in data
 
 
+def test_liberar_quarentena_rota(db):
+    eid = database.insert_or_get_edicao(
+        "https://example.com/quar.pdf", "Quar", "2026-01-15"
+    )
+    for _ in range(3):
+        database.registrar_falha_processamento(eid, "boom")
+    assert database.contar_quarentena() >= 1
+    client = TestClient(app)
+    r = client.post(f"/operacao/quarentena/{eid}/liberar", follow_redirects=False)
+    assert r.status_code in (302, 303)
+    assert database.contar_quarentena() == 0
+    r2 = client.get("/operacao")
+    assert r2.status_code == 200
+    assert "Quarentena" in r2.text
+
+
 def test_revisao_so_mencao(db):
     eid = database.insert_or_get_edicao(
         "https://example.com/so_mencao.pdf",

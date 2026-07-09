@@ -332,6 +332,62 @@ main {
   margin-top: .25rem;
   padding-top: 1rem;
 }
+.ciclo-fila-3 { grid-template-columns: 1fr 1fr 1fr; }
+.stat-alert-inline strong { color: var(--amber) !important; }
+
+.ciclo-quarentena-box {
+  border-top: 1px solid var(--border);
+  padding: 1rem 1.5rem 1.25rem;
+}
+.ciclo-quarentena-box h3 {
+  font-size: .85rem;
+  color: var(--amber);
+  margin: 0 0 .35rem;
+  font-weight: 600;
+}
+.quarentena-list {
+  list-style: none;
+  margin: .75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .65rem;
+}
+.quarentena-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding: .65rem .8rem;
+  border-radius: var(--radius-sm);
+  background: rgba(251, 191, 36, .06);
+  border: 1px solid rgba(251, 191, 36, .22);
+  font-size: .85rem;
+}
+.quarentena-list li span {
+  display: block;
+  color: var(--text-3);
+  font-size: .75rem;
+  margin: .15rem 0 .35rem;
+}
+.quarentena-list li p {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.quarentena-actions {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-shrink: 0;
+}
+.quarentena-actions form { margin: 0; }
+.quarentena-actions a {
+  font-size: .8rem;
+  color: var(--accent-2);
+}
 .ciclo-fila > div {
   display: flex;
   flex-direction: column;
@@ -2363,6 +2419,7 @@ details[open] summary::before { transform: rotate(90deg); }
   .ops-split { grid-template-columns: 1fr; }
   .ciclo-grid { grid-template-columns: 1fr; }
   .ciclo-fila { grid-template-columns: 1fr; }
+  .ciclo-fila-3 { grid-template-columns: 1fr; }
   .ciclo-dl div { grid-template-columns: 1fr; gap: .15rem; }
   .nav-toggle { display: flex; margin-left: auto; }
   .main-nav {

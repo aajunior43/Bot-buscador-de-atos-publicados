@@ -197,6 +197,43 @@
         setText("ciclo-bot-msg", a.bot_mensagem || "—");
         setText("ciclo-pendentes", a.pendentes_ocr);
         setText("ciclo-fila", a.fila_proximo_ciclo);
+        setText("ciclo-quarentena", a.quarentena_count || 0);
+
+        var qBox = document.getElementById("ciclo-quarentena-box");
+        var qList = document.getElementById("ciclo-quarentena-list");
+        if (qBox && qList && Array.isArray(a.quarentena)) {
+          if (!a.quarentena.length) {
+            qBox.style.display = "none";
+            qList.innerHTML = "";
+          } else {
+            qBox.style.display = "";
+            qList.innerHTML = a.quarentena
+              .map(function (q) {
+                return (
+                  "<li><div><strong>" +
+                  escapeHtml(q.titulo || "Edição " + q.id) +
+                  "</strong><span>" +
+                  escapeHtml(q.data_publicacao || "sem data") +
+                  " · " +
+                  escapeHtml(q.falhas_processamento) +
+                  " falha(s)" +
+                  (q.ultima_falha_em
+                    ? " · " + escapeHtml(q.ultima_falha_em)
+                    : "") +
+                  "</span><p>" +
+                  escapeHtml(q.ultima_falha_msg || "—") +
+                  "</p></div><div class=\"quarentena-actions\">" +
+                  (q.id
+                    ? '<a href="/edicoes/' + q.id + '">Abrir</a>'
+                    : "") +
+                  '<form method="post" action="/operacao/quarentena/' +
+                  q.id +
+                  '/liberar"><button type="submit" class="btn btn-secondary btn-small">Liberar</button></form></div></li>'
+                );
+              })
+              .join("");
+          }
+        }
 
         var banner = document.getElementById("ciclo-bot-banner");
         var statusEl = document.getElementById("ciclo-bot-status");

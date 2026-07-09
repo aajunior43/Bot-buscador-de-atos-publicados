@@ -137,6 +137,10 @@ _MIGRATIONS: list[tuple[int, str]] = [
     (8, "ALTER TABLE jobs ADD COLUMN progress_step TEXT"),
     # null | pendente | revisada | ignorada — edições com menção e 0 publicações
     (9, "ALTER TABLE edicoes ADD COLUMN revisao_so_mencao TEXT"),
+    # Quarentena: após N falhas de download/OCR a edição sai da fila automática
+    (10, "ALTER TABLE edicoes ADD COLUMN falhas_processamento INTEGER DEFAULT 0"),
+    (11, "ALTER TABLE edicoes ADD COLUMN ultima_falha_em TEXT"),
+    (12, "ALTER TABLE edicoes ADD COLUMN ultima_falha_msg TEXT"),
 ]
 
 # Colunas esperadas por migração — usadas para marcar versões já aplicadas
@@ -151,6 +155,9 @@ _MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
     7: ("jobs", "progress_total"),
     8: ("jobs", "progress_step"),
     9: ("edicoes", "revisao_so_mencao"),
+    10: ("edicoes", "falhas_processamento"),
+    11: ("edicoes", "ultima_falha_em"),
+    12: ("edicoes", "ultima_falha_msg"),
 }
 
 
@@ -505,6 +512,9 @@ def get_status_automacao() -> dict:
         "auto_process_limit": int(SETTINGS.auto_process_limit or 0),
         "auto_process_dias": int(SETTINGS.auto_process_dias or 0),
         "auto_process_desde": desde or "",
+        "max_falhas": max_falhas_quarentena(),
+        "quarentena_count": contar_quarentena(),
+        "quarentena": listar_quarentena(limit=8),
     }
 
 
@@ -721,12 +731,125 @@ def mark_notified(edicao_id: int) -> None:
         )
 
 
+def max_falhas_quarentena() -> int:
+    return max(1, int(SETTINGS.auto_process_max_falhas or 3))
+
+
+def registrar_falha_processamento(edicao_id: int, mensagem: str = "") -> int:
+    """Incrementa contador de falhas; retorna o novo total.
+
+    Ao atingir ``AUTO_PROCESS_MAX_FALHAS`` a edição fica em quarentena
+    (fora da fila automática).
+    """
+    msg = (mensagem or "")[:500]
+    agora = datetime.now().isoformat(timespec="seconds")
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE edicoes
+            SET falhas_processamento = COALESCE(falhas_processamento, 0) + 1,
+                ultima_falha_em = ?,
+                ultima_falha_msg = ?
+            WHERE id = ?
+            """,
+            (agora, msg, edicao_id),
+        )
+        row = conn.execute(
+            "SELECT COALESCE(falhas_processamento, 0) AS n FROM edicoes WHERE id = ?",
+            (edicao_id,),
+        ).fetchone()
+        n = int(row["n"] if row else 0)
+    lim = max_falhas_quarentena()
+    if n >= lim:
+        logger.warning(
+            "Edição id=%s em QUARENTENA após %s falha(s): %s",
+            edicao_id,
+            n,
+            msg or "(sem detalhe)",
+        )
+    else:
+        logger.warning(
+            "Edição id=%s falha %s/%s: %s",
+            edicao_id,
+            n,
+            lim,
+            msg or "(sem detalhe)",
+        )
+    return n
+
+
+def limpar_falhas_processamento(edicao_id: int) -> None:
+    """Zera contador após processamento bem-sucedido."""
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE edicoes
+            SET falhas_processamento = 0,
+                ultima_falha_em = NULL,
+                ultima_falha_msg = NULL
+            WHERE id = ?
+            """,
+            (edicao_id,),
+        )
+
+
+def liberar_quarentena(edicao_id: int) -> bool:
+    """Tira da quarentena (zera falhas) para nova tentativa na fila."""
+    with connect() as conn:
+        cur = conn.execute(
+            """
+            UPDATE edicoes
+            SET falhas_processamento = 0,
+                ultima_falha_em = NULL,
+                ultima_falha_msg = NULL
+            WHERE id = ? AND COALESCE(falhas_processamento, 0) > 0
+            """,
+            (edicao_id,),
+        )
+        return cur.rowcount > 0
+
+
+def listar_quarentena(limit: int = 20) -> list[dict]:
+    lim = max_falhas_quarentena()
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, titulo, data_publicacao, url,
+                   falhas_processamento, ultima_falha_em, ultima_falha_msg
+            FROM edicoes
+            WHERE ocr_processado = 0
+              AND COALESCE(falhas_processamento, 0) >= ?
+            ORDER BY ultima_falha_em DESC, id DESC
+            LIMIT ?
+            """,
+            (lim, max(1, int(limit))),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def contar_quarentena() -> int:
+    lim = max_falhas_quarentena()
+    with connect() as conn:
+        return int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM edicoes
+                WHERE ocr_processado = 0
+                  AND COALESCE(falhas_processamento, 0) >= ?
+                """,
+                (lim,),
+            ).fetchone()[0]
+            or 0
+        )
+
+
 def get_pending_edicoes(
     process_all: bool = False,
     *,
     limit: int | None = None,
     recent_days: int | None = None,
     desde: str | None = None,
+    incluir_quarentena: bool = False,
 ) -> list[sqlite3.Row]:
     """Edições ainda não processadas por OCR (ou todas se process_all).
 
@@ -735,6 +858,7 @@ def get_pending_edicoes(
     Args:
         desde: data mínima inclusiva YYYY-MM-DD (ex. ``2020-01-01``).
             Edições sem data ficam de fora quando ``desde`` está definido.
+        incluir_quarentena: se False (padrão), exclui edições com falhas >= teto.
     """
     clauses: list[str] = []
     params: list[object] = []
@@ -753,6 +877,11 @@ def get_pending_edicoes(
             "AND data_publicacao >= ?"
         )
         params.append(piso)
+    if not incluir_quarentena:
+        clauses.append(
+            "COALESCE(falhas_processamento, 0) < ?"
+        )
+        params.append(max_falhas_quarentena())
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     lim_sql = f" LIMIT {int(limit)}" if limit and limit > 0 else ""
     with connect() as conn:
