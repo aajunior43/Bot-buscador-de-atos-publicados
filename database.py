@@ -466,11 +466,13 @@ def get_status_automacao() -> dict:
     # Fila que o BOT pegaria no próximo ciclo (mesma regra de processar_pendentes)
     lim = max(0, int(SETTINGS.auto_process_limit or 0))
     dias = int(SETTINGS.auto_process_dias or 0)
+    desde = (SETTINGS.auto_process_desde or "").strip()
     fila_proximo = len(
         get_pending_edicoes(
             process_all=False,
             limit=lim if lim else None,
             recent_days=dias if dias else None,
+            desde=desde or None,
         )
     )
 
@@ -502,6 +504,7 @@ def get_status_automacao() -> dict:
         "auto_process": bool(SETTINGS.auto_process),
         "auto_process_limit": int(SETTINGS.auto_process_limit or 0),
         "auto_process_dias": int(SETTINGS.auto_process_dias or 0),
+        "auto_process_desde": desde or "",
     }
 
 
@@ -723,10 +726,15 @@ def get_pending_edicoes(
     *,
     limit: int | None = None,
     recent_days: int | None = None,
+    desde: str | None = None,
 ) -> list[sqlite3.Row]:
     """Edições ainda não processadas por OCR (ou todas se process_all).
 
     Ordena pelas mais recentes primeiro — essencial para automação com fila grande.
+
+    Args:
+        desde: data mínima inclusiva YYYY-MM-DD (ex. ``2020-01-01``).
+            Edições sem data ficam de fora quando ``desde`` está definido.
     """
     clauses: list[str] = []
     params: list[object] = []
@@ -737,6 +745,14 @@ def get_pending_edicoes(
             "(data_publicacao IS NULL OR data_publicacao >= date('now', ?))"
         )
         params.append(f"-{int(recent_days)} days")
+    piso = (desde if desde is not None else SETTINGS.auto_process_desde or "").strip()
+    if piso:
+        # Só edições com data válida a partir do piso (não processa acervo antigo)
+        clauses.append(
+            "data_publicacao IS NOT NULL AND data_publicacao != '' "
+            "AND data_publicacao >= ?"
+        )
+        params.append(piso)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     lim_sql = f" LIMIT {int(limit)}" if limit and limit > 0 else ""
     with connect() as conn:

@@ -66,6 +66,7 @@ def mock_settings(tmp_path):
     object.__setattr__(settings, "auto_process_max_por_ciclo", 10)
     object.__setattr__(settings, "auto_process_continuo", True)
     object.__setattr__(settings, "auto_process_dias", 365)
+    object.__setattr__(settings, "auto_process_desde", "")
     object.__setattr__(settings, "web_scan_interval_hours", 6)
     object.__setattr__(settings, "notify_email_always", False)
     object.__setattr__(settings, "webapp_user", "")

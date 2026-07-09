@@ -345,6 +345,7 @@ def _saude_sistema() -> dict:
         "auto_process_max_por_ciclo": int(SETTINGS.auto_process_max_por_ciclo),
         "auto_process_continuo": bool(SETTINGS.auto_process_continuo),
         "auto_process_dias": int(SETTINGS.auto_process_dias),
+        "auto_process_desde": (SETTINGS.auto_process_desde or "").strip(),
         "bot_vivo": bool(auto.get("bot_vivo")),
         "bot_heartbeat_rel": auto.get("bot_heartbeat_rel") or "sem sinal",
         "bot_proxima_rel": auto.get("bot_proxima_rel") or "—",

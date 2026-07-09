@@ -112,6 +112,25 @@ class TestPendingEdicoes:
         pend = database.get_pending_edicoes(limit=2)
         assert len(pend) == 2
 
+    def test_desde_exclui_antes_de_2020(self, db):
+        import database
+
+        database.init_db()
+        database.insert_or_get_edicao(
+            "https://ex.com/2019.pdf", "2019", "2019-12-31"
+        )
+        database.insert_or_get_edicao(
+            "https://ex.com/2020.pdf", "2020", "2020-01-01"
+        )
+        database.insert_or_get_edicao(
+            "https://ex.com/2021.pdf", "2021", "2021-06-15"
+        )
+        pend = database.get_pending_edicoes(limit=20, desde="2020-01-01")
+        datas = {r["data_publicacao"] for r in pend}
+        assert "2019-12-31" not in datas
+        assert "2020-01-01" in datas
+        assert "2021-06-15" in datas
+
 
 class TestSomaValoresDedup:
     def test_deduplica_mesmo_numero(self, db):

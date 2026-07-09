@@ -93,8 +93,11 @@ class Settings:
     auto_process_max_por_ciclo: int = _int_env("AUTO_PROCESS_MAX_POR_CICLO", 40)
     # Entre ciclos de 6h, continua processando a fila (um lote por vez)
     auto_process_continuo: bool = _bool_env("AUTO_PROCESS_CONTINUO", True)
-    # Só auto-processa edições com data nos últimos N dias (0 = todas)
+    # Só auto-processa edições com data nos últimos N dias (0 = sem esse filtro)
     auto_process_dias: int = _int_env("AUTO_PROCESS_DIAS", 120)
+    # Data mínima inclusiva (YYYY-MM-DD). Ex.: 2020-01-01 = não processa 2011–2019.
+    # Vazio = sem piso de data.
+    auto_process_desde: str = os.getenv("AUTO_PROCESS_DESDE", "").strip()
     # Intervalo do scheduler da web (horas entre varreduras; padrão 6 = 4x/dia)
     web_scan_interval_hours: int = _int_env("WEB_SCAN_INTERVAL_HOURS", 6)
     # Poppler (para pdf2image no Windows)

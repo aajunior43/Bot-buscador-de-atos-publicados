@@ -457,6 +457,7 @@ def processar_pendentes_automatico(
     """
     lim = max(1, int(limit if limit is not None else SETTINGS.auto_process_limit))
     dias = recent_days if recent_days is not None else SETTINGS.auto_process_dias
+    desde = (SETTINGS.auto_process_desde or "").strip()
     if max_total is None:
         max_total = int(SETTINGS.auto_process_max_por_ciclo or 0)
     teto = int(max_total) if max_total and max_total > 0 else lim
@@ -470,12 +471,14 @@ def processar_pendentes_automatico(
             process_all=False,
             limit=batch,
             recent_days=int(dias) if dias else None,
+            desde=desde or None,
         )
         if not rows:
             if lote_n == 0:
                 msg = (
                     "Automação: nenhuma edição pendente de OCR "
-                    f"(janela={dias or 'todas'} dias)."
+                    f"(janela={dias or 'todas'} dias"
+                    f"{', desde=' + desde if desde else ''})."
                 )
                 if quiet:
                     logger.debug(msg)

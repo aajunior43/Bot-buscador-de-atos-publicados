@@ -91,12 +91,13 @@ def main() -> None:
 
     logger.info(
         "Agendando verificação a cada %s hora(s). Heartbeat a cada 30s. "
-        "Fila contínua=%s (lote=%s, máx/ciclo=%s, dias=%s).",
+        "Fila contínua=%s (lote=%s, máx/ciclo=%s, dias=%s, desde=%s).",
         SETTINGS.check_interval_hours,
         SETTINGS.auto_process_continuo,
         SETTINGS.auto_process_limit,
         SETTINGS.auto_process_max_por_ciclo,
         SETTINGS.auto_process_dias,
+        SETTINGS.auto_process_desde or "sem piso",
     )
     executar_ciclo()
     schedule.every(SETTINGS.check_interval_hours).hours.do(executar_ciclo)
