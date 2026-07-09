@@ -10,6 +10,7 @@ from ai_processor import (
     _normalizar_valor_ia,
     _normalizar_data_ia,
     _normalizar_orgao_ia,
+    normalizar_tipo_ato,
 )
 
 
@@ -108,3 +109,26 @@ class TestNormalizarOrgao:
     def test_vazio(self):
         assert _normalizar_orgao_ia(None) is None
         assert _normalizar_orgao_ia("") is None
+
+
+class TestNormalizarTipo:
+    def test_extrato_contrato(self):
+        assert normalizar_tipo_ato("Extrato de Contrato") == "Extrato de Contrato"
+
+    def test_homologacao_longa(self):
+        assert (
+            normalizar_tipo_ato("Termo de Homologação e Adjudicação")
+            == "Homologação/Adjudicação"
+        )
+
+    def test_dispensa(self):
+        assert normalizar_tipo_ato("Dispensa de Licitação") == "Dispensa"
+        assert normalizar_tipo_ato("Dispensa Eletrônica") == "Dispensa"
+
+    def test_portaria_decreto(self):
+        assert normalizar_tipo_ato("PORTARIA") == "Portaria"
+        assert normalizar_tipo_ato("Decreto") == "Decreto"
+
+    def test_vazio(self):
+        assert normalizar_tipo_ato(None) is None
+        assert normalizar_tipo_ato("") is None

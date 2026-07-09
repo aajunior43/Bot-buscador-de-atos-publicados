@@ -51,3 +51,25 @@ def test_static_permanece_publico(db, mock_settings, monkeypatch):
     client = _client(db, mock_settings, monkeypatch, "admin", "secret")
     resp = client.get("/static/styles.css")
     assert resp.status_code != 401
+
+
+def test_require_auth_startup_falha_sem_credenciais(mock_settings):
+    import webapp
+
+    object.__setattr__(mock_settings, "require_webapp_auth", True)
+    object.__setattr__(mock_settings, "webapp_user", "")
+    object.__setattr__(mock_settings, "webapp_password", "")
+    object.__setattr__(mock_settings, "app_env", "development")
+    with pytest.raises(RuntimeError, match="obrigatória"):
+        webapp._validar_auth_startup()
+
+
+def test_production_exige_auth(mock_settings):
+    import webapp
+
+    object.__setattr__(mock_settings, "require_webapp_auth", False)
+    object.__setattr__(mock_settings, "app_env", "production")
+    object.__setattr__(mock_settings, "webapp_user", "")
+    object.__setattr__(mock_settings, "webapp_password", "")
+    with pytest.raises(RuntimeError, match="obrigatória"):
+        webapp._validar_auth_startup()

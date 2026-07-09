@@ -1,17 +1,19 @@
 services:
   app:
     build: .
-    container_name: novo-projeto-dev
+    container_name: bot-buscador-de-atos
     working_dir: /workspace
     command: uvicorn webapp:app --host 0.0.0.0 --port 8000
     volumes:
       - ./:/workspace
     ports:
-      - "3001:3000"
-      - "5174:5173"
       - "8001:8000"
+    env_file:
+      - .env
     environment:
       PYTHONUNBUFFERED: "1"
+      APP_ENV: production
+      REQUIRE_WEBAPP_AUTH: "true"
     labels:
       - traefik.enable=true
       - traefik.docker.network=traefik-public
@@ -25,6 +27,7 @@ services:
       - traefik-public
     tty: true
     stdin_open: true
+    restart: unless-stopped
 
 networks:
   traefik-public:

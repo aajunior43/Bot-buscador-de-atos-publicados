@@ -12,11 +12,14 @@ scraper.py → downloader.py → ocr_processor.py → detector.py → ai_process
                                                  database.py      database.py (reads SETTINGS from DB)
 ```
 
+Orchestration lives in **`pipeline.py`** (`processar_edicao` / `executar_ciclo`). Both `main.py` and `webapp.py` call it — do not reimplement download→OCR→detect→notify elsewhere.
+
 ## Entrypoints
 
 | File | Purpose |
 |------|---------|
 | `main.py` | CLI scheduler / one-shot runner. Run with `--once`, `--force-rescan`, `--process-all`, `--notify-test`, `--force-ocr`, `--full-structured-ocr` |
+| `pipeline.py` | Shared orchestrator used by CLI and webapp |
 | `webapp.py` | FastAPI dashboard (Jinja2 templates). Port 8000 internal, 8001 external via docker-compose |
 | `run_interface.py` | Dev launcher for webapp on port 8001 with hot-reload. Uses a filtered logging formatter ignoring noise like `/api/atividade` |
 | `telegram_bot.py` | Standalone interactive Telegram bot (not the notifier — this is a separate interactive session) |
@@ -44,7 +47,7 @@ python run_interface.py
 python telegram_bot.py
 ```
 
-Linter/formatter config now in `pyproject.toml` (ruff + pytest config). Use `ruff check .` and `ruff format .`. No pre-commit hooks yet.
+Tooling: `pyproject.toml` (project metadata + pytest + ruff). Use `ruff check .` and `ruff format .`. No pre-commit hooks.
 
 ## Architecture notes
 
@@ -101,16 +104,18 @@ Webhooks are stored in the `webhooks` DB table (configurable via `/admin` UI). D
 ### Database (database.py)
 
 - SQLite with **WAL mode** (`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;`).
-- Tables: `edicoes`, `mencoes`, `publicacoes`, `jobs`, `notificacoes`, `webhooks`, `settings`, `schema_migrations`.
-- Versioned migrations in `_MIGRATIONS` list (5 migrations so far).
+- Tables: `edicoes`, `mencoes`, `publicacoes`, `jobs`, `notificacoes`, `webhooks`, `settings`, `schema_migrations`, `deteccao_metricas`.
+- Versioned migrations in `_MIGRATIONS`. On init, already-present columns are **synced** into `schema_migrations` (idempotent for older DBs).
 - The `settings` table doubles as runtime config storage (overrides `.env` values for AI key, SMTP, webhooks, terms).
 
 ### Web interface (webapp.py)
 
 - FastAPI with Jinja2 templates (`templates/`) and static files (`static/`).
-- HTTP Basic Auth (optional) — enabled when `WEBAPP_USER` and `WEBAPP_PASSWORD` are set. Skips auth for `/static/` paths.
+- HTTP Basic Auth (optional in development) — enabled when `WEBAPP_USER` and `WEBAPP_PASSWORD` are set. Skips auth for `/static/` paths.
+- With `APP_ENV=production` or `REQUIRE_WEBAPP_AUTH=true`, startup **fails** if credentials are missing.
 - Server-Sent Events at `/api/eventos` for real-time dashboard refresh.
 - Admin page at `/admin` for managing AI settings, SMTP, webhooks, detection terms.
+- Dashboard shows quality metrics from `deteccao_metricas` (IA retention, neighbor discards, weak OCR pages).
 - On startup, reprocesses any editions with stuck "rodando" jobs (from previous crash).
 
 ### Scheduler
@@ -136,6 +141,8 @@ Everything comes from `.env` via `config.py` → `Settings` frozen dataclass. Ke
 | `OPENCODE_MODEL` | `deepseek-v4-flash` | |
 | `AI_REFINE_PUBLICATIONS` | `true` | Toggle AI post-processing |
 | `WEBAPP_USER` / `WEBAPP_PASSWORD` | `""` | HTTP Basic Auth for web |
+| `APP_ENV` | `development` | `production` forces web auth |
+| `REQUIRE_WEBAPP_AUTH` | `false` | Fail startup without web credentials |
 | `POPPLER_PATH` / `TESSERACT_PATH` | `""` | Required on Windows |
 | `MAX_EDICOES_POR_CICLO` | `10` | Limit first-run batch size |
 | `NOTIFY_EMAIL_ALWAYS` | `false` | Send email even if Telegram succeeds |
@@ -143,7 +150,7 @@ Everything comes from `.env` via `config.py` → `Settings` frozen dataclass. Ke
 ## Docker
 
 - `Dockerfile`: Python 3.11-bookworm with poppler-utils and tesseract-ocr-por.
-- `docker-compose.yml`: Mounts the project at `/workspace`, maps 8001:8000, includes Traefik labels for production.
+- `docker-compose.yml`: Mounts the project at `/workspace`, maps 8001:8000, sets `APP_ENV=production` + `REQUIRE_WEBAPP_AUTH=true`, includes Traefik labels.
 - GitHub Actions: push to `main` triggers a Docker Hub build/push to `aajunior43/bot-buscador-de-atos:latest`.
 
 ## Utility scripts

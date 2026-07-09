@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from config import SETTINGS, MUNICIPIOS_VIZINHOS
 from ocr.models import PageText, TextBlock
-from ai_processor import refinar_publicacoes
+from ai_processor import normalizar_tipo_ato, refinar_publicacoes
 
 
 logger = logging.getLogger(__name__)
@@ -100,6 +100,30 @@ SINAIS_OFICIAIS = [
 
 
 @dataclass(frozen=True)
+class DetectionMetrics:
+    """Métricas de qualidade de uma execução de detecção."""
+
+    publicacoes_brutas: int = 0
+    publicacoes_finais: int = 0
+    descartes_ia: int = 0
+    descartes_vizinho: int = 0
+    paginas_total: int = 0
+    paginas_ocr_fraco: int = 0
+    mencoes: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "publicacoes_brutas": self.publicacoes_brutas,
+            "publicacoes_finais": self.publicacoes_finais,
+            "descartes_ia": self.descartes_ia,
+            "descartes_vizinho": self.descartes_vizinho,
+            "paginas_total": self.paginas_total,
+            "paginas_ocr_fraco": self.paginas_ocr_fraco,
+            "mencoes": self.mencoes,
+        }
+
+
+@dataclass(frozen=True)
 class DetectionResult:
     encontrado: bool
     edicao_id: int
@@ -109,6 +133,7 @@ class DetectionResult:
     termos_encontrados: list[str]
     mencoes_db: list[dict]
     publicacoes: list[dict]
+    metricas: DetectionMetrics | None = None
 
 
 def _sem_acentos(texto: str) -> str:
@@ -618,13 +643,24 @@ def _publicacao_do_segmento(segmento: TextBlock, termos: set[str]) -> dict | Non
         "bloco": segmento.bloco,
         "categoria": categoria,
         "orgao": orgao,
-        "tipo": tipo,
+        "tipo": normalizar_tipo_ato(tipo),
         "numero": numero,
         "data_documento": _extrair_data(segmento.texto),
         "assunto": assunto,
         "valor": _extrair_valor(segmento.texto),
         "trecho": trecho[:2000],
     }
+
+
+def _pagina_ocr_fraco(pagina: PageText) -> bool:
+    """Heurística: página com pouco texto ou extraída só via OCR visual."""
+    texto = (pagina.texto or "").strip()
+    metodo = (pagina.metodo or "").casefold()
+    if len(texto) < SETTINGS.min_text_chars_per_page:
+        return True
+    if "ocr" in metodo and "pdfplumber" not in metodo:
+        return True
+    return False
 
 
 def detectar(
@@ -642,6 +678,7 @@ def detectar(
     paginas_com_mencao: set[int] = set()
     mencoes_db: list[dict] = []
     publicacoes: list[dict] = []
+    descartes_vizinho = 0
 
     termos = _termos()
     for pagina in paginas:
@@ -703,14 +740,37 @@ def detectar(
                     {"pagina": pagina.pagina, "trecho": trecho, "termo": f"CEP {cep}"}
                 )
 
+            if _orgao_de_outro_municipio(segmento.texto):
+                # Conta só se o segmento teria sido candidato de publicação oficial
+                if _categoria(segmento.texto) == "publicacao_oficial" or termos_segmento:
+                    descartes_vizinho += 1
+                continue
+
             publicacao = _publicacao_do_segmento(segmento, termos_segmento)
             if publicacao:
                 publicacoes.append(publicacao)
 
+    publicacoes_brutas = len(publicacoes)
+    descartes_ia = 0
     if publicacoes:
         logger.info("Chamando IA para refinar %s publicacoes...", len(publicacoes))
-        publicacoes = refinar_publicacoes(publicacoes)
-        logger.info("IA concluida. Publicacoes refinadas: %s", sum(1 for p in publicacoes if p.get("resumo_ia")))
+        publicacoes, stats_ia = refinar_publicacoes(publicacoes)
+        descartes_ia = int(stats_ia.get("descartes_ia", 0))
+        descartes_vizinho += int(stats_ia.get("descartes_vizinho", 0))
+        logger.info(
+            "IA concluida. Publicacoes refinadas: %s",
+            sum(1 for p in publicacoes if p.get("resumo_ia")),
+        )
+
+    metricas = DetectionMetrics(
+        publicacoes_brutas=publicacoes_brutas,
+        publicacoes_finais=len(publicacoes),
+        descartes_ia=descartes_ia,
+        descartes_vizinho=descartes_vizinho,
+        paginas_total=len(paginas),
+        paginas_ocr_fraco=sum(1 for p in paginas if _pagina_ocr_fraco(p)),
+        mencoes=len(mencoes_db),
+    )
 
     return DetectionResult(
         encontrado=bool(trechos or publicacoes),
@@ -721,4 +781,5 @@ def detectar(
         termos_encontrados=sorted(termos_encontrados),
         mencoes_db=mencoes_db,
         publicacoes=publicacoes,
+        metricas=metricas,
     )

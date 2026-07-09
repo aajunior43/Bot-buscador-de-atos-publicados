@@ -247,14 +247,93 @@ def _normalizar_orgao_ia(orgao: str | None) -> str | None:
     return o or None
 
 
-def refinar_publicacoes(publicacoes: list[dict]) -> list[dict]:
+# Mapeamento de variantes de tipo → rótulo canônico (ordem: mais específico primeiro).
+_TIPO_CANONICO: list[tuple[str, str]] = [
+    ("termo de homologacao e adjudicacao", "Homologação/Adjudicação"),
+    ("homologacao e adjudicacao", "Homologação/Adjudicação"),
+    ("termo de homologacao", "Homologação/Adjudicação"),
+    ("homologacao", "Homologação/Adjudicação"),
+    ("adjudicacao", "Homologação/Adjudicação"),
+    ("extrato de termo de aditivo", "Termo Aditivo"),
+    ("extrato de termo aditivo", "Termo Aditivo"),
+    ("termo de aditivo", "Termo Aditivo"),
+    ("termo aditivo", "Termo Aditivo"),
+    ("extrato de termo de rescisao", "Extrato de Rescisão"),
+    ("extrato de contrato", "Extrato de Contrato"),
+    ("aviso de licitacao", "Aviso de Licitação"),
+    ("chamamento publico", "Chamamento Público"),
+    ("concorrencia eletronica", "Concorrência"),
+    ("concorrencia", "Concorrência"),
+    ("dispensa de licitacao", "Dispensa"),
+    ("dispensa eletronica", "Dispensa"),
+    ("dispensa", "Dispensa"),
+    ("inexigibilidade", "Inexigibilidade"),
+    ("relatorio de gestao fiscal", "RGF"),
+    ("demonstrativo", "Demonstrativo"),
+    ("rreo", "RREO"),
+    ("rgf", "RGF"),
+    ("portaria", "Portaria"),
+    ("decreto", "Decreto"),
+    ("edital", "Edital"),
+    ("resolucao", "Resolução"),
+    ("notificacao", "Notificação"),
+    ("errata", "Errata"),
+    ("contrato", "Contrato"),
+    ("lei", "Lei"),
+    ("ato administrativo", "Ato"),
+    # "ato" isolado só se a string inteira for curta (evita capturar lixo OCR)
+]
+
+
+def _tipo_e_ato_generico(chave: str) -> bool:
+    return chave in {"ato", "ato administrativo"} or chave.startswith("ato ")
+
+
+def normalizar_tipo_ato(tipo: str | None) -> str | None:
+    """Padroniza rótulos de tipo de ato (IA e heurísticas)."""
+    if not tipo:
+        return None
+    bruto = " ".join(str(tipo).split()).strip()
+    if not bruto:
+        return None
+    chave = _sem_acentos(bruto).casefold()
+    for padrao, canonico in _TIPO_CANONICO:
+        if chave == padrao or chave.startswith(padrao + " ") or padrao + " " in chave + " ":
+            # Exige que o padrão apareça como token inicial ou frase reconhecida
+            if padrao in chave:
+                return canonico
+    if _tipo_e_ato_generico(chave):
+        return "Ato"
+    # Title-case genérico para tipos desconhecidos curtos
+    if len(bruto) <= 40:
+        return bruto.title()
+    return bruto[:60]
+
+
+def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, int]]:
+    """Refina publicações via IA.
+
+    Returns:
+        (lista mantida, estatísticas de descarte).
+        stats: descartes_ia, descartes_vizinho
+    """
+    stats: dict[str, int] = {"descartes_ia": 0, "descartes_vizinho": 0}
     key = _api_key()
     if not key or not SETTINGS.ai_refine_publications:
-        logger.info("IA desativada: key=%s, refine=%s", bool(key), SETTINGS.ai_refine_publications)
-        return publicacoes
+        logger.info(
+            "IA desativada: key=%s, refine=%s",
+            bool(key),
+            SETTINGS.ai_refine_publications,
+        )
+        return publicacoes, stats
 
-    logger.info("Iniciando refinamento IA de %s publicacoes (model=%s, max_tokens=%s, timeout=%ss)",
-                len(publicacoes), SETTINGS.opencode_model, SETTINGS.ai_max_tokens, SETTINGS.ai_timeout_seconds)
+    logger.info(
+        "Iniciando refinamento IA de %s publicacoes (model=%s, max_tokens=%s, timeout=%ss)",
+        len(publicacoes),
+        SETTINGS.opencode_model,
+        SETTINGS.ai_max_tokens,
+        SETTINGS.ai_timeout_seconds,
+    )
     refinadas: list[dict | None] = [None] * len(publicacoes)
     timeout = max(10, SETTINGS.ai_timeout_seconds)
     workers = min(4, len(publicacoes))
@@ -271,11 +350,16 @@ def refinar_publicacoes(publicacoes: list[dict]) -> list[dict]:
             if ia:
                 # Se a IA identificou explicitamente que NÃO pertence a Inajá, descarta
                 if ia.get("pertence_a_inaja") is False:
-                    logger.info("IA detectou publicação pertencente a outro município. Descartando.")
+                    logger.info(
+                        "IA detectou publicação pertencente a outro município. Descartando."
+                    )
+                    stats["descartes_ia"] += 1
+                    stats["descartes_vizinho"] += 1
                     refinadas[i] = None
                     continue
 
                 if ia.get("tem_mencao_inaja") is False:
+                    stats["descartes_ia"] += 1
                     refinadas[i] = None
                     continue
 
@@ -283,13 +367,24 @@ def refinar_publicacoes(publicacoes: list[dict]) -> list[dict]:
                 orgao_ia = ia.get("orgao")
                 if orgao_ia:
                     orgao_clean = _sem_acentos(orgao_ia).casefold()
-                    # Cidades vizinhas/da região e palavras-chave de órgãos
-                    palavras_orgao = ["municipio de", "prefeitura de", "prefeitura municipal de", "camara de", "camara municipal de"]
-                    
+                    palavras_orgao = [
+                        "municipio de",
+                        "prefeitura de",
+                        "prefeitura municipal de",
+                        "camara de",
+                        "camara municipal de",
+                    ]
+
                     if "inaja" not in orgao_clean:
-                        # Se contiver o nome de outra cidade vizinha, ou for órgão de outra cidade
-                        if any(m in orgao_clean for m in MUNICIPIOS_VIZINHOS) or any(p in orgao_clean for p in palavras_orgao):
-                            logger.info("Filtro programático descartou órgão de outro município: %s", orgao_ia)
+                        if any(m in orgao_clean for m in MUNICIPIOS_VIZINHOS) or any(
+                            p in orgao_clean for p in palavras_orgao
+                        ):
+                            logger.info(
+                                "Filtro programático descartou órgão de outro município: %s",
+                                orgao_ia,
+                            )
+                            stats["descartes_ia"] += 1
+                            stats["descartes_vizinho"] += 1
                             refinadas[i] = None
                             continue
 
@@ -298,36 +393,54 @@ def refinar_publicacoes(publicacoes: list[dict]) -> list[dict]:
                 pub["resumo_ia"] = ia.get("resumo")
                 pub["categoria_ia"] = ia.get("categoria") or pub.get("categoria")
                 pub["orgao"] = _normalizar_orgao_ia(ia.get("orgao")) or pub.get("orgao")
-                pub["tipo"] = ia.get("tipo") or pub.get("tipo")
+                pub["tipo"] = normalizar_tipo_ato(
+                    ia.get("tipo") or pub.get("tipo")
+                )
                 pub["numero"] = ia.get("numero") or pub.get("numero")
-                pub["data_documento"] = _normalizar_data_ia(ia.get("data_documento")) or pub.get("data_documento")
+                pub["data_documento"] = _normalizar_data_ia(
+                    ia.get("data_documento")
+                ) or pub.get("data_documento")
                 pub["assunto"] = ia.get("assunto") or pub.get("assunto")
                 valor_extraido = _normalizar_valor_ia(ia.get("valor"))
-                # Sanity check: se o valor extraído não aparece no resumo nem no
-                # trecho OCR, mas o resumo menciona um "R$ X" mais completo,
-                #confiar no resumo (corrige casos em que a IA extrai parte errada).
                 if valor_extraido:
-                    valor_norm = _sem_acentos(valor_extraido).casefold().replace(" ", "").replace("r$", "")
+                    valor_norm = (
+                        _sem_acentos(valor_extraido)
+                        .casefold()
+                        .replace(" ", "")
+                        .replace("r$", "")
+                    )
                     trecho_norm = _sem_acentos(pub.get("trecho", "")).casefold()
                     resumo_norm = _sem_acentos(ia.get("resumo", "") or "").casefold()
-                    no_texto = valor_norm in trecho_norm.replace(" ", "") or valor_norm in resumo_norm.replace(" ", "")
+                    no_texto = (
+                        valor_norm in trecho_norm.replace(" ", "")
+                        or valor_norm in resumo_norm.replace(" ", "")
+                    )
                     if not no_texto:
-                        # Valor suspicious — procurar valor R$ X.XXX,XX no resumo
-                        match_resumo = re.search(r"R\$\s*[\d.,]+", ia.get("resumo", "") or "")
+                        match_resumo = re.search(
+                            r"R\$\s*[\d.,]+", ia.get("resumo", "") or ""
+                        )
                         if match_resumo:
                             valor_extraido = _normalizar_valor_ia(match_resumo.group(0))
-                            logger.info("Valor corrigido via sanity check: %r -> %r", ia.get("valor"), valor_extraido)
+                            logger.info(
+                                "Valor corrigido via sanity check: %r -> %r",
+                                ia.get("valor"),
+                                valor_extraido,
+                            )
                 pub["valor"] = valor_extraido or pub.get("valor")
-                # Tags opcionais (podem não existir no schema antigo, mas são úteis)
                 tags = ia.get("tags")
                 if isinstance(tags, list) and tags:
                     pub["tags"] = ", ".join(str(t) for t in tags[:3])
             refinadas[i] = pub
 
     resultado_final = [r for r in refinadas if r is not None]
-    logger.info("IA refinou %s de %s publicações (mantidas: %s)",
-                sum(1 for r in resultado_final if r.get("resumo_ia")), len(publicacoes), len(resultado_final))
-    return resultado_final
+    logger.info(
+        "IA refinou %s de %s publicações (mantidas: %s, descartes_ia=%s)",
+        sum(1 for r in resultado_final if r.get("resumo_ia")),
+        len(publicacoes),
+        len(resultado_final),
+        stats["descartes_ia"],
+    )
+    return resultado_final, stats
 
 
 def retry_pending_ia() -> int:
@@ -356,7 +469,7 @@ def retry_pending_ia() -> int:
     total_atualizadas = 0
     for edicao_id, pubs in por_edicao.items():
         try:
-            refinadas = refinar_publicacoes(pubs)
+            refinadas, _stats = refinar_publicacoes(pubs)
             for pub in refinadas:
                 if pub.get("resumo_ia") or pub.get("tipo"):
                     db.update_publicacao_ia(pub)

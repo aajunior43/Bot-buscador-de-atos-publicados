@@ -257,6 +257,13 @@ def notificar(resultado: DetectionResult, edicao: Edicao) -> None:
         except Exception as exc:
             erro_str = str(exc)
             logger.error("Telegram falhou após 2 tentativas; tentando fallback.")
+    elif SETTINGS.telegram_bot_token and not SETTINGS.telegram_chat_id:
+        logger.warning(
+            "TELEGRAM_BOT_TOKEN definido, mas TELEGRAM_CHAT_ID está vazio — "
+            "alertas irão para e-mail/arquivo. Configure o chat.id no .env."
+        )
+    elif not SETTINGS.telegram_bot_token:
+        logger.debug("Telegram não configurado (sem TELEGRAM_BOT_TOKEN).")
 
     # 2. E-mail: como fallback OU como cópia simultânea se notify_email_always=True
     assunto = f"[Monitor Inajá] {edicao.titulo or 'Nova publicação detectada'}"

@@ -27,18 +27,34 @@ from starlette.requests import Request
 
 import database
 from config import SETTINGS
-from detector import detectar
-from downloader import baixar_edicao
 from exporter import exportar_csv, exportar_json
-from ocr import extrair_texto_rapido_com_estruturado_candidato
-from scraper import Edicao, coletar_edicoes
+from pipeline import processar_edicao_por_id
+from scraper import coletar_edicoes
 
 
 BASE_DIR = Path(__file__).resolve().parent
 logger = logging.getLogger(__name__)
 
+
+def _auth_obrigatoria() -> bool:
+    return bool(SETTINGS.require_webapp_auth or SETTINGS.app_env == "production")
+
+
+def _validar_auth_startup() -> None:
+    """Em produção / com REQUIRE_WEBAPP_AUTH, exige credenciais antes de servir."""
+    tem_creds = bool(SETTINGS.webapp_user and SETTINGS.webapp_password)
+    if _auth_obrigatoria() and not tem_creds:
+        raise RuntimeError(
+            "Autenticação da interface web é obrigatória "
+            f"(APP_ENV={SETTINGS.app_env!r}, REQUIRE_WEBAPP_AUTH={SETTINGS.require_webapp_auth}). "
+            "Defina WEBAPP_USER e WEBAPP_PASSWORD no .env, ou use APP_ENV=development "
+            "apenas em ambientes locais."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _validar_auth_startup()
     database.init_db()
     resume_ids = database.pop_interrupted_edicao_ids()
     if resume_ids:
@@ -65,10 +81,15 @@ from auth_middleware import BasicAuthMiddleware
 app.add_middleware(BasicAuthMiddleware)
 if SETTINGS.webapp_user and SETTINGS.webapp_password:
     logger.info("Autenticação da interface web ATIVADA (usuário: %s).", SETTINGS.webapp_user)
+elif _auth_obrigatoria():
+    logger.error(
+        "Auth obrigatória configurada, mas credenciais ausentes — o startup deve falhar."
+    )
 else:
     logger.warning(
         "Autenticação da interface web DESATIVADA — defina WEBAPP_USER e "
-        "WEBAPP_PASSWORD no .env para proteger /admin e as rotas de ação."
+        "WEBAPP_PASSWORD no .env (ou APP_ENV=production / REQUIRE_WEBAPP_AUTH=true) "
+        "para proteger /admin e as rotas de ação."
     )
 
 _detector_lock = threading.Lock()
@@ -185,103 +206,19 @@ def _start_scheduler() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Análise de edição
+# Análise de edição (delega ao pipeline unificado)
 # ---------------------------------------------------------------------------
 
 def _analisar_edicao_internal(edicao_id: int) -> None:
     """Corpo da análise de uma edição sem gerenciamento de lock."""
-    with _conn() as conn:
-        row = _row_or_404(conn, "SELECT * FROM edicoes WHERE id = ?", (edicao_id,))
-        edicao = Edicao(
-            url=row["url"],
-            titulo=row["titulo"] or f"Edição {row['id']}",
-            data_publicacao=row["data_publicacao"],
-        )
-
-    download_job = database.start_job(
-        "baixando PDF",
-        titulo=edicao.titulo,
-        edicao_id=edicao_id,
-        mensagem=edicao.url,
-        progress_step="download",
-        progress_current=0,
-        progress_total=100,
+    # force_ocr + fast_ocr = OCR rápido + estruturado em páginas candidatas
+    # (mesmo comportamento histórico da webapp). Progresso detalhado fica no pipeline.
+    processar_edicao_por_id(
+        edicao_id,
+        force_ocr=True,
+        fast_ocr=True,
+        notificar_se_encontrado=True,
     )
-    # Simple progress updates for download phase (baixar_edicao doesn't expose callback yet)
-    def dl_progress(p):
-        if isinstance(p, dict):
-            database.update_job(download_job, "rodando", mensagem=p.get("msg", "Baixando..."), progress_current=p.get("current"), progress_total=p.get("total"), progress_step=p.get("step", "download"))
-        else:
-            database.update_job(download_job, "rodando", mensagem=str(p))
-    download = baixar_edicao(edicao, on_progress=dl_progress)
-    database.update_job(
-        download_job,
-        "concluido",
-        mensagem=f"PDF salvo em {download.caminho}",
-        edicao_id=download.edicao_id,
-        progress_step="download",
-        progress_current=100,
-        progress_total=100,
-    )
-
-    ocr_job = database.start_job(
-        "rodando OCR",
-        titulo=edicao.titulo,
-        edicao_id=download.edicao_id,
-        mensagem="Iniciando OCR rápido + estruturado...",
-        progress_step="ocr",
-    )
-    def on_progress(msg: str | dict):
-        """Support both legacy string and structured dict from OCR."""
-        if isinstance(msg, dict):
-            pc = msg.get("current")
-            pt = msg.get("total")
-            step = msg.get("step", "ocr")
-            raw_msg = msg.get("msg", str(msg))
-            database.update_job(ocr_job, "rodando", mensagem=raw_msg, progress_current=pc, progress_total=pt, progress_step=step)
-        else:
-            # Parse page progress if present for structured update
-            import re
-            m = re.search(r"Página\s+(\d+)\s*/\s*(\d+)", msg)
-            pc = int(m.group(1)) if m else None
-            pt = int(m.group(2)) if m else None
-            database.update_job(ocr_job, "rodando", mensagem=msg, progress_current=pc, progress_total=pt, progress_step="ocr")
-    ocr = extrair_texto_rapido_com_estruturado_candidato(download.caminho, on_progress=on_progress)
-    ocr_status = "aviso" if ocr.avisos else "concluido"
-    ocr_mensagem = f"{len(ocr.paginas)} página(s), {len(ocr.texto_completo)} caracteres"
-    if ocr.avisos:
-        ocr_mensagem += " | " + "; ".join(ocr.avisos)
-    database.update_job(ocr_job, ocr_status, mensagem=ocr_mensagem, progress_step="ocr")
-
-    detectar_job = database.start_job(
-        "detectando publicações",
-        titulo=edicao.titulo,
-        edicao_id=download.edicao_id,
-        progress_step="detect",
-        progress_current=0,
-        progress_total=100,
-    )
-    database.update_job(detectar_job, "rodando", mensagem="Analisando páginas para menções...", progress_current=30, progress_total=100, progress_step="detect")
-    resultado = detectar(download.edicao_id, edicao.titulo, ocr.paginas)
-    database.update_job(detectar_job, "rodando", mensagem="Processando publicações...", progress_current=70, progress_total=100, progress_step="detect")
-    database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
-    database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
-    database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
-    database.update_ocr(download.edicao_id, ocr.texto_path, resultado.encontrado)
-    database.update_job(
-        detectar_job,
-        "concluido",
-        mensagem=(
-            f"{len(resultado.publicacoes)} publicação(ões), "
-            f"{len(resultado.mencoes_db)} menção(ões)"
-        ),
-        progress_step="detect",
-        progress_current=100,
-        progress_total=100,
-    )
-    if resultado.encontrado:
-        from notifier import notificar
-        notificar(resultado, edicao)
 
 
 def _analisar_edicao(edicao_id: int) -> None:
@@ -349,39 +286,29 @@ def dashboard(
             """
             SELECT
               COUNT(*) AS total_edicoes,
-              SUM(CASE WHEN tem_inaja = 1 THEN 1 ELSE 0 END) AS edicoes_inaja,
-              SUM(CASE WHEN ocr_processado = 0 THEN 1 ELSE 0 END) AS pendentes_ocr,
+              COALESCE(SUM(CASE WHEN tem_inaja = 1 THEN 1 ELSE 0 END), 0) AS edicoes_inaja,
+              COALESCE(SUM(CASE WHEN ocr_processado = 0 THEN 1 ELSE 0 END), 0) AS pendentes_ocr,
               (SELECT COUNT(*) FROM publicacoes) AS total_publicacoes,
               (SELECT COUNT(*) FROM mencoes) AS total_mencoes
             FROM edicoes
             """
         ).fetchone()
-        
-        # Consolida valor financeiro total sob monitoramento
-        rows_valores = conn.execute("SELECT valor FROM publicacoes WHERE valor IS NOT NULL AND valor != ''").fetchall()
-        total_acumulado = 0.0
-        import re
-        for r in rows_valores:
-            # Extract numeric part more robustly (handles R$ 1.234.567,89 or variants)
-            match = re.search(r"[\d\.,]+", r["valor"] or "")
-            if match:
-                val_str = match.group(0).replace(".", "").replace(",", ".")
-                try:
-                    total_acumulado += float(val_str)
-                except ValueError:
-                    pass
-        
-        # Converte para formato legível (Ex: R$ 12,4M ou R$ 450.230,00)
-        if total_acumulado >= 1_000_000.0:
-            valor_formatado = f"R$ {total_acumulado / 1_000_000.0:.2f}M"
-        elif total_acumulado > 0:
-            valor_formatado = f"R$ {total_acumulado:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        else:
-            valor_formatado = "R$ 0,00"
-            
-        stats = dict(stats_db)
-        stats["total_valor_licitado"] = valor_formatado
 
+        # Valores citados: soma deduplicada (órgão+tipo+número) — indicador, não caixa
+        fin = database.somar_valores_publicacoes(deduplicar=True)
+        valor_formatado = database.formatar_reais(float(fin["total"]))
+
+        stats = {
+            "total_edicoes": int(stats_db["total_edicoes"] or 0),
+            "edicoes_inaja": int(stats_db["edicoes_inaja"] or 0),
+            "pendentes_ocr": int(stats_db["pendentes_ocr"] or 0),
+            "total_publicacoes": int(stats_db["total_publicacoes"] or 0),
+            "total_mencoes": int(stats_db["total_mencoes"] or 0),
+            "total_valor_licitado": valor_formatado,
+            "valor_n_unicos": int(fin["n_unicos"]),
+            "valor_n_brutos": int(fin["n_com_valor"]),
+        }
+        metricas = database.get_metricas_qualidade()
 
         if q.strip():
             edicoes = conn.execute(
@@ -431,6 +358,7 @@ def dashboard(
         "dashboard.html",
         {
             "stats": stats,
+            "metricas": metricas,
             "edicoes": edicoes,
             "publicacoes": publicacoes,
             "atividade": atividade,
@@ -1099,8 +1027,15 @@ def refinar_ia_manual(edicao_id: int, request: Request = None, format: str = Que
     def _refinar():
         from ai_processor import refinar_publicacoes
         pubs = [dict(r) for r in publicacoes_rows]
-        database.update_job(ia_job, "rodando", mensagem="Refinando publicações com IA...", progress_current=10, progress_total=100, progress_step="ia")
-        refinadas = refinar_publicacoes(pubs)
+        database.update_job(
+            ia_job,
+            "rodando",
+            mensagem="Refinando publicações com IA...",
+            progress_current=10,
+            progress_total=100,
+            progress_step="ia",
+        )
+        refinadas, _stats = refinar_publicacoes(pubs)
         database.insert_publicacoes(edicao_id, refinadas)
         if texto_path:
             database.salvar_arquivos_atos_locais(texto_path, refinadas)

@@ -64,6 +64,12 @@ def mock_settings(tmp_path):
     object.__setattr__(settings, "notify_email_always", False)
     object.__setattr__(settings, "webapp_user", "")
     object.__setattr__(settings, "webapp_password", "")
+    object.__setattr__(settings, "require_webapp_auth", False)
+    object.__setattr__(settings, "app_env", "development")
+    object.__setattr__(settings, "opencode_api_url", "https://example.com/v1/chat/completions")
+    object.__setattr__(settings, "poppler_path", "")
+    object.__setattr__(settings, "tesseract_path", "")
+    object.__setattr__(settings, "ocr_max_workers", 1)
     for pasta in (settings.download_dir, settings.alert_dir, settings.log_dir):
         pasta.mkdir(parents=True, exist_ok=True)
 
@@ -73,7 +79,8 @@ def mock_settings(tmp_path):
         importlib.reload(database)
         with patch("database.SETTINGS", settings), \
              patch("detector.SETTINGS", settings), \
-             patch("webapp.SETTINGS", settings, create=True):
+             patch("webapp.SETTINGS", settings, create=True), \
+             patch("pipeline.SETTINGS", settings, create=True):
             yield settings
 
 

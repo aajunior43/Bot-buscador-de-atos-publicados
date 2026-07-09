@@ -105,6 +105,21 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
   aplicado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS deteccao_metricas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  edicao_id INTEGER REFERENCES edicoes(id),
+  publicacoes_brutas INTEGER DEFAULT 0,
+  publicacoes_finais INTEGER DEFAULT 0,
+  descartes_ia INTEGER DEFAULT 0,
+  descartes_vizinho INTEGER DEFAULT 0,
+  paginas_total INTEGER DEFAULT 0,
+  paginas_ocr_fraco INTEGER DEFAULT 0,
+  mencoes INTEGER DEFAULT 0,
+  criado_em TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_deteccao_metricas_edicao ON deteccao_metricas(edicao_id);
 """
 
 
@@ -120,6 +135,16 @@ _MIGRATIONS: list[tuple[int, str]] = [
     (7, "ALTER TABLE jobs ADD COLUMN progress_total INTEGER"),
     (8, "ALTER TABLE jobs ADD COLUMN progress_step TEXT"),
 ]
+
+# Colunas esperadas por migração — usadas para marcar versões já aplicadas
+# em bancos antigos criados antes de schema_migrations existir.
+_MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
+    1: ("publicacoes", "resumo_ia"),
+    2: ("publicacoes", "categoria_ia"),
+    3: ("publicacoes", "texto_corrigido"),
+    4: ("publicacoes", "ia_processado"),
+    5: ("mencoes", "hash_trecho"),
+}
 
 
 @contextmanager
@@ -138,27 +163,71 @@ def connect(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def _colunas_tabela(conn: sqlite3.Connection, tabela: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({tabela})").fetchall()
+    # PRAGMA table_info: (cid, name, type, notnull, dflt_value, pk)
+    return {str(r[1]) for r in rows}
+
+
+def _registrar_migracao(conn: sqlite3.Connection, version: int) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_migrations (version, aplicado_em) VALUES (?, ?)",
+        (version, datetime.now().isoformat(timespec="seconds")),
+    )
+
+
+def _sincronizar_migracoes_ja_aplicadas(conn: sqlite3.Connection) -> None:
+    """Marca em schema_migrations as migrações cujos efeitos já existem no schema.
+
+    Bancos criados antes do controle de versão ficavam com schema_migrations
+    vazio mesmo com colunas (resumo_ia, etc.) já presentes.
+    """
+    for version, (tabela, coluna) in _MIGRATION_MARKERS.items():
+        ja = conn.execute(
+            "SELECT 1 FROM schema_migrations WHERE version = ?", (version,)
+        ).fetchone()
+        if ja:
+            continue
+        if coluna in _colunas_tabela(conn, tabela):
+            _registrar_migracao(conn, version)
+            logger.info(
+                "Migração %s sincronizada (coluna %s.%s já existia)",
+                version,
+                tabela,
+                coluna,
+            )
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
-        # Descobrir a versão atual do schema
-        versao_atual: int = conn.execute(
-            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
-        ).fetchone()[0]
-        # Aplicar apenas migrações com versão superior à atual
-        pendentes = [(v, sql) for v, sql in _MIGRATIONS if v > versao_atual]
-        for version, sql in pendentes:
+        _sincronizar_migracoes_ja_aplicadas(conn)
+
+        aplicados = {
+            int(r[0])
+            for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
+        }
+        for version, sql in _MIGRATIONS:
+            if version in aplicados:
+                continue
             try:
                 conn.execute(sql)
-                conn.execute(
-                    "INSERT INTO schema_migrations (version, aplicado_em) VALUES (?, ?)",
-                    (version, datetime.now().isoformat(timespec="seconds")),
-                )
+                _registrar_migracao(conn, version)
                 logger.info("Migração %s aplicada: %s", version, sql[:60])
             except sqlite3.OperationalError as exc:
-                logger.warning(
-                    "Migração %s ignorada (%s): %s", version, exc, sql[:60]
-                )
+                msg = str(exc).lower()
+                # Coluna/tabela já existe → considera aplicada (idempotente)
+                if "duplicate column" in msg or "already exists" in msg:
+                    _registrar_migracao(conn, version)
+                    logger.info(
+                        "Migração %s já presente no schema, registrada: %s",
+                        version,
+                        exc,
+                    )
+                else:
+                    logger.warning(
+                        "Migração %s falhou (%s): %s", version, exc, sql[:60]
+                    )
 
 
 def pop_interrupted_edicao_ids() -> list[int]:
@@ -759,5 +828,199 @@ def update_publicacao_ia(pub: dict) -> None:
         )
 
 
+def salvar_metricas_deteccao(
+    edicao_id: int,
+    metricas: dict[str, int] | object,
+) -> None:
+    """Persiste métricas de uma execução de detecção (substitui a da edição)."""
+    if hasattr(metricas, "as_dict"):
+        data = metricas.as_dict()  # type: ignore[union-attr]
+    else:
+        data = dict(metricas)  # type: ignore[arg-type]
+    with connect() as conn:
+        conn.execute("DELETE FROM deteccao_metricas WHERE edicao_id = ?", (edicao_id,))
+        conn.execute(
+            """
+            INSERT INTO deteccao_metricas (
+              edicao_id, publicacoes_brutas, publicacoes_finais,
+              descartes_ia, descartes_vizinho, paginas_total,
+              paginas_ocr_fraco, mencoes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                edicao_id,
+                int(data.get("publicacoes_brutas", 0)),
+                int(data.get("publicacoes_finais", 0)),
+                int(data.get("descartes_ia", 0)),
+                int(data.get("descartes_vizinho", 0)),
+                int(data.get("paginas_total", 0)),
+                int(data.get("paginas_ocr_fraco", 0)),
+                int(data.get("mencoes", 0)),
+            ),
+        )
 
 
+def parse_valor_monetario(valor: str | None) -> float | None:
+    """Converte 'R$ 1.234,56' em float. Retorna None se inválido."""
+    if not valor:
+        return None
+    s = (
+        str(valor)
+        .replace("R$", "")
+        .replace("r$", "")
+        .replace(" ", "")
+        .strip()
+    )
+    if not s:
+        return None
+    # Formato BR: 1.234.567,89
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def somar_valores_publicacoes(*, deduplicar: bool = True) -> dict[str, float | int]:
+    """Soma valores citados nas publicações.
+
+    Com ``deduplicar=True`` (padrão), mantém no máximo um valor por chave
+    (órgão + tipo + número) ou, na ausência de número, por (órgão + tipo + valor).
+    Assim aviso de licitação e extrato do mesmo contrato não somam duas vezes
+    o mesmo montante quando compartilham tipo/número normalizados.
+    """
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT orgao, tipo, numero, valor, categoria
+            FROM publicacoes
+            WHERE valor IS NOT NULL AND valor != ''
+            """
+        ).fetchall()
+
+    brutos: list[tuple[str, float]] = []
+    for r in rows:
+        v = parse_valor_monetario(r["valor"])
+        if v is None:
+            continue
+        orgao = (r["orgao"] or "").strip().casefold()
+        tipo = (r["tipo"] or "").strip().casefold()
+        numero = (r["numero"] or "").strip().casefold()
+        if numero:
+            chave = f"{orgao}|{tipo}|{numero}"
+        else:
+            # Sem número: dedupe por valor exato + órgão (matérias/leis repetidas)
+            chave = f"{orgao}|{tipo}|{v:.2f}"
+        brutos.append((chave, v))
+
+    total_bruto = sum(v for _, v in brutos)
+    if deduplicar:
+        unicos: dict[str, float] = {}
+        for chave, v in brutos:
+            # Mantém o maior valor da chave (em caso de divergência OCR)
+            if chave not in unicos or v > unicos[chave]:
+                unicos[chave] = v
+        total = sum(unicos.values())
+        n_unicos = len(unicos)
+    else:
+        total = total_bruto
+        n_unicos = len(brutos)
+
+    return {
+        "total": total,
+        "total_bruto": total_bruto,
+        "n_com_valor": len(brutos),
+        "n_unicos": n_unicos,
+        "deduplicado": 1 if deduplicar else 0,
+    }
+
+
+def formatar_reais(valor: float) -> str:
+    if valor >= 1_000_000.0:
+        return f"R$ {valor / 1_000_000.0:.2f}M"
+    if valor > 0:
+        return (
+            f"R$ {valor:,.2f}"
+            .replace(",", "X")
+            .replace(".", ",")
+            .replace("X", ".")
+        )
+    return "R$ 0,00"
+
+
+def normalizar_tipos_publicacoes_existentes() -> int:
+    """Reescreve tipos já gravados com o normalizador canônico. Retorna qtd alterada."""
+    from ai_processor import normalizar_tipo_ato
+
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, tipo FROM publicacoes WHERE tipo IS NOT NULL AND tipo != ''"
+        ).fetchall()
+        alterados = 0
+        for row in rows:
+            novo = normalizar_tipo_ato(row["tipo"])
+            if novo and novo != row["tipo"]:
+                conn.execute(
+                    "UPDATE publicacoes SET tipo = ? WHERE id = ?",
+                    (novo, row["id"]),
+                )
+                alterados += 1
+        return alterados
+
+
+def get_metricas_qualidade() -> dict[str, float | int]:
+    """Agrega métricas de detecção e status de IA para o dashboard."""
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT
+              COALESCE(SUM(publicacoes_brutas), 0) AS publicacoes_brutas,
+              COALESCE(SUM(publicacoes_finais), 0) AS publicacoes_finais,
+              COALESCE(SUM(descartes_ia), 0) AS descartes_ia,
+              COALESCE(SUM(descartes_vizinho), 0) AS descartes_vizinho,
+              COALESCE(SUM(paginas_total), 0) AS paginas_total,
+              COALESCE(SUM(paginas_ocr_fraco), 0) AS paginas_ocr_fraco,
+              COALESCE(SUM(mencoes), 0) AS mencoes_metricas,
+              COUNT(*) AS edicoes_com_metricas
+            FROM deteccao_metricas
+            """
+        ).fetchone()
+        ia = conn.execute(
+            """
+            SELECT
+              COUNT(*) AS total,
+              SUM(CASE WHEN ia_processado = 1 THEN 1 ELSE 0 END) AS com_ia,
+              SUM(CASE WHEN ia_processado = 0 OR ia_processado IS NULL THEN 1 ELSE 0 END) AS sem_ia
+            FROM publicacoes
+            """
+        ).fetchone()
+
+    brutas = int(row["publicacoes_brutas"] or 0)
+    finais = int(row["publicacoes_finais"] or 0)
+    paginas = int(row["paginas_total"] or 0)
+    ocr_fraco = int(row["paginas_ocr_fraco"] or 0)
+    total_pub = int(ia["total"] or 0)
+    com_ia = int(ia["com_ia"] or 0)
+
+    taxa_retencao = (finais / brutas * 100.0) if brutas else 0.0
+    taxa_ia = (com_ia / total_pub * 100.0) if total_pub else 0.0
+    taxa_ocr_fraco = (ocr_fraco / paginas * 100.0) if paginas else 0.0
+
+    return {
+        "edicoes_com_metricas": int(row["edicoes_com_metricas"] or 0),
+        "publicacoes_brutas": brutas,
+        "publicacoes_finais": finais,
+        "descartes_ia": int(row["descartes_ia"] or 0),
+        "descartes_vizinho": int(row["descartes_vizinho"] or 0),
+        "paginas_total": paginas,
+        "paginas_ocr_fraco": ocr_fraco,
+        "taxa_retencao_pct": round(taxa_retencao, 1),
+        "taxa_ia_ok_pct": round(taxa_ia, 1),
+        "taxa_ocr_fraco_pct": round(taxa_ocr_fraco, 1),
+        "publicacoes_com_ia": com_ia,
+        "publicacoes_sem_ia": int(ia["sem_ia"] or 0),
+        "publicacoes_total": total_pub,
+    }

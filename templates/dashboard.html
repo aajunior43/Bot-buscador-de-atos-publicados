@@ -58,9 +58,45 @@
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
     </div>
     <strong>{{ stats.total_valor_licitado or "R$ 0,00" }}</strong>
-    <span>Valor Contratado</span>
+    <span>Valores citados (dedup.){% if stats.valor_n_unicos %} · {{ stats.valor_n_unicos }} unív.{% endif %}</span>
   </article>
 </section>
+
+<!-- ── Qualidade da detecção ─────────────────────────────── -->
+{% if metricas and metricas.edicoes_com_metricas %}
+<section class="panel fade-in" style="margin-bottom:1.25rem;">
+  <div class="panel-head">
+    <h2>Qualidade da detecção</h2>
+    <span>{{ metricas.edicoes_com_metricas }} edição(ões) com métricas</span>
+  </div>
+  <div class="stats-grid" style="padding:0.75rem 1rem 1rem;">
+    <article>
+      <strong>{{ metricas.taxa_ia_ok_pct }}%</strong>
+      <span>IA ok ({{ metricas.publicacoes_com_ia }}/{{ metricas.publicacoes_total }})</span>
+    </article>
+    <article>
+      <strong>{{ metricas.taxa_retencao_pct }}%</strong>
+      <span>Retenção pós-filtros ({{ metricas.publicacoes_finais }}/{{ metricas.publicacoes_brutas }})</span>
+    </article>
+    <article>
+      <strong>{{ metricas.descartes_vizinho }}</strong>
+      <span>Descartes município vizinho</span>
+    </article>
+    <article>
+      <strong>{{ metricas.descartes_ia }}</strong>
+      <span>Descartes pela IA</span>
+    </article>
+    <article>
+      <strong>{{ metricas.taxa_ocr_fraco_pct }}%</strong>
+      <span>Páginas OCR fraco ({{ metricas.paginas_ocr_fraco }}/{{ metricas.paginas_total }})</span>
+    </article>
+    <article>
+      <strong>{{ metricas.publicacoes_sem_ia }}</strong>
+      <span>Publicações sem IA</span>
+    </article>
+  </div>
+</section>
+{% endif %}
 
 <!-- ── Gráficos + Atividade ───────────────────────────────── -->
 <div class="dash-mid fade-in">

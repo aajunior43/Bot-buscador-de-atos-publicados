@@ -94,6 +94,11 @@ class Settings:
     # fica aberto e um aviso é emitido no log de inicialização.
     webapp_user: str = os.getenv("WEBAPP_USER", "").strip()
     webapp_password: str = os.getenv("WEBAPP_PASSWORD", "").strip()
+    # Se true, o webapp recusa subir sem WEBAPP_USER e WEBAPP_PASSWORD.
+    # Ative em produção (Docker/Traefik/host público).
+    require_webapp_auth: bool = _bool_env("REQUIRE_WEBAPP_AUTH", False)
+    # production | development — production implica require_webapp_auth.
+    app_env: str = (os.getenv("APP_ENV", "development") or "development").strip().lower()
 
 
     def __post_init__(self) -> None:

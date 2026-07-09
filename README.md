@@ -1,47 +1,63 @@
-# Monitor Automático de Edições - O Regional Jornal
+# Monitor de Atos — O Regional Jornal (Inajá-PR)
 
-Sistema em Python para monitorar edições do jornal, baixar PDFs, extrair texto com `pdfplumber`/OCR e detectar menções a Inajá (PR).
+Sistema em Python que monitora as edições do **O Regional Jornal**, baixa PDFs, extrai texto com `pdfplumber`/OCR, detecta menções e atos oficiais de **Inajá (PR)** e notifica via Telegram, e-mail, webhook ou arquivo.
 
-Além dos trechos, o detector classifica publicações por bloco OCR:
+Além dos trechos, o detector classifica publicações:
 
 - `publicacao_oficial`
 - `materia_jornalistica`
 - `patrocinador_distribuicao`
 
-Para publicações oficiais, tenta extrair órgão, tipo do ato, número, data, assunto e valor.
+Para publicações oficiais, extrai órgão, tipo do ato, número, data, assunto e valor. Opcionalmente a IA (OpenCode/compatível OpenAI) refina e filtra publicações de municípios vizinhos.
+
+## Pipeline
+
+```
+scraper → downloader → ocr_processor → detector → ai_processor → notifier
+                              ↓              ↓
+                         database.py    settings (DB / .env)
+```
+
+Orquestração unificada em `pipeline.py` (CLI e webapp usam o mesmo fluxo).
 
 ## Instalação
 
 ```bash
-cd /root/novo-projeto
+cd Bot-buscador-de-atos-publicados
 python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+# Linux/macOS
 source .venv/bin/activate
+
 pip install -r requirements.txt
+# ou: pip install -e ".[dev]"
 ```
 
-Se usar Playwright como fallback para páginas renderizadas por JavaScript:
+Playwright (fallback se a listagem do site for JS-only):
 
 ```bash
 playwright install chromium
 ```
 
-## Dependências do Sistema
+## Dependências do sistema
 
-Ubuntu/Debian:
+### Ubuntu/Debian
 
 ```bash
 sudo apt update
 sudo apt install -y tesseract-ocr tesseract-ocr-por poppler-utils
 ```
 
-Windows:
+### Windows
 
-1. Instale o Tesseract pelo instalador UB Mannheim.
-2. Marque o pacote de idioma português na instalação.
-3. Instale o Poppler para Windows e adicione a pasta `bin` ao `PATH`.
-4. Reinicie o terminal antes de executar o projeto.
+1. Tesseract (UB Mannheim) com pacote de idioma **português**.
+2. Poppler para Windows (pasta `bin` no PATH ou em `POPPLER_PATH`).
+3. No `.env`: `TESSERACT_PATH` e `POPPLER_PATH` se não estiverem no PATH.
 
-Termux:
+### Termux
 
 ```bash
 pkg update
@@ -50,118 +66,143 @@ pkg install -y python tesseract tesseract-lang-por poppler
 
 ## Configuração
 
-Edite o arquivo `.env`:
-
-```env
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
-CHECK_INTERVAL_HOURS=6
-OCR_LANGUAGE=por
-INAJA_EXTRA_TERMS=João Eder Aguilar,Luana Aiara,Amarildo Peres
-INAJA_CEP_PREFIXES=87670
-INAJA_IGNORE_CONTEXT_TERMS=distribuição avulsa,auto posto,panificadora,farmácia,loterias,patrocinadores,anunciante,anunciantes
-DOWNLOAD_DIR=./edicoes
-LOG_DIR=./logs
-DB_PATH=./jornal_monitor.db
+```bash
+copy .env.example .env   # Windows
+# cp .env.example .env   # Linux/macOS
 ```
 
-## Bot do Telegram
+Principais variáveis (ver `.env.example` completo):
 
-1. Abra o Telegram e converse com `@BotFather`.
-2. Use `/newbot`, escolha nome e usuário do bot.
-3. Copie o token para `TELEGRAM_BOT_TOKEN`.
-4. Envie uma mensagem qualquer para o bot criado.
-5. Acesse `https://api.telegram.org/botSEU_TOKEN/getUpdates`.
-6. Copie o `chat.id` retornado para `TELEGRAM_CHAT_ID`.
+| Variável | Descrição |
+|----------|-----------|
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Alertas Telegram |
+| `SMTP_*` | E-mail de fallback/cópia |
+| `OPENCODE_API_KEY` | Refinamento IA |
+| `AI_REFINE_PUBLICATIONS` | Liga/desliga IA (`true`/`false`) |
+| `WEBAPP_USER` / `WEBAPP_PASSWORD` | HTTP Basic na interface |
+| `APP_ENV` | `development` ou `production` |
+| `REQUIRE_WEBAPP_AUTH` | Exige credenciais mesmo fora de production |
+| `CHECK_INTERVAL_HOURS` | Intervalo do scheduler CLI (padrão 6h) |
+| `TESSERACT_PATH` / `POPPLER_PATH` | Obrigatórios no Windows se fora do PATH |
+| `INAJA_EXTRA_TERMS` | Termos extras de detecção |
+| `INAJA_CEP_PREFIXES` | Prefixo CEP (padrão `87670`) |
 
-Sem token ou chat configurado, os alertas são gravados em `./alertas/YYYY-MM-DD.log`.
+### Segurança da interface web
+
+- Sem `WEBAPP_USER`/`WEBAPP_PASSWORD`: interface aberta + aviso no log (**apenas local**).
+- Com `APP_ENV=production` ou `REQUIRE_WEBAPP_AUTH=true`: o webapp **não sobe** sem credenciais.
+- O `docker-compose.yml` de produção define `APP_ENV=production` e `REQUIRE_WEBAPP_AUTH=true`.
+
+## Bot do Telegram (alertas)
+
+1. Crie o bot com `@BotFather` e copie o token.
+2. Envie uma mensagem ao bot.
+3. `https://api.telegram.org/botSEU_TOKEN/getUpdates` → use o `chat.id`.
+
+Sem token/chat, alertas vão para `./alertas/YYYY-MM-DD.log`.
+
+Há também `telegram_bot.py`: bot **interativo** separado do notificador.
 
 ## Execução
 
-Rodar com scheduler:
+### Um ciclo
+
+```bash
+python main.py --once
+```
+
+### Scheduler contínuo (CLI)
 
 ```bash
 python main.py
 ```
 
-Rodar uma única vez:
-
-```bash
-python main.py --once
-```
-
-Forçar OCR visual em todas as páginas:
+### Flags úteis
 
 ```bash
 python main.py --once --force-ocr
-```
-
-Parâmetros úteis no `.env`:
-
-```env
-OCR_DPI=200
-OCR_TIMEOUT_SECONDS=120
-OCR_LAYOUT_COLUMNS=3
-```
-
-Forçar reprocessamento:
-
-```bash
 python main.py --force-rescan
-```
-
-Processar todos os PDFs locais registrados:
-
-```bash
 python main.py --process-all
-```
-
-Testar notificação:
-
-```bash
 python main.py --notify-test
+python main.py --once --full-structured-ocr
 ```
 
-Rodar interface web:
+### Interface web
 
 ```bash
+# desenvolvimento (porta 8001, hot-reload)
+python run_interface.py
+
+# ou
 uvicorn webapp:app --host 0.0.0.0 --port 8000
 ```
 
-Acesse no host:
+Acesse: **http://localhost:8001** (dev) ou a porta mapeada no Docker.
 
-```text
-http://localhost:8001
-```
+Páginas: dashboard, edições, detecções, status, exportação, **admin** (IA, SMTP, webhooks, termos).
+
+No Windows, `iniciar.bat` sobe web + rastreador + bot Telegram.
 
 ## Docker
 
 ```bash
-docker compose up -d
-docker exec -it novo-projeto-dev bash
+docker compose up -d --build
 ```
+
+- Container: `bot-buscador-de-atos`
+- Porta host: **8001** → 8000 no container
+- Labels Traefik para HTTPS em produção
+- Exige `.env` com `WEBAPP_USER` e `WEBAPP_PASSWORD`
 
 Dentro do contêiner:
 
 ```bash
+docker exec -it bot-buscador-de-atos bash
 cd /workspace
-pip install -r requirements.txt
 python main.py --once
 ```
 
-## Estrutura
+Imagem publicada (CI em push para `main`): `aajunior43/bot-buscador-de-atos:latest`.
 
-```text
-jornal-monitor/
-├── main.py
-├── scraper.py
-├── downloader.py
-├── ocr_processor.py
-├── detector.py
-├── notifier.py
-├── database.py
-├── config.py
-├── .env
-├── requirements.txt
-└── README.md
+## OCR
+
+| Modo | Quando |
+|------|--------|
+| Híbrido (pdfplumber + OCR em páginas fracas) | Padrão do CLI |
+| OCR rápido + estruturado em páginas candidatas | Webapp / `--force-ocr` |
+| OCR estruturado completo | `--full-structured-ocr` |
+
+Cache: `.ocr.json` ao lado do PDF. Para re-OCR, apague o cache ou use `--force-ocr`.
+
+## Testes e qualidade de código
+
+```bash
+pytest tests/ -v
+ruff check .          # se instalou extras dev
 ```
+
+Os testes isolam `SETTINGS` e usam SQLite temporário (`tests/conftest.py`).
+
+## Estrutura principal
+
+| Arquivo | Função |
+|---------|--------|
+| `main.py` | CLI / scheduler |
+| `pipeline.py` | Orquestrador download→OCR→detecção→notify |
+| `webapp.py` | Dashboard FastAPI |
+| `detector.py` | Regras de detecção e classificação |
+| `ocr_processor.py` | Extração de texto / Tesseract |
+| `ai_processor.py` | Refinamento LLM |
+| `database.py` | SQLite, jobs, métricas, migrations |
+| `notifier.py` | Telegram / e-mail / webhook / arquivo |
+| `scraper.py` / `downloader.py` | Listagem e download de edições |
+
+## Métricas de qualidade
+
+Cada detecção grava em `deteccao_metricas` (retenção pós-filtros, descartes de município vizinho/IA, páginas com OCR fraco). O dashboard exibe o agregado quando houver dados.
+
+## Scripts one-off
+
+A pasta `scripts/` contém utilitários pontuais de reprocessamento/análise. Não fazem parte do fluxo normal — use apenas se souber o contexto.
+
+Mais detalhes de arquitetura: `AGENTS.md`.

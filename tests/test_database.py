@@ -21,6 +21,20 @@ class TestInitDb:
         assert "notificacoes" in tabelas
         assert "settings" in tabelas
         assert "webhooks" in tabelas
+        assert "deteccao_metricas" in tabelas
+        assert "schema_migrations" in tabelas
+
+    def test_migracoes_registradas(self, db, mock_settings):
+        import sqlite3
+        import database
+        conn = sqlite3.connect(mock_settings.db_path)
+        versoes = {
+            r[0]
+            for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
+        }
+        conn.close()
+        for version, _ in database._MIGRATIONS:
+            assert version in versoes
 
 
 class TestInsertOrGetEdicao:
@@ -74,6 +88,82 @@ class TestInsertMencoes:
         count = conn.execute("SELECT COUNT(*) FROM mencoes WHERE edicao_id=?", (eid,)).fetchone()[0]
         conn.close()
         assert count == 1  # deduplica pelo hash_trecho
+
+
+class TestSomaValoresDedup:
+    def test_deduplica_mesmo_numero(self, db):
+        import database
+
+        database.init_db()
+        eid = database.insert_or_get_edicao(
+            "https://example.com/val.pdf", "Val", "2026-06-01"
+        )
+        database.insert_publicacoes(
+            eid,
+            [
+                {
+                    "pagina": 1,
+                    "categoria": "publicacao_oficial",
+                    "orgao": "Prefeitura Municipal de Inajá",
+                    "tipo": "Extrato de Contrato",
+                    "numero": "030/2026",
+                    "valor": "R$ 1.000.000,00",
+                    "trecho": "a",
+                },
+                {
+                    "pagina": 2,
+                    "categoria": "publicacao_oficial",
+                    "orgao": "Prefeitura Municipal de Inajá",
+                    "tipo": "Extrato de Contrato",
+                    "numero": "030/2026",
+                    "valor": "R$ 1.000.000,00",
+                    "trecho": "b",
+                },
+                {
+                    "pagina": 3,
+                    "categoria": "publicacao_oficial",
+                    "orgao": "Prefeitura Municipal de Inajá",
+                    "tipo": "Portaria",
+                    "numero": "1/2026",
+                    "valor": "R$ 500,00",
+                    "trecho": "c",
+                },
+            ],
+        )
+        bruto = database.somar_valores_publicacoes(deduplicar=False)
+        dedup = database.somar_valores_publicacoes(deduplicar=True)
+        assert bruto["total"] == 2_000_500.0
+        assert dedup["total"] == 1_000_500.0
+        assert dedup["n_unicos"] == 2
+
+
+class TestMetricasDeteccao:
+    def test_salvar_e_agregar(self, db):
+        import database
+        from detector import DetectionMetrics
+
+        database.init_db()
+        eid = database.insert_or_get_edicao(
+            "https://example.com/met.pdf", "Met", "2026-07-01"
+        )
+        database.salvar_metricas_deteccao(
+            eid,
+            DetectionMetrics(
+                publicacoes_brutas=5,
+                publicacoes_finais=3,
+                descartes_ia=1,
+                descartes_vizinho=1,
+                paginas_total=20,
+                paginas_ocr_fraco=4,
+                mencoes=7,
+            ),
+        )
+        m = database.get_metricas_qualidade()
+        assert m["publicacoes_brutas"] == 5
+        assert m["publicacoes_finais"] == 3
+        assert m["descartes_vizinho"] == 1
+        assert m["taxa_ocr_fraco_pct"] == 20.0
+        assert m["edicoes_com_metricas"] == 1
 
 
 class TestCleanupStuckJobs:

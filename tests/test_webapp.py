@@ -11,6 +11,14 @@ import database
 from webapp import app
 
 
+def test_dashboard_vazio(db):
+    """Banco vazio não pode quebrar o dashboard (SUM NULL do SQLite)."""
+    client = TestClient(app)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Publicações de Inajá" in response.text
+
+
 def test_edicoes_detectadas_vazia(db):
     client = TestClient(app)
     response = client.get("/edicoes-detectadas")
