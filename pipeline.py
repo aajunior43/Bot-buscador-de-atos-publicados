@@ -291,6 +291,7 @@ def _processar_edicao_unlocked(
             n_pubs=len(resultado.publicacoes),
             n_mencoes=len(resultado.mencoes_db),
             t0=t0,
+            publicacoes=list(resultado.publicacoes or []),
         )
         return resultado
     except Exception as exc:
@@ -627,13 +628,17 @@ def processar_pendentes_automatico(
         )
         try:
             st = database.get_status_automacao()
-            console_ui.status_fila(
+            console_ui.cockpit(
                 pendentes=st.get("pendentes_ocr"),
                 fila=st.get("fila_proximo_ciclo"),
                 quarentena=st.get("quarentena_count"),
+                bot_vivo=True,
             )
         except Exception:
-            pass
+            try:
+                console_ui.status_fila()
+            except Exception:
+                pass
         if not lotes:
             break
         # Evita loop infinito se OCR falhar e ocr_processado continuar 0

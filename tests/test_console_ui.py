@@ -32,6 +32,34 @@ def test_session_stats_elapsed():
     assert s.elapsed().endswith("s") or "m" in s.elapsed()
 
 
+def test_session_eta_and_spark():
+    s = console_ui.SessionStats()
+    s.duracoes.extend([60.0, 120.0])
+    s.historico.extend(["I", ".", "x", "I"])
+    assert s.media_seg() == 90.0
+    assert s.eta_fila(2) is not None
+    spark = s.spark()
+    assert "█" in spark and "▒" in spark and "░" in spark
+
+
+def test_fmt_publicacoes_nao_quebra(capsys):
+    console_ui.show_publicacoes(
+        [
+            {
+                "tipo": "Decreto",
+                "numero": "1/2026",
+                "orgao": "Prefeitura",
+                "valor": "R$ 10,00",
+                "resumo_ia": "Teste de ato",
+                "pagina": 3,
+            }
+        ]
+    )
+    out = capsys.readouterr().out
+    assert "Decreto" in out
+    assert "Prefeitura" in out
+
+
 def test_rich_formatter_skips_column_noise():
     fmt = console_ui.RichConsoleFormatter()
     import logging

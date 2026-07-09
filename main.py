@@ -163,10 +163,11 @@ def main() -> None:
         if idle_ticks % 10 == 0:
             try:
                 st = database.get_status_automacao()
-                console_ui.idle_heartbeat(
-                    f"vivo · pendentes={st.get('pendentes_ocr')} "
-                    f"fila={st.get('fila_proximo_ciclo')} "
-                    f"quarentena={st.get('quarentena_count')}"
+                console_ui.cockpit(
+                    pendentes=st.get("pendentes_ocr"),
+                    fila=st.get("fila_proximo_ciclo"),
+                    quarentena=st.get("quarentena_count"),
+                    bot_vivo=bool(st.get("bot_vivo")),
                 )
             except Exception:
                 console_ui.idle_heartbeat()

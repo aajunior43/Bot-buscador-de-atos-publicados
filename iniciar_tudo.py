@@ -137,11 +137,32 @@ def _liberar_porta(port: int) -> None:
 def _pipe_output(proc: subprocess.Popen, label: str) -> None:
     cor = _CORES.get(label, "")
     assert proc.stdout is not None
+    # Destaques extras quando a linha do BOT tem “momento”
+    hi = (
+        ("INAJÁ", "\033[92m"),
+        ("INAJA", "\033[92m"),
+        ("CONCLUÍDA", "\033[92m"),
+        ("CONCLUIDA", "\033[92m"),
+        ("FALHOU", "\033[91m"),
+        ("MARCO", "\033[93m"),
+        ("COCKPIT", "\033[96m"),
+        ("QUARENTENA", "\033[93m"),
+        ("NOVA EDIÇÃO", "\033[94m"),
+        ("NOVA EDICAO", "\033[94m"),
+        ("PRIMEIRO INAJ", "\033[92m"),
+    )
     for line in proc.stdout:
         text = line.rstrip("\r\n")
         if not text:
             continue
-        print(f"{cor}[{label}]{_RESET} {text}", flush=True)
+        accent = cor
+        if label == "BOT":
+            up = text.upper()
+            for key, color in hi:
+                if key in up or key in text:
+                    accent = color
+                    break
+        print(f"{accent}[{label}]{_RESET} {text}", flush=True)
     proc.wait()
 
 
