@@ -116,13 +116,19 @@ def _cores() -> int:
 
 
 def _max_workers_cfg() -> int:
-    """Teto de workers: OCR_MAX_WORKERS ou cores (estável)."""
+    """Teto de workers: OCR_MAX_WORKERS ou cores-1 (nunca satura 100% por padrão).
+
+    Sempre reserva pelo menos 1 núcleo para SO/UI, salvo se o usuário
+    forçar OCR_MAX_WORKERS explicitamente.
+    """
     cfg = int(getattr(SETTINGS, "ocr_max_workers", 0) or 0)
     cores = _cores()
+    # Teto "seguro": nunca todos os cores no automático
+    teto_seguro = max(1, cores - 1)
     if cfg <= 0:
-        # Em máquinas pequenas usa todos; em grandes deixa 1 core para o SO/UI
-        return cores if cores <= 6 else max(2, cores - 1)
-    return max(1, min(cfg, cores * 2))
+        return teto_seguro
+    # Usuário definiu teto manual — respeita, mas avisa no log se = todos os cores
+    return max(1, min(cfg, cores))
 
 
 def _min_workers_cfg() -> int:
@@ -133,15 +139,16 @@ def _min_workers_cfg() -> int:
 
 
 def _target_cpu() -> float:
-    """Alvo 0–1 (ex.: 0.88 = 88%)."""
-    raw = getattr(SETTINGS, "ocr_cpu_target", 0.88)
+    """Alvo 0–1. Padrão ~70% para não ir a 100%."""
+    raw = getattr(SETTINGS, "ocr_cpu_target", 0.70)
     try:
         v = float(raw)
     except (TypeError, ValueError):
-        v = 0.88
+        v = 0.70
     if v > 1.5:
         v = v / 100.0
-    return max(0.50, min(0.95, v))
+    # Cap duro: nunca mira acima de 80% (evita saturar a máquina)
+    return max(0.40, min(0.80, v))
 
 
 def adaptive_enabled() -> bool:
@@ -149,27 +156,21 @@ def adaptive_enabled() -> bool:
 
 
 def _estimativa_por_ociosidade(cpu: float, max_w: int, min_w: int) -> int:
-    """Escolha estável a partir da CPU **antes** do OCR (sistema em repouso relativo).
+    """Escolha **conservadora** a partir da CPU antes do OCR.
 
-    Cada worker Tesseract (OMP=1) ≈ 1 núcleo sob carga.
+    Cada worker Tesseract (OMP=1) ≈ 1 núcleo. Preferimos ficar abaixo do alvo
+    a estourar 100%.
     """
     cores = _cores()
     alvo = _target_cpu()
-    # Fração já ocupada por outros processos
     ocupado = max(0.0, min(1.0, cpu / 100.0))
-    # Núcleos que ainda podemos encher até o alvo
+    # Núcleos livres até o alvo (arredonda para baixo = mais seguro)
     livres_ate_alvo = max(0.0, cores * alvo - cores * ocupado)
-    # Arredonda para cima se houver folga clara
-    w = int(round(livres_ate_alvo))
-    if livres_ate_alvo > 0.4 and w < 1:
+    w = int(livres_ate_alvo)  # floor, não round
+    if w < 1 and livres_ate_alvo >= 0.35:
         w = 1
-    # Preferência: não ficar em metade da máquina se estiver ociosa
-    if cpu < 45 and w < max_w:
-        w = max(w, max_w - (1 if cores >= 6 else 0))
-    if cpu < 30:
-        w = max_w
-    elif cpu < 50:
-        w = max(w, max(min_w, max_w - 1))
+    # Nunca empurra para o teto só porque a máquina está ociosa
+    # (era isso que levava a 100% com 4 workers em 4 cores)
     w = max(min_w, min(max_w, w if w > 0 else min_w))
     return w
 
@@ -227,34 +228,35 @@ def escolher_workers(
         cpu_ref = None
 
     alvo = _target_cpu() * 100.0
-    # Faixa morta larga (histerese) — só mexe fora dela
-    piso = alvo - 18.0   # ex.: 70%
-    teto = min(97.0, alvo + 10.0)  # ex.: 98% só corta se saturar de verdade
+    # Faixa morta: só reage se saturar (>85%) ou ficar muito ocioso
+    piso = max(35.0, alvo - 25.0)
+    teto = min(85.0, alvo + 12.0)  # acima de 85% já reduz
 
     base = _last_workers
 
     if modo == "inicio" or base is None:
         if cpu_ref is None:
-            w = max_w
+            # Sem medição: conservador (metade do teto seguro, min 1)
+            w = max(min_w, min(max_w, (max_w + 1) // 2))
         else:
             w = _estimativa_por_ociosidade(cpu_ref, max_w, min_w)
         _high_streak = 0
         _low_streak = 0
     else:
-        # Ajuste fino: ±1 no máximo, e só com 2 leituras seguidas fora da faixa
+        # Ajuste fino: ±1 no máximo; prioriza REDUZIR se CPU alta
         w = base
         if cpu_ref is None:
             pass
         elif cpu_ref > teto:
             _high_streak += 1
             _low_streak = 0
-            if _high_streak >= 2:
+            if _high_streak >= 1:  # reage rápido a saturação
                 w = max(min_w, base - 1)
                 _high_streak = 0
         elif cpu_ref < piso:
             _low_streak += 1
             _high_streak = 0
-            if _low_streak >= 2:
+            if _low_streak >= 3:  # sobe com muito mais cuidado
                 w = min(max_w, base + 1)
                 _low_streak = 0
         else:
@@ -271,12 +273,10 @@ def escolher_workers(
     if mudou or (forcar_amostra and modo == "inicio"):
         cpu_s = f"{cpu_ref:.0f}%" if cpu_ref is not None else "?"
         logger.info(
-            "OCR workers=%s estável (cpu=%s alvo=%.0f%% faixa=%.0f–%.0f máx=%s) [%s]",
+            "OCR workers=%s (cpu=%s alvo=%.0f%% teto_seguro=%s) [%s]",
             w,
             cpu_s,
             alvo,
-            piso,
-            teto,
             max_w,
             label,
         )
@@ -285,7 +285,7 @@ def escolher_workers(
 
             console_ui.step(
                 "CPU/OCR",
-                f"workers={w} · cpu={cpu_s} · alvo={alvo:.0f}% · estável",
+                f"workers={w}/{max_w} · cpu={cpu_s} · alvo≤{alvo:.0f}% (sem saturar)",
                 ok=True,
             )
         except Exception:

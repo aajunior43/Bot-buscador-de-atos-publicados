@@ -36,21 +36,28 @@ def test_map_parallel_indexed_pool_unico(mock_settings, monkeypatch):
     assert sorted(out.values()) == [10, 20, 30, 40]
 
 
-def test_estimativa_ociosa_usa_quase_todos_cores(mock_settings, monkeypatch):
+def test_estimativa_ociosa_nao_satura_todos_cores(mock_settings, monkeypatch):
     object.__setattr__(mock_settings, "ocr_adaptive_cpu", True)
     object.__setattr__(mock_settings, "ocr_max_workers", 0)
     object.__setattr__(mock_settings, "ocr_min_workers", 1)
-    object.__setattr__(mock_settings, "ocr_cpu_target", 0.88)
+    object.__setattr__(mock_settings, "ocr_cpu_target", 0.70)
     monkeypatch.setattr(cpu_workers, "SETTINGS", mock_settings)
     monkeypatch.setattr(cpu_workers, "_cores", lambda: 4)
     monkeypatch.setattr(cpu_workers, "medir_cpu_media", lambda **kw: 25.0)
     cpu_workers._last_workers = None
     w = cpu_workers.escolher_workers(n_tarefas=20, forcar_amostra=True, modo="inicio")
-    # Com 4 cores e CPU 25%, deve ir para o teto (4)
-    assert w == 4
+    # Com 4 cores: teto seguro = 3; alvo 70% → não usa os 4
+    assert w <= 3
+    assert w >= 1
+
+
+def test_target_cpu_cap_80(mock_settings, monkeypatch):
+    object.__setattr__(mock_settings, "ocr_cpu_target", 0.95)
+    monkeypatch.setattr(cpu_workers, "SETTINGS", mock_settings)
+    assert cpu_workers._target_cpu() <= 0.80
 
 
 def test_target_cpu_aceita_porcentagem(mock_settings, monkeypatch):
-    object.__setattr__(mock_settings, "ocr_cpu_target", 88)
+    object.__setattr__(mock_settings, "ocr_cpu_target", 70)
     monkeypatch.setattr(cpu_workers, "SETTINGS", mock_settings)
-    assert abs(cpu_workers._target_cpu() - 0.88) < 0.001
+    assert abs(cpu_workers._target_cpu() - 0.70) < 0.001
