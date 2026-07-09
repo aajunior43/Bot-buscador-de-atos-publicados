@@ -109,6 +109,28 @@ def _prompt_usuario(trecho: str) -> str:
     return f"Texto OCR:\n\n{trecho}\n\nExtraia os dados no JSON conforme solicitado."
 
 
+_TRIAGE_PROMPT = """Você classifica publicações do jornal O Regional (Norte do Paraná) quanto a Inajá-PR.
+
+Cidades VIZINHAS (NÃO são Inajá): {vizinhos}.
+CNPJs de Inajá: 75.771.400/0001-48 e 76.970.318/0001-67. CEP: 87670-000.
+
+Responda APENAS JSON:
+{{
+  "acao": "manter" | "descartar" | "so_mencao",
+  "pertence_a_inaja": true/false,
+  "motivo": "frase curta"
+}}
+
+- manter: ato/publicação oficial do município de Inajá (prefeitura, câmara, conselhos, fundos).
+- descartar: outro município, publicidade, ou sem relação com Inajá.
+- so_mencao: só cita Inajá em matéria/contexto sem ser o ato do município.
+"""
+
+
+def _prompt_triagem(trecho: str) -> str:
+    return f"Texto OCR (pode ter erros):\n\n{trecho[:2500]}\n\nClassifique no JSON."
+
+
 def _tentar_recuperar_json(content: str) -> dict | None:
     """Tenta recuperar JSON truncado (string não terminada) fechando o objeto."""
     tentativas = [
@@ -153,10 +175,99 @@ def _limpar_trecho_ocr(trecho: str) -> str:
     return texto.strip()[:4000]
 
 
+def _chamar_ia_json(
+    system: str,
+    user: str,
+    *,
+    timeout: int,
+    max_tokens: int | None = None,
+    temperature: float = 0.1,
+) -> dict[str, Any] | None:
+    if _auth_bloqueada:
+        return None
+    content = ""
+    try:
+        resp = requests.post(
+            SETTINGS.opencode_api_url,
+            headers=_headers(),
+            json={
+                "model": SETTINGS.opencode_model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "max_tokens": max_tokens or SETTINGS.ai_max_tokens,
+                "temperature": temperature,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=timeout,
+        )
+        if resp.status_code in (401, 403):
+            try:
+                body = resp.json()
+                msg = (
+                    body.get("error", {}).get("message")
+                    or body.get("message")
+                    or resp.text[:200]
+                )
+            except Exception:
+                msg = resp.text[:200]
+            _marcar_auth_invalida(f"HTTP {resp.status_code}: {msg}")
+            return None
+        resp.raise_for_status()
+        data = resp.json()
+        content = data["choices"][0]["message"].get("content") or ""
+        if not content.strip():
+            return None
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            return _tentar_recuperar_json(content)
+    except requests.RequestException as exc:
+        logger.warning("Erro na requisição ao OpenCode Go: %s", exc)
+        return None
+    except Exception:
+        logger.exception("Falha ao chamar IA")
+        return None
+
+
+def _triar_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
+    """Etapa 1: manter | descartar | so_mencao (barata)."""
+    trecho_limpo = _limpar_trecho_ocr(trecho)
+    return _chamar_ia_json(
+        _TRIAGE_PROMPT.format(
+            vizinhos=", ".join(m.title() for m in MUNICIPIOS_VIZINHOS)
+        ),
+        _prompt_triagem(trecho_limpo),
+        timeout=min(timeout, 45),
+        max_tokens=min(400, SETTINGS.ai_max_tokens),
+        temperature=0.0,
+    )
+
+
 def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
     if _auth_bloqueada:
         return None
     trecho_limpo = _limpar_trecho_ocr(trecho)
+    # Etapa 1 — triagem
+    triagem = _triar_publicacao(trecho_limpo, timeout)
+    if triagem:
+        acao = str(triagem.get("acao") or "").strip().casefold()
+        if acao in {"descartar", "discard", "rejeitar"}:
+            return {
+                "pertence_a_inaja": False,
+                "tem_mencao_inaja": False,
+                "_triagem": triagem,
+            }
+        if acao in {"so_mencao", "so-mencao", "mencao"}:
+            return {
+                "pertence_a_inaja": False,
+                "tem_mencao_inaja": True,
+                "categoria": "materia_jornalistica",
+                "resumo": triagem.get("motivo") or "Apenas menção a Inajá",
+                "_triagem": triagem,
+            }
+        # manter → segue extração completa
     content = ""
     try:
         resp = requests.post(
@@ -414,6 +525,13 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
             ia = future.result()
             pub = dict(publicacoes[i])
             if ia:
+                # Anti-alucinação: campos devem ancorar no trecho OCR
+                try:
+                    from inteligencia import validar_campos_ia
+
+                    ia = validar_campos_ia(pub, ia)
+                except Exception:
+                    logger.debug("validar_campos_ia falhou", exc_info=True)
                 # Se a IA identificou explicitamente que NÃO pertence a Inajá, descarta
                 if ia.get("pertence_a_inaja") is False:
                     logger.info(

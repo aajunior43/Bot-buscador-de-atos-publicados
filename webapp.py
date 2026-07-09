@@ -360,16 +360,18 @@ def dashboard(
     q: str = Query("", description="Busca por título, data, órgão, tipo ou assunto"),
     mes: str = Query("", description="Filtro mês YYYY-MM"),
     tipo: str = Query("", description="Filtro tipo de ato (ex.: Decreto)"),
+    modo: str = Query("", description="semantico = ranking inteligente"),
 ) -> HTMLResponse:
     """Home de leitura: busca + KPIs leigos + lista de atos."""
     termo = f"%{q.strip()}%"
     mes_f = mes.strip()
     tipo_f = tipo.strip()
+    modo_sem = modo.strip().casefold() in {"semantico", "smart", "1", "ia"}
     with _conn() as conn:
         stats = _stats_basicos(conn)
         filtros = []
         params: list[object] = []
-        if q.strip():
+        if q.strip() and not modo_sem:
             filtros.append(
                 "(e.titulo LIKE ? OR e.data_publicacao LIKE ? OR p.orgao LIKE ? "
                 "OR p.tipo LIKE ? OR p.assunto LIKE ? OR p.resumo_ia LIKE ? OR p.numero LIKE ?)"
@@ -389,10 +391,16 @@ def dashboard(
             JOIN edicoes e ON e.id = p.edicao_id
             {where}
             ORDER BY e.data_publicacao DESC, p.id DESC
-            LIMIT 50
+            LIMIT {"400" if modo_sem and q.strip() else "50"}
             """,
             params,
         ).fetchall()
+        if modo_sem and q.strip():
+            from inteligencia import rankear_publicacoes
+
+            publicacoes = rankear_publicacoes(
+                q.strip(), [dict(r) for r in publicacoes], limit=50
+            )
         meses = [
             r[0]
             for r in conn.execute(
@@ -445,9 +453,11 @@ def dashboard(
             "q": q,
             "mes": mes_f[:7] if mes_f else "",
             "tipo": tipo_f,
+            "modo": "semantico" if modo_sem else "",
             "meses": meses,
             "tipos": tipos,
             "saude": saude,
+            "resumo_diario": database.get_resumo_diario(),
         },
     )
 
@@ -458,9 +468,10 @@ def atos_alias(
     q: str = Query("", description="Busca"),
     mes: str = Query("", description="Filtro mês"),
     tipo: str = Query("", description="Filtro tipo"),
+    modo: str = Query("", description="semantico"),
 ) -> HTMLResponse:
     """Alias de leitura para a home de atos."""
-    return dashboard(request, q=q, mes=mes, tipo=tipo)
+    return dashboard(request, q=q, mes=mes, tipo=tipo, modo=modo)
 
 
 @app.get("/operacao", response_class=HTMLResponse)
@@ -471,6 +482,7 @@ def operacao(request: Request) -> HTMLResponse:
         atividade = _atividade_atual(conn)
     metricas = database.get_metricas_qualidade()
     automacao = database.get_status_automacao()
+    resumo = database.get_resumo_diario()
     return templates.TemplateResponse(
         request,
         "operacao.html",
@@ -480,8 +492,33 @@ def operacao(request: Request) -> HTMLResponse:
             "metricas": metricas,
             "saude": _saude_sistema(),
             "automacao": automacao,
+            "resumo_diario": resumo,
         },
     )
+
+
+@app.post("/operacao/resumo-diario")
+def gerar_resumo_diario_agora() -> RedirectResponse:
+    from inteligencia import gerar_resumo_diario_from_db
+
+    database.init_db()
+    gerar_resumo_diario_from_db()
+    return RedirectResponse(url="/operacao", status_code=303)
+
+
+@app.post("/publicacoes/{pub_id}/feedback")
+def feedback_publicacao(
+    pub_id: int,
+    feedback: str = Form(""),
+    next: str = Form("/"),
+) -> RedirectResponse:
+    """Feedback humano: correto | errado (treina confiança futura)."""
+    database.init_db()
+    database.set_feedback_publicacao(pub_id, feedback)
+    dest = next.strip() or "/"
+    if not dest.startswith("/"):
+        dest = "/"
+    return RedirectResponse(url=dest, status_code=303)
 
 
 @app.post("/operacao/quarentena/{edicao_id}/liberar")
@@ -1156,6 +1193,26 @@ def api_atividade() -> dict:
 def api_automacao() -> dict:
     """Última/próxima varredura WEB, ciclo BOT e fila de OCR."""
     return database.get_status_automacao()
+
+
+@app.get("/api/buscar")
+def api_buscar(
+    q: str = Query("", description="Consulta"),
+    limit: int = Query(30, ge=1, le=100),
+) -> list[dict]:
+    """Busca inteligente (ranking por termos) nas publicações."""
+    from inteligencia import rankear_publicacoes
+
+    database.init_db()
+    base = database.buscar_publicacoes_texto(limit=500)
+    if not q.strip():
+        return base[:limit]
+    return rankear_publicacoes(q.strip(), base, limit=limit)
+
+
+@app.get("/api/resumo-diario")
+def api_resumo_diario() -> dict:
+    return database.get_resumo_diario()
 
 
 @app.get("/api/health")

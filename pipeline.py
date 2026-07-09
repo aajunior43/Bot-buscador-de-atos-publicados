@@ -301,6 +301,27 @@ def _processar_edicao_unlocked(
             resultado.encontrado,
             len(resultado.publicacoes),
         )
+        # Score pós-OCR (inteligência de fila / métricas)
+        try:
+            from inteligencia import score_texto_candidatura
+
+            blob = " ".join(
+                (p.texto or "")[:2000] for p in (ocr.paginas or [])[:8]
+            )
+            sr = score_texto_candidatura(blob, titulo=edicao.titulo or "")
+            database.atualizar_score_edicao(
+                download.edicao_id, sr.score, sr.prioridade
+            )
+            logger.info(
+                "Score candidatura id=%s score=%s prio=%s (%s)",
+                download.edicao_id,
+                sr.score,
+                sr.prioridade,
+                ", ".join(sr.motivos[:4]) or "—",
+            )
+        except Exception:
+            logger.debug("score pós-OCR falhou", exc_info=True)
+
         console_ui.edition_end(
             ok=True,
             tem_inaja=bool(resultado.encontrado),
@@ -681,10 +702,16 @@ def executar_ciclo(
     """
     console_ui.ciclo_banner(
         "CICLO BOT",
-        "varredura → novas → fila de pendentes → IA",
+        "varredura → score fila → novas → pendentes → IA → resumo",
     )
     database.init_db()
     database.registrar_heartbeat_bot()
+    try:
+        n_scores = database.recalcular_scores_pendentes(limit=800)
+        if n_scores:
+            logger.info("Scores de candidatura atualizados: %s edições", n_scores)
+    except Exception:
+        logger.debug("recalcular_scores_pendentes falhou", exc_info=True)
     stuck = database.cleanup_stuck_jobs(max_hours=2)
     if stuck:
         logger.warning("Ciclo BOT: %s job(s) travado(s) marcado(s) como erro", stuck)
@@ -782,3 +809,18 @@ def executar_ciclo(
         )
     except Exception:
         pass
+    try:
+        from inteligencia import gerar_resumo_diario_from_db
+
+        r = gerar_resumo_diario_from_db()
+        logger.info("Resumo diário: %s (%s pubs)", r.get("dia"), r.get("n_pubs"))
+        try:
+            console_ui.step(
+                "Resumo diário",
+                f"{r.get('n_pubs', 0)} pub(s) no recorte de hoje",
+                ok=True,
+            )
+        except Exception:
+            pass
+    except Exception:
+        logger.debug("gerar_resumo_diario falhou", exc_info=True)

@@ -2526,6 +2526,37 @@ details[open] summary::before { transform: rotate(90deg); }
   opacity: .8;
   margin-left: .2rem;
 }
+
+.search-smart {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .8rem;
+  color: var(--text-2);
+  white-space: nowrap;
+  user-select: none;
+}
+.search-smart input { accent-color: var(--accent); }
+
+.resumo-diario-panel { margin-bottom: 1.25rem; }
+.resumo-diario-texto {
+  padding: 1rem 1.5rem;
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: .9rem;
+  line-height: 1.5;
+}
+
+.feedback-form .btn-small.is-active-ok {
+  border-color: var(--green);
+  color: var(--green);
+}
+.feedback-form .btn-small.is-active-bad {
+  border-color: var(--red);
+  color: var(--red);
+}
 .mes-select {
   background: var(--bg-3);
   border: 1px solid var(--border-2);

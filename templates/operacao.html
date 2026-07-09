@@ -169,6 +169,31 @@
   {% endif %}
 </section>
 
+{% if resumo_diario and resumo_diario.texto %}
+<section class="panel fade-in">
+  <div class="panel-head">
+    <h2>Resumo diário inteligente</h2>
+    <span>{{ resumo_diario.data or "—" }}</span>
+  </div>
+  <pre class="resumo-diario-texto" style="padding:1rem 1.5rem; margin:0; white-space:pre-wrap; color:var(--text-2); font-family:inherit; font-size:.9rem;">{{ resumo_diario.texto }}</pre>
+  <div class="ops-actions-grid" style="padding-top:0;">
+    <form method="post" action="/operacao/resumo-diario">
+      <button type="submit" class="btn btn-secondary">Atualizar resumo agora</button>
+    </form>
+  </div>
+</section>
+{% else %}
+<section class="panel fade-in">
+  <div class="panel-head"><h2>Resumo diário inteligente</h2></div>
+  <p class="ops-advanced-hint" style="padding:0 1.5rem 1rem;">Ainda não gerado. Rode um ciclo do BOT ou clique em atualizar.</p>
+  <div class="ops-actions-grid">
+    <form method="post" action="/operacao/resumo-diario">
+      <button type="submit" class="btn btn-secondary">Gerar resumo do dia</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
 <section class="ops-actions panel fade-in">
   <div class="panel-head"><h2>Atalhos</h2></div>
   <div class="ops-actions-grid">

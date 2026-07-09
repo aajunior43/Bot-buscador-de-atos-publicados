@@ -141,6 +141,12 @@ _MIGRATIONS: list[tuple[int, str]] = [
     (10, "ALTER TABLE edicoes ADD COLUMN falhas_processamento INTEGER DEFAULT 0"),
     (11, "ALTER TABLE edicoes ADD COLUMN ultima_falha_em TEXT"),
     (12, "ALTER TABLE edicoes ADD COLUMN ultima_falha_msg TEXT"),
+    # Inteligência: score de candidatura e prioridade na fila
+    (13, "ALTER TABLE edicoes ADD COLUMN score_candidatura INTEGER DEFAULT 0"),
+    (14, "ALTER TABLE edicoes ADD COLUMN score_prioridade INTEGER DEFAULT 1"),
+    # Feedback humano nas publicações
+    (15, "ALTER TABLE publicacoes ADD COLUMN feedback TEXT"),
+    (16, "ALTER TABLE publicacoes ADD COLUMN feedback_em TEXT"),
 ]
 
 # Colunas esperadas por migração — usadas para marcar versões já aplicadas
@@ -158,6 +164,10 @@ _MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
     10: ("edicoes", "falhas_processamento"),
     11: ("edicoes", "ultima_falha_em"),
     12: ("edicoes", "ultima_falha_msg"),
+    13: ("edicoes", "score_candidatura"),
+    14: ("edicoes", "score_prioridade"),
+    15: ("publicacoes", "feedback"),
+    16: ("publicacoes", "feedback_em"),
 }
 
 
@@ -892,6 +902,8 @@ def get_pending_edicoes(
                 FROM edicoes
                 {where}
                 ORDER BY
+                  COALESCE(score_prioridade, 1) ASC,
+                  COALESCE(score_candidatura, 0) DESC,
                   CASE WHEN data_publicacao IS NULL OR data_publicacao = '' THEN 1 ELSE 0 END,
                   data_publicacao DESC,
                   id DESC
@@ -900,6 +912,84 @@ def get_pending_edicoes(
                 params,
             )
         )
+
+
+def atualizar_score_edicao(
+    edicao_id: int, score: int, prioridade: int = 1
+) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE edicoes
+            SET score_candidatura = ?, score_prioridade = ?
+            WHERE id = ?
+            """,
+            (int(score), int(prioridade), int(edicao_id)),
+        )
+
+
+def recalcular_scores_pendentes(limit: int = 500) -> int:
+    """Atualiza score/prioridade das pendentes com base no título (barato)."""
+    from inteligencia import score_titulo_edicao
+
+    rows = get_pending_edicoes(process_all=False, limit=limit, incluir_quarentena=True)
+    n = 0
+    for row in rows:
+        sr = score_titulo_edicao(row["titulo"], row["data_publicacao"])
+        atualizar_score_edicao(int(row["id"]), sr.score, sr.prioridade)
+        n += 1
+    return n
+
+
+def set_feedback_publicacao(pub_id: int, feedback: str) -> bool:
+    """feedback: correto | errado | '' (limpa)."""
+    fb = (feedback or "").strip().casefold()
+    if fb not in {"correto", "errado", ""}:
+        return False
+    with connect() as conn:
+        if fb == "":
+            cur = conn.execute(
+                """
+                UPDATE publicacoes
+                SET feedback = NULL, feedback_em = NULL
+                WHERE id = ?
+                """,
+                (pub_id,),
+            )
+        else:
+            cur = conn.execute(
+                """
+                UPDATE publicacoes
+                SET feedback = ?, feedback_em = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (fb, pub_id),
+            )
+        return cur.rowcount > 0
+
+
+def buscar_publicacoes_texto(limit: int = 400) -> list[dict]:
+    """Base para ranking semântico em memória."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao, e.url
+            FROM publicacoes p
+            JOIN edicoes e ON e.id = p.edicao_id
+            ORDER BY e.data_publicacao DESC, p.id DESC
+            LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_resumo_diario() -> dict:
+    return {
+        "data": get_setting("resumo_diario_data", ""),
+        "texto": get_setting("resumo_diario_texto", ""),
+        "json": get_setting("resumo_diario_json", ""),
+    }
 
 
 def reset_processing() -> None:

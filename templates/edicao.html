@@ -71,6 +71,14 @@
         <a href="/edicoes/{{ edicao.id }}/pdf#page={{ item.pagina }}" target="_blank" class="btn btn-secondary">📄 PDF pág. {{ item.pagina }}</a>
         <a href="/edicoes/{{ edicao.id }}/pdf" target="_blank" class="btn btn-secondary">📄 PDF completo</a>
         <button class="btn btn-copy" onclick="copiarPublicacao(this)">📋 Copiar</button>
+        <form method="post" action="/publicacoes/{{ item.id }}/feedback" class="feedback-form" style="display:inline-flex;gap:.35rem;margin:0;">
+          <input type="hidden" name="next" value="/edicoes/{{ edicao.id }}">
+          <button type="submit" name="feedback" value="correto" class="btn btn-secondary btn-small {% if item.feedback == 'correto' %}is-active-ok{% endif %}" title="Marcar como correto">✓ Certo</button>
+          <button type="submit" name="feedback" value="errado" class="btn btn-secondary btn-small {% if item.feedback == 'errado' %}is-active-bad{% endif %}" title="Marcar como errado">✗ Errado</button>
+        </form>
+        {% if item.feedback %}
+        <span class="badge {% if item.feedback == 'correto' %}badge-ia{% else %}badge-pending{% endif %}">feedback: {{ item.feedback }}</span>
+        {% endif %}
       </div>
 
       {% if item.trecho %}

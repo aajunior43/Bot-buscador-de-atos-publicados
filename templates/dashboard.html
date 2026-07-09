@@ -19,11 +19,25 @@
         <option value="{{ m }}" {% if mes == m %}selected{% endif %}>{{ m }}</option>
         {% endfor %}
       </select>
+      <label class="search-smart" title="Ranking inteligente por relevância">
+        <input type="checkbox" name="modo" value="semantico" {% if modo == 'semantico' %}checked{% endif %}>
+        busca smart
+      </label>
       {% if tipo %}<input type="hidden" name="tipo" value="{{ tipo }}">{% endif %}
       <button type="submit">Buscar</button>
     </div>
   </form>
 </section>
+
+{% if resumo_diario and resumo_diario.texto %}
+<section class="panel fade-in resumo-diario-panel">
+  <div class="panel-head">
+    <h2>Resumo diário</h2>
+    <span>{{ resumo_diario.data or "—" }}</span>
+  </div>
+  <pre class="resumo-diario-texto">{{ resumo_diario.texto }}</pre>
+</section>
+{% endif %}
 
 <ul class="health-strip fade-in" aria-label="Saúde do sistema">
   <li class="{% if saude and saude.bot_vivo %}ok{% else %}warn{% endif %}" title="Heartbeat do rastreador (main.py)">
