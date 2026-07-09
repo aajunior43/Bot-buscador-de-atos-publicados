@@ -11,10 +11,34 @@
   <form class="dash-search" method="get" action="/">
     <div class="search-row">
       <input id="q" name="q" value="{{ q }}" placeholder="Buscar por tipo, órgão, número, data…" aria-label="Buscar atos">
+      <select name="mes" aria-label="Filtrar por mês" class="mes-select">
+        <option value="">Todos os meses</option>
+        {% for m in meses or [] %}
+        <option value="{{ m }}" {% if mes == m %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
       <button type="submit">Buscar</button>
     </div>
   </form>
 </section>
+
+<ul class="health-strip fade-in" aria-label="Saúde do sistema">
+  <li class="{% if saude and saude.ai_disponivel %}ok{% else %}warn{% endif %}">
+    IA {% if saude and saude.ai_disponivel %}ok{% elif saude and saude.ai_key %}chave/rede{% else %}off{% endif %}
+  </li>
+  <li class="{% if saude and saude.web_auth %}ok{% else %}warn{% endif %}">
+    Auth {% if saude and saude.web_auth %}on{% else %}off{% endif %}
+  </li>
+  <li class="{% if saude and saude.telegram_ok %}ok{% else %}neutral{% endif %}">
+    Telegram {% if saude and saude.telegram_ok %}alertas{% else %}arquivo{% endif %}
+  </li>
+  {% if saude and saude.so_mencao_pendentes %}
+  <li class="warn">
+    <a href="/revisao/so-mencao">{{ saude.so_mencao_pendentes }} só-menção</a>
+  </li>
+  {% endif %}
+  <li class="neutral"><a href="/operacao">Operação →</a></li>
+</ul>
 
 {% if atividade and atividade.tem_atividade %}
 <p class="ops-banner fade-in">
@@ -32,9 +56,9 @@
     <strong>{{ stats.edicoes_inaja or 0 }}</strong>
     <span>Edições com Inajá</span>
   </article>
-  <article title="Soma deduplicada por órgão+tipo+número — indicador, não contabilidade">
+  <article title="Soma deduplicada (órgão+número), sem matérias jornalísticas — indicador, não contabilidade">
     <strong>{{ stats.total_valor_licitado or "R$ 0,00" }}</strong>
-    <span>Valores citados</span>
+    <span>Valores (atos)</span>
   </article>
   <article>
     <strong>{{ stats.ultima_deteccao or "—" }}</strong>
@@ -44,7 +68,10 @@
 
 <section class="panel fade-in">
   <div class="panel-head">
-    <h2>{% if q %}Resultados da busca{% else %}Atos recentes{% endif %}</h2>
+    <h2>
+      {% if q or mes %}Resultados{% else %}Atos recentes{% endif %}
+      {% if mes %}<small>· {{ mes }}</small>{% endif %}
+    </h2>
     <span>{{ publicacoes|length }} itens</span>
   </div>
   <div class="pub-list">

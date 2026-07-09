@@ -19,6 +19,7 @@ def test_dashboard_vazio(db):
     assert "Atos de Inajá" in response.text
     assert "Leitura" in response.text
     assert "Operação" in response.text
+    assert "health-strip" in response.text or "Auth" in response.text
 
 
 def test_operacao_hub(db):

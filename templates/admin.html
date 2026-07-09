@@ -162,7 +162,17 @@
     </div>
 
     <div class="panel fade-in" style="margin-bottom:1.5rem;">
-      <div class="panel-head"><h2>🧹 Utilitários de Limpeza</h2></div>
+      <div class="panel-head"><h2>Backup do banco</h2></div>
+      <div class="admin-form">
+        <p style="font-size:.85rem; color:var(--text-2); margin-bottom:.75rem;">
+          Cópia segura do SQLite (WAL-aware) em <code>logs/backups/</code>. Também roda no máximo 1× por dia no ciclo do rastreador.
+        </p>
+        <button type="submit" formaction="/admin/backup" class="btn btn-secondary">Criar backup agora</button>
+      </div>
+    </div>
+
+    <div class="panel fade-in" style="margin-bottom:1.5rem;">
+      <div class="panel-head"><h2>Utilitários de limpeza</h2></div>
       <div class="admin-form">
         <p style="font-size:.85rem; color:var(--text-2); margin-bottom:.75rem;">
           Remova as 1.074 edições cadastradas no domínio antigo (<code>hnetsistemas.com.br</code>) que estão com links quebrados e poluem a listagem.

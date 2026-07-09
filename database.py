@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -891,18 +892,25 @@ def parse_valor_monetario(valor: str | None) -> float | None:
         return None
 
 
-def somar_valores_publicacoes(*, deduplicar: bool = True) -> dict[str, float | int]:
+def somar_valores_publicacoes(
+    *,
+    deduplicar: bool = True,
+    excluir_materias: bool = True,
+) -> dict[str, float | int]:
     """Soma valores citados nas publicações.
 
     Com ``deduplicar=True`` (padrão), mantém no máximo um valor por chave
     (órgão + tipo + número) ou, na ausência de número, por (órgão + tipo + valor).
     Assim aviso de licitação e extrato do mesmo contrato não somam duas vezes
     o mesmo montante quando compartilham tipo/número normalizados.
+
+    Com ``excluir_materias=True`` (padrão), ignora categoria materia_jornalistica
+    (valores de reportagem, não de ato formal).
     """
     with connect() as conn:
         rows = conn.execute(
             """
-            SELECT orgao, tipo, numero, valor, categoria
+            SELECT orgao, tipo, numero, valor, categoria, trecho
             FROM publicacoes
             WHERE valor IS NOT NULL AND valor != ''
             """
@@ -910,16 +918,28 @@ def somar_valores_publicacoes(*, deduplicar: bool = True) -> dict[str, float | i
 
     brutos: list[tuple[str, float]] = []
     for r in rows:
+        cat = (r["categoria"] or "").strip().casefold()
+        if excluir_materias and "materia" in cat:
+            continue
         v = parse_valor_monetario(r["valor"])
         if v is None:
             continue
         orgao = (r["orgao"] or "").strip().casefold()
         tipo = (r["tipo"] or "").strip().casefold()
         numero = (r["numero"] or "").strip().casefold()
+        # Preferência: número do ato; senão tenta processo no trecho
+        if not numero and r["trecho"]:
+            m_proc = re.search(
+                r"processo\s*n[º°o.]?\s*(\d{1,6}(?:[./-]\d{1,6})?)",
+                (r["trecho"] or ""),
+                re.I,
+            )
+            if m_proc:
+                numero = f"proc:{m_proc.group(1).casefold()}"
         if numero:
-            chave = f"{orgao}|{tipo}|{numero}"
+            # Mesmo número de ato, tipos diferentes (aviso vs extrato) → uma chave por número+órgão
+            chave = f"{orgao}|{numero}"
         else:
-            # Sem número: dedupe por valor exato + órgão (matérias/leis repetidas)
             chave = f"{orgao}|{tipo}|{v:.2f}"
         brutos.append((chave, v))
 

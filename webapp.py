@@ -332,40 +332,63 @@ def _saude_sistema() -> dict:
 def dashboard(
     request: Request,
     q: str = Query("", description="Busca por título, data, órgão, tipo ou assunto"),
+    mes: str = Query("", description="Filtro mês YYYY-MM"),
 ) -> HTMLResponse:
     """Home de leitura: busca + KPIs leigos + lista de atos."""
     termo = f"%{q.strip()}%"
+    mes_f = mes.strip()
     with _conn() as conn:
         stats = _stats_basicos(conn)
+        filtros = []
+        params: list[object] = []
         if q.strip():
-            publicacoes = conn.execute(
+            filtros.append(
+                "(e.titulo LIKE ? OR e.data_publicacao LIKE ? OR p.orgao LIKE ? "
+                "OR p.tipo LIKE ? OR p.assunto LIKE ? OR p.resumo_ia LIKE ? OR p.numero LIKE ?)"
+            )
+            params.extend([termo, termo, termo, termo, termo, termo, termo])
+        if mes_f and len(mes_f) >= 7:
+            filtros.append("e.data_publicacao LIKE ?")
+            params.append(f"{mes_f[:7]}%")
+        where = ("WHERE " + " AND ".join(filtros)) if filtros else ""
+        publicacoes = conn.execute(
+            f"""
+            SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao
+            FROM publicacoes p
+            JOIN edicoes e ON e.id = p.edicao_id
+            {where}
+            ORDER BY e.data_publicacao DESC, p.id DESC
+            LIMIT 50
+            """,
+            params,
+        ).fetchall()
+        meses = [
+            r[0]
+            for r in conn.execute(
                 """
-                SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao
+                SELECT DISTINCT substr(e.data_publicacao, 1, 7) AS mes
                 FROM publicacoes p
                 JOIN edicoes e ON e.id = p.edicao_id
-                WHERE e.titulo LIKE ?
-                   OR e.data_publicacao LIKE ?
-                   OR p.orgao LIKE ?
-                   OR p.tipo LIKE ?
-                   OR p.assunto LIKE ?
-                   OR p.resumo_ia LIKE ?
-                   OR p.numero LIKE ?
-                ORDER BY e.data_publicacao DESC, p.id DESC
-                LIMIT 50
-                """,
-                (termo, termo, termo, termo, termo, termo, termo),
-            ).fetchall()
-        else:
-            publicacoes = conn.execute(
-                """
-                SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao
-                FROM publicacoes p
-                JOIN edicoes e ON e.id = p.edicao_id
-                ORDER BY e.data_publicacao DESC, p.id DESC
-                LIMIT 40
+                WHERE e.data_publicacao IS NOT NULL AND e.data_publicacao != ''
+                ORDER BY mes DESC
+                LIMIT 24
                 """
             ).fetchall()
+            if r[0]
+        ]
         atividade = _atividade_atual(conn)
+        so_mencao_pend = conn.execute(
+            """
+            SELECT COUNT(*) FROM edicoes e
+            WHERE e.tem_inaja = 1
+              AND NOT EXISTS (SELECT 1 FROM publicacoes p WHERE p.edicao_id = e.id)
+              AND (e.revisao_so_mencao IS NULL OR e.revisao_so_mencao = ''
+                   OR e.revisao_so_mencao = 'pendente')
+            """
+        ).fetchone()[0]
+
+    saude = _saude_sistema()
+    saude["so_mencao_pendentes"] = so_mencao_pend
 
     return templates.TemplateResponse(
         request,
@@ -375,6 +398,9 @@ def dashboard(
             "publicacoes": publicacoes,
             "atividade": atividade,
             "q": q,
+            "mes": mes_f[:7] if mes_f else "",
+            "meses": meses,
+            "saude": saude,
         },
     )
 
@@ -383,9 +409,10 @@ def dashboard(
 def atos_alias(
     request: Request,
     q: str = Query("", description="Busca"),
+    mes: str = Query("", description="Filtro mês"),
 ) -> HTMLResponse:
     """Alias de leitura para a home de atos."""
-    return dashboard(request, q=q)
+    return dashboard(request, q=q, mes=mes)
 
 
 @app.get("/operacao", response_class=HTMLResponse)
@@ -860,6 +887,19 @@ def admin_page(request: Request, msg: str = "") -> HTMLResponse:
             "msg": msg,
             "teste_resultado": None,
         },
+    )
+
+
+@app.post("/admin/backup")
+def admin_backup() -> RedirectResponse:
+    try:
+        path = database.backup_database()
+        msg = f"Backup criado: {path.name}"
+    except Exception as exc:
+        msg = f"Falha no backup: {exc}"
+    return RedirectResponse(
+        f"/admin?msg={msg}",
+        status_code=303,
     )
 
 

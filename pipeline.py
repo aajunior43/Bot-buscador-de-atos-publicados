@@ -76,6 +76,9 @@ def _processar_edicao_unlocked(
         titulo=edicao.titulo,
         edicao_id=edicao_id,
         mensagem=edicao.url,
+        progress_step="download",
+        progress_current=0,
+        progress_total=100,
     )
     try:
         download = baixar_edicao(edicao)
@@ -84,6 +87,9 @@ def _processar_edicao_unlocked(
             "concluido",
             mensagem=f"PDF salvo em {download.caminho}",
             edicao_id=download.edicao_id,
+            progress_step="download",
+            progress_current=100,
+            progress_total=100,
         )
     except Exception:
         logger.exception("Falha ao baixar edição %s", edicao.url)
@@ -92,6 +98,7 @@ def _processar_edicao_unlocked(
             "erro",
             mensagem=f"Falha ao baixar {edicao.url}",
             edicao_id=edicao_id,
+            progress_step="download",
         )
         return None
 
@@ -100,10 +107,38 @@ def _processar_edicao_unlocked(
         titulo=edicao.titulo,
         edicao_id=download.edicao_id,
         mensagem=_ocr_mensagem_modo(force_ocr, fast_ocr),
+        progress_step="ocr",
+        progress_current=0,
+        progress_total=100,
     )
     try:
-        def on_progress(msg: str) -> None:
-            database.update_job(ocr_job, "rodando", mensagem=msg)
+        def on_progress(msg: str | dict) -> None:
+            if isinstance(msg, dict):
+                database.update_job(
+                    ocr_job,
+                    "rodando",
+                    mensagem=str(msg.get("msg") or msg),
+                    progress_current=msg.get("current"),
+                    progress_total=msg.get("total"),
+                    progress_step=msg.get("step") or "ocr",
+                )
+                return
+            # Parse "Página X/Y"
+            cur = tot = None
+            if isinstance(msg, str):
+                import re
+
+                m = re.search(r"Página\s+(\d+)\s*/\s*(\d+)", msg, re.I)
+                if m:
+                    cur, tot = int(m.group(1)), int(m.group(2))
+            database.update_job(
+                ocr_job,
+                "rodando",
+                mensagem=str(msg),
+                progress_current=cur,
+                progress_total=tot,
+                progress_step="ocr",
+            )
 
         if force_ocr and fast_ocr:
             ocr = extrair_texto_rapido_com_estruturado_candidato(
@@ -120,14 +155,40 @@ def _processar_edicao_unlocked(
         )
         if ocr.avisos:
             ocr_mensagem += " | " + "; ".join(ocr.avisos)
-        database.update_job(ocr_job, ocr_status, mensagem=ocr_mensagem)
+        database.update_job(
+            ocr_job,
+            ocr_status,
+            mensagem=ocr_mensagem,
+            progress_step="ocr",
+            progress_current=len(ocr.paginas),
+            progress_total=len(ocr.paginas) or 100,
+        )
 
         detectar_job = database.start_job(
             "detectando publicações",
             titulo=edicao.titulo,
             edicao_id=download.edicao_id,
+            progress_step="detect",
+            progress_current=0,
+            progress_total=100,
+        )
+        database.update_job(
+            detectar_job,
+            "rodando",
+            mensagem="Analisando menções e atos…",
+            progress_step="detect",
+            progress_current=30,
+            progress_total=100,
         )
         resultado = detectar(download.edicao_id, edicao.titulo, ocr.paginas)
+        database.update_job(
+            detectar_job,
+            "rodando",
+            mensagem="Gravando publicações…",
+            progress_step="detect",
+            progress_current=70,
+            progress_total=100,
+        )
         database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
         database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
         database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
@@ -141,6 +202,9 @@ def _processar_edicao_unlocked(
                 f"{len(resultado.publicacoes)} publicação(ões), "
                 f"{len(resultado.mencoes_db)} menção(ões)"
             ),
+            progress_step="detect",
+            progress_current=100,
+            progress_total=100,
         )
 
         if notificar_se_encontrado and resultado.encontrado:
@@ -148,9 +212,19 @@ def _processar_edicao_unlocked(
                 "notificando",
                 titulo=edicao.titulo,
                 edicao_id=download.edicao_id,
+                progress_step="notify",
+                progress_current=0,
+                progress_total=100,
             )
             notificar(resultado, edicao)
-            database.update_job(notify_job, "concluido", mensagem="Alerta emitido")
+            database.update_job(
+                notify_job,
+                "concluido",
+                mensagem="Alerta emitido",
+                progress_step="notify",
+                progress_current=100,
+                progress_total=100,
+            )
 
         logger.info(
             "Edição processada: id=%s tem_inaja=%s pubs=%s",
@@ -168,6 +242,7 @@ def _processar_edicao_unlocked(
             "erro",
             mensagem=f"Falha ao processar OCR/detecção: {edicao.url}",
             edicao_id=download.edicao_id,
+            progress_step="ocr",
         )
         raise
 
@@ -343,6 +418,20 @@ def processar_edicao_por_id(
     )
 
 
+def _backup_diario_se_preciso() -> None:
+    """No máximo um backup por dia civil (logs/backups)."""
+    try:
+        dest_dir = SETTINGS.log_dir / "backups"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        hoje = __import__("datetime").datetime.now().strftime("%Y%m%d")
+        if any(dest_dir.glob(f"jornal_monitor_{hoje}_*.db")):
+            return
+        path = database.backup_database(dest_dir)
+        logger.info("Backup diário automático: %s", path)
+    except Exception:
+        logger.warning("Backup diário falhou (seguindo o ciclo).", exc_info=True)
+
+
 def executar_ciclo(
     force_rescan: bool = False,
     process_all: bool = False,
@@ -351,6 +440,7 @@ def executar_ciclo(
 ) -> None:
     """Um ciclo completo: listar novas edições, processar e retentar IA."""
     database.init_db()
+    _backup_diario_se_preciso()
 
     try:
         retry_pending_ia()

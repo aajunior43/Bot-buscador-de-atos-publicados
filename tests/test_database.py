@@ -132,9 +132,46 @@ class TestSomaValoresDedup:
         )
         bruto = database.somar_valores_publicacoes(deduplicar=False)
         dedup = database.somar_valores_publicacoes(deduplicar=True)
+        # Duas linhas iguais 030/2026 + portaria 500
         assert bruto["total"] == 2_000_500.0
+        # Dedupe por órgão+número: 030/2026 conta 1× + portaria
         assert dedup["total"] == 1_000_500.0
         assert dedup["n_unicos"] == 2
+
+    def test_exclui_materia_jornalistica(self, db):
+        import database
+
+        database.init_db()
+        eid = database.insert_or_get_edicao(
+            "https://example.com/mat.pdf", "Mat", "2026-06-02"
+        )
+        database.insert_publicacoes(
+            eid,
+            [
+                {
+                    "pagina": 1,
+                    "categoria": "materia_jornalistica",
+                    "orgao": "Prefeitura Municipal de Inajá",
+                    "tipo": None,
+                    "numero": None,
+                    "valor": "R$ 4.000.000,00",
+                    "trecho": "matéria",
+                },
+                {
+                    "pagina": 2,
+                    "categoria": "publicacao_oficial",
+                    "orgao": "Prefeitura Municipal de Inajá",
+                    "tipo": "Contrato",
+                    "numero": "1/2026",
+                    "valor": "R$ 10.000,00",
+                    "trecho": "ato",
+                },
+            ],
+        )
+        s = database.somar_valores_publicacoes(deduplicar=True, excluir_materias=True)
+        assert s["total"] == 10_000.0
+        s2 = database.somar_valores_publicacoes(deduplicar=True, excluir_materias=False)
+        assert s2["total"] == 4_010_000.0
 
 
 class TestMetricasDeteccao:

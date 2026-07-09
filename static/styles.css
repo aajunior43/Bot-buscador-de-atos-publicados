@@ -2210,3 +2210,35 @@ details[open] summary::before { transform: rotate(90deg); }
   color: var(--text-2);
   border: 1px solid var(--border);
 }
+
+/* -- Health strip (home) ----------------------------------- */
+.health-strip {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  padding: 0;
+  margin: 0 0 1.25rem;
+}
+.health-strip li {
+  font-size: .75rem;
+  font-weight: 600;
+  padding: .3rem .7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+}
+.health-strip li.ok { color: var(--green); border-color: rgba(34,211,165,.35); }
+.health-strip li.warn { color: var(--amber); border-color: rgba(251,191,36,.35); }
+.health-strip li.neutral { color: var(--text-3); }
+.health-strip a { color: inherit; font-weight: 700; }
+.mes-select {
+  background: var(--bg-3);
+  border: 1px solid var(--border-2);
+  color: var(--text-1);
+  border-radius: var(--radius-sm);
+  padding: .55rem .7rem;
+  font: inherit;
+  min-width: 8rem;
+}
