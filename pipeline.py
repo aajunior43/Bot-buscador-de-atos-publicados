@@ -440,6 +440,7 @@ def processar_pendentes_automatico(
     fast_ocr: bool = True,
     max_total: int | None = None,
     lotes: bool = True,
+    quiet: bool = False,
 ) -> int:
     """Processa edições com ocr_processado=0 (mais recentes primeiro).
 
@@ -449,6 +450,7 @@ def processar_pendentes_automatico(
             AUTO_PROCESS_MAX_POR_CICLO; 0 = só um lote (limit).
         lotes: se True, repete lotes até esgotar a fila (na janela de dias)
             ou atingir max_total.
+        quiet: se True, fila vazia só em DEBUG (uso no loop idle).
 
     Returns:
         Quantidade de edições em que o pipeline foi invocado com sucesso.
@@ -471,7 +473,14 @@ def processar_pendentes_automatico(
         )
         if not rows:
             if lote_n == 0:
-                logger.info("Automação: nenhuma edição pendente de OCR.")
+                msg = (
+                    "Automação: nenhuma edição pendente de OCR "
+                    f"(janela={dias or 'todas'} dias)."
+                )
+                if quiet:
+                    logger.debug(msg)
+                else:
+                    logger.info(msg)
             break
 
         lote_n += 1

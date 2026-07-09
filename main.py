@@ -116,6 +116,7 @@ def main() -> None:
                     # Um lote por vez no idle; o próximo loop pega o seguinte
                     max_total=SETTINGS.auto_process_limit,
                     lotes=False,
+                    quiet=True,
                 )
                 if n > 0:
                     # Continua na hora se ainda houver trabalho
