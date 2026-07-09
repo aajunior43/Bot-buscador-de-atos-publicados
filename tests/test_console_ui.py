@@ -58,6 +58,21 @@ def test_fmt_publicacoes_nao_quebra(capsys):
     out = capsys.readouterr().out
     assert "Decreto" in out
     assert "Prefeitura" in out
+    assert "valores" in out.lower() or "R$" in out
+
+
+def test_phase_rail_and_score(capsys):
+    console_ui.phase_reset()
+    console_ui.phase_set("DL", "run")
+    console_ui.phase_set("DL", "ok")
+    console_ui.phase_set("OCR", "run")
+    out = capsys.readouterr().out
+    assert "DL" in out and "OCR" in out
+    console_ui.SESSION.processadas = 2
+    console_ui.SESSION.com_inaja = 1
+    console_ui.SESSION.publicacoes = 3
+    assert console_ui.SESSION.score() > 0
+    assert console_ui.SESSION.hit_rate() == 50.0
 
 
 def test_rich_formatter_skips_column_noise():

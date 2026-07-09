@@ -90,7 +90,7 @@ def _processar_edicao_unlocked(
         total_lote=ui_total_lote,
         pendentes_restantes=ui_pendentes,
     )
-    console_ui.step("Download", "buscando PDF…")
+    console_ui.step("Download", "buscando PDF…", phase="DL")
 
     download_job = database.start_job(
         "baixando PDF",
@@ -116,6 +116,7 @@ def _processar_edicao_unlocked(
             "Download",
             f"ok · {Path(download.caminho).name}",
             ok=True,
+            phase="DL",
         )
     except Exception as exc:
         logger.exception("Falha ao baixar edição %s", edicao.url)
@@ -130,12 +131,12 @@ def _processar_edicao_unlocked(
             database.registrar_falha_processamento(
                 int(edicao_id), f"download: {exc}"
             )
-        console_ui.step("Download", str(exc)[:80], ok=False)
+        console_ui.step("Download", str(exc)[:80], ok=False, phase="DL")
         console_ui.edition_end(ok=False, t0=t0, erro=f"download: {exc}")
         return None
 
     modo = _ocr_mensagem_modo(force_ocr, fast_ocr)
-    console_ui.step("OCR", modo)
+    console_ui.step("OCR", modo, phase="OCR")
     ocr_job = database.start_job(
         "rodando OCR",
         titulo=edicao.titulo,
@@ -205,9 +206,11 @@ def _processar_edicao_unlocked(
                 ",", "."
             ),
             ok=True,
+            phase="OCR",
         )
 
-        console_ui.step("Detecção", "menções e atos oficiais…")
+        console_ui.step("Detecção", "menções e atos oficiais…", phase="DET")
+        console_ui.step("IA", "refino estruturado (se houver candidatos)…", phase="IA")
         detectar_job = database.start_job(
             "detectando publicações",
             titulo=edicao.titulo,
@@ -255,10 +258,21 @@ def _processar_edicao_unlocked(
             f"{len(resultado.publicacoes)} pub · {len(resultado.mencoes_db)} menções"
             + (" · INAJÁ" if resultado.encontrado else ""),
             ok=True,
+            phase="DET",
+        )
+        console_ui.step(
+            "IA",
+            (
+                f"{len(resultado.publicacoes)} ato(s) refinados"
+                if resultado.publicacoes
+                else "nada a refinar"
+            ),
+            ok=True,
+            phase="IA",
         )
 
         if notificar_se_encontrado and resultado.encontrado:
-            console_ui.step("Alerta", "Telegram / e-mail / arquivo…")
+            console_ui.step("Alerta", "Telegram / e-mail / arquivo…", phase="ALR")
             notify_job = database.start_job(
                 "notificando",
                 titulo=edicao.titulo,
@@ -276,7 +290,9 @@ def _processar_edicao_unlocked(
                 progress_current=100,
                 progress_total=100,
             )
-            console_ui.step("Alerta", "enviado", ok=True)
+            console_ui.step("Alerta", "enviado", ok=True, phase="ALR")
+        else:
+            console_ui.phase_set("ALR", "skip")
 
         database.limpar_falhas_processamento(download.edicao_id)
         logger.info(
@@ -308,7 +324,7 @@ def _processar_edicao_unlocked(
         database.registrar_falha_processamento(
             download.edicao_id, f"ocr/detecção: {exc}"
         )
-        console_ui.step("OCR/Detecção", str(exc)[:80], ok=False)
+        console_ui.step("OCR/Detecção", str(exc)[:80], ok=False, phase="OCR")
         console_ui.edition_end(ok=False, t0=t0, erro=str(exc))
         # Não propaga: falha contada; fila segue para a próxima edição
         return None

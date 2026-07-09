@@ -151,9 +151,18 @@ def _pipe_output(proc: subprocess.Popen, label: str) -> None:
         ("NOVA EDICAO", "\033[94m"),
         ("PRIMEIRO INAJ", "\033[92m"),
     )
+    # WEB: esconde polling barulhento para o terminal ficar no BOT
+    _web_mute = (
+        "/api/atividade",
+        "/api/eventos",
+        "/api/automacao",
+        "GET /static/",
+    )
     for line in proc.stdout:
         text = line.rstrip("\r\n")
         if not text:
+            continue
+        if label == "WEB" and any(m in text for m in _web_mute):
             continue
         accent = cor
         if label == "BOT":

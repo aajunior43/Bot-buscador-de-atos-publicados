@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import logging
+import signal
 import sys
 import time
 from logging.handlers import TimedRotatingFileHandler
@@ -16,6 +18,18 @@ from pipeline import executar_ciclo, processar_pendentes_automatico
 
 
 logger = logging.getLogger(__name__)
+_summary_shown = False
+
+
+def _show_session_summary(reason: str = "sessão encerrada") -> None:
+    global _summary_shown
+    if _summary_shown:
+        return
+    _summary_shown = True
+    try:
+        console_ui.session_summary(reason=reason)
+    except Exception:
+        pass
 
 
 def configurar_logging() -> None:
@@ -78,6 +92,19 @@ def main() -> None:
     database.init_db()
     database.registrar_heartbeat_bot()
 
+    atexit.register(lambda: _show_session_summary("processo finalizado"))
+
+    def _sig_handler(signum, frame) -> None:  # type: ignore[no-untyped-def]
+        _show_session_summary("interrompido (Ctrl+C)")
+        raise SystemExit(0)
+
+    try:
+        signal.signal(signal.SIGINT, _sig_handler)
+        if hasattr(signal, "SIGTERM"):
+            signal.signal(signal.SIGTERM, _sig_handler)
+    except Exception:
+        pass
+
     if args.notify_test:
         enviar_teste()
         return
@@ -102,6 +129,7 @@ def main() -> None:
             force_ocr=args.force_ocr,
             fast_ocr=not args.full_structured_ocr,
         )
+        _show_session_summary("modo único concluído")
         return
 
     console_ui.banner_startup(

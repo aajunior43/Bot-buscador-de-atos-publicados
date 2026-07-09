@@ -254,8 +254,100 @@ class SessionStats:
         m = {"I": "█", ".": "▒", "x": "░"}
         return "".join(m.get(c, "?") for c in self.historico)
 
+    def spark_colored(self) -> str:
+        if not self.historico:
+            return _c(C.DIM, "—")
+        parts = []
+        for ch in self.historico:
+            if ch == "I":
+                parts.append(_c(C.BRIGHT_GREEN, "█"))
+            elif ch == ".":
+                parts.append(_c(C.DIM, "▒"))
+            elif ch == "x":
+                parts.append(_c(C.BRIGHT_RED, "░"))
+            else:
+                parts.append("?")
+        return "".join(parts)
+
+    def hit_rate(self) -> float | None:
+        if self.processadas <= 0:
+            return None
+        return 100.0 * self.com_inaja / self.processadas
+
+    def score(self) -> int:
+        """Pontuação divertida da sessão (só para o terminal)."""
+        return (
+            self.processadas * 10
+            + self.com_inaja * 50
+            + self.publicacoes * 15
+            - self.falhas * 20
+        )
+
 
 SESSION = SessionStats()
+
+# Pipeline visual da edição atual
+_PHASES = ("DL", "OCR", "DET", "IA", "ALR")
+_PHASE_LABEL = {
+    "DL": "Download",
+    "OCR": "OCR",
+    "DET": "Detecção",
+    "IA": "IA",
+    "ALR": "Alerta",
+}
+_phase_state: dict[str, str] = {p: "wait" for p in _PHASES}
+# wait | run | ok | skip | fail
+
+# Placar das últimas edições: {titulo, dur, flag, pubs}
+_scoreboard: deque[dict[str, Any]] = deque(maxlen=8)
+
+
+def phase_reset() -> None:
+    global _phase_state
+    _phase_state = {p: "wait" for p in _PHASES}
+
+
+def phase_set(phase: str, state: str) -> None:
+    """Atualiza etapa e redesenha o trilho  DL●──OCR○──…"""
+    if phase not in _phase_state:
+        return
+    _phase_state[phase] = state
+    # Se começou OCR, download ok implícito se ainda wait
+    if phase == "OCR" and state == "run" and _phase_state["DL"] == "wait":
+        _phase_state["DL"] = "ok"
+    _draw_phase_rail()
+
+
+def _draw_phase_rail() -> None:
+    parts: list[str] = []
+    for i, p in enumerate(_PHASES):
+        st = _phase_state[p]
+        if st == "ok":
+            node = _c(C.BRIGHT_GREEN + C.BOLD, f"●{p}")
+        elif st == "run":
+            node = _c(C.BRIGHT_CYAN + C.BOLD, f"◉{p}")
+        elif st == "fail":
+            node = _c(C.BRIGHT_RED + C.BOLD, f"✗{p}")
+        elif st == "skip":
+            node = _c(C.DIM, f"○{p}")
+        else:
+            node = _c(C.DIM, f"○{p}")
+        parts.append(node)
+        if i < len(_PHASES) - 1:
+            nxt = _phase_state[_PHASES[i + 1]]
+            if st == "ok":
+                link = _c(C.BRIGHT_GREEN, "──")
+            elif st == "run" or nxt == "run":
+                link = _c(C.BRIGHT_CYAN, "──")
+            else:
+                link = _c(C.DIM, "╌╌")
+            parts.append(link)
+    _emit("  " + "".join(parts))
+    # legenda curta da etapa em execução
+    running = [p for p, s in _phase_state.items() if s == "run"]
+    if running:
+        p = running[0]
+        _emit(_c(C.DIM, f"     agora: {_PHASE_LABEL.get(p, p)}"))
 
 
 def _maybe_milestone() -> None:
@@ -345,11 +437,23 @@ def cockpit(
             f"quarentena {_c(C.BRIGHT_YELLOW, str(quarentena or 0))}"
             + (f"   ETA ~{_c(C.BRIGHT_CYAN, eta)}" if eta else "")
         )
+    hr = SESSION.hit_rate()
+    if hr is not None:
+        lines.append(
+            f"taxa Inajá {_c(C.BRIGHT_GREEN, f'{hr:.0f}%')}   "
+            f"score {_c(C.BRIGHT_YELLOW, str(SESSION.score()))}"
+        )
     if media is not None:
-        lines.append(_c(C.DIM, f"média/edição {_fmt_dur(media)}   trilha {SESSION.spark()}"))
+        lines.append(
+            _c(C.DIM, f"média/edição {_fmt_dur(media)}   ")
+            + "trilha "
+            + SESSION.spark_colored()
+        )
     elif SESSION.historico:
-        lines.append(_c(C.DIM, f"trilha {SESSION.spark()}"))
+        lines.append("trilha " + SESSION.spark_colored())
     box(lines, color=C.BRIGHT_CYAN, title="COCKPIT")
+    if _scoreboard and len(_scoreboard) >= 2:
+        show_scoreboard()
 
 
 def edition_start(
@@ -365,6 +469,7 @@ def edition_start(
     _last_progress_line = ""
     _progress_t0 = None
     _progress_label = ""
+    phase_reset()
     t0 = time.time()
     SESSION.ultima_edicao = titulo or (f"id={edicao_id}" if edicao_id else "?")
     _emit()
@@ -372,6 +477,8 @@ def edition_start(
     lote = ""
     if indice and total_lote:
         lote = f"  {_c(C.BG_BLUE + C.BRIGHT_WHITE + C.BOLD, f' {indice}/{total_lote} ')}"
+        # mini barra do lote
+        lote += f"  {_c(C.DIM, bar(indice, total_lote, 12))} {_c(C.DIM, f'{pct(indice, total_lote)}%')}"
     _emit(f"  {_c(C.BOLD + C.BRIGHT_WHITE, titulo or 'Sem título')}{lote}")
     meta = []
     if data:
@@ -386,13 +493,30 @@ def edition_start(
     media = SESSION.media_seg()
     if media is not None:
         meta.append(f"⌀ {_fmt_dur(media)}")
+    hr = SESSION.hit_rate()
+    if hr is not None:
+        meta.append(f"🎯 {hr:.0f}% Inajá")
     if meta:
         _emit(_c(C.DIM, "  " + "  ·  ".join(meta)))
     _emit(_c(C.DIM, f"  ▶ {_now()}"))
+    _draw_phase_rail()
     return t0
 
 
-def step(name: str, detail: str = "", *, ok: bool | None = None) -> None:
+def step(
+    name: str,
+    detail: str = "",
+    *,
+    ok: bool | None = None,
+    phase: str | None = None,
+) -> None:
+    if phase:
+        if ok is True:
+            phase_set(phase, "ok")
+        elif ok is False:
+            phase_set(phase, "fail")
+        else:
+            phase_set(phase, "run")
     if ok is True:
         icon = _c(C.BRIGHT_GREEN, "✓")
     elif ok is False:
@@ -442,11 +566,27 @@ def progress(
             _last_progress_line = body
 
 
+def _parse_valor_brl(texto: str) -> float | None:
+    import re
+
+    if not texto:
+        return None
+    m = re.search(r"([\d.]+,\d{2})", texto.replace(" ", ""))
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(".", "").replace(",", "."))
+    except ValueError:
+        return None
+
+
 def show_publicacoes(publicacoes: list[dict[str, Any]] | list[Any], *, max_items: int = 8) -> None:
     """Lista atos encontrados (estilo card)."""
     if not publicacoes:
         return
-    _emit(_c(C.BRIGHT_GREEN + C.BOLD, f"  ┌─ ATos de Inajá ({len(publicacoes)})"))
+    total_valor = 0.0
+    n_val = 0
+    _emit(_c(C.BRIGHT_GREEN + C.BOLD, f"  ┌─ Atos de Inajá ({len(publicacoes)})"))
     for i, p in enumerate(publicacoes[:max_items], start=1):
         if hasattr(p, "keys"):
             d = dict(p)
@@ -468,7 +608,11 @@ def show_publicacoes(publicacoes: list[dict[str, Any]] | list[Any], *, max_items
         if orgao:
             _emit(f"  {_c(C.BRIGHT_GREEN, '│')}    {_c(C.CYAN, orgao)}")
         if valor:
-            _emit(f"  {_c(C.BRIGHT_GREEN, '│')}    {_c(C.BRIGHT_YELLOW, valor)}")
+            _emit(f"  {_c(C.BRIGHT_GREEN, '│')}    {_c(C.BRIGHT_YELLOW, '💰 ' + valor)}")
+            v = _parse_valor_brl(valor)
+            if v is not None:
+                total_valor += v
+                n_val += 1
         if resumo:
             r = resumo.replace("\n", " ")
             if len(r) > 90:
@@ -478,6 +622,19 @@ def show_publicacoes(publicacoes: list[dict[str, Any]] | list[Any], *, max_items
         _emit(
             f"  {_c(C.BRIGHT_GREEN, '│')}    "
             f"{_c(C.DIM, f'… +{len(publicacoes) - max_items} ato(s)')}"
+        )
+    # soma valores das pubs listadas + restantes se possível
+    for p in publicacoes[max_items:]:
+        d = dict(p) if isinstance(p, dict) or hasattr(p, "keys") else {}
+        v = _parse_valor_brl(str(d.get("valor") or ""))
+        if v is not None:
+            total_valor += v
+            n_val += 1
+    if n_val:
+        brl = f"R$ {total_valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        _emit(
+            f"  {_c(C.BRIGHT_GREEN, '│')} "
+            f"{_c(C.BRIGHT_YELLOW + C.BOLD, f'Σ valores ({n_val}): {brl}')}"
         )
     _emit(_c(C.BRIGHT_GREEN, "  └─"))
 
@@ -501,11 +658,13 @@ def edition_end(
         SESSION.duracoes.append(secs)
         dur = _fmt_dur(secs)
 
+    titulo_curto = (SESSION.ultima_edicao or "?")[:36]
     if ok:
         SESSION.processadas += 1
         if tem_inaja:
             SESSION.com_inaja += 1
             SESSION.historico.append("I")
+            flag = "I"
             if not SESSION.primeiro_inaja:
                 SESSION.primeiro_inaja = True
                 _emit(
@@ -516,9 +675,23 @@ def edition_end(
                 )
         else:
             SESSION.historico.append(".")
+            flag = "."
         SESSION.publicacoes += n_pubs
         if from_cache:
             SESSION.cache_hits += 1
+
+        # fecha trilho: se sem Inajá, alerta/IA skip
+        if tem_inaja:
+            if _phase_state.get("IA") == "wait":
+                _phase_state["IA"] = "ok"
+            if _phase_state.get("ALR") == "wait":
+                _phase_state["ALR"] = "ok"
+        else:
+            if _phase_state.get("IA") == "wait":
+                _phase_state["IA"] = "skip"
+            if _phase_state.get("ALR") == "wait":
+                _phase_state["ALR"] = "skip"
+        _draw_phase_rail()
 
         if tem_inaja and publicacoes:
             show_publicacoes(publicacoes)
@@ -543,18 +716,96 @@ def edition_end(
         )
         if thr:
             bits.append(f"{thr:.1f}/h")
+        hr = SESSION.hit_rate()
+        if hr is not None:
+            bits.append(f"🎯 {hr:.0f}%")
+        bits.append(f"pts {SESSION.score()}")
         _emit(_c(C.DIM, "  " + "  ·  ".join(bits)))
+        _scoreboard.appendleft(
+            {
+                "titulo": titulo_curto,
+                "dur": dur or "—",
+                "flag": flag,
+                "pubs": n_pubs,
+            }
+        )
         _maybe_milestone()
+        if SESSION.processadas % 3 == 0:
+            show_scoreboard()
     else:
         SESSION.falhas += 1
         SESSION.historico.append("x")
+        # marca fase em run como fail
+        for p, st in list(_phase_state.items()):
+            if st == "run":
+                _phase_state[p] = "fail"
+        _draw_phase_rail()
         _emit(
             f"  {_c(C.BRIGHT_RED + C.BOLD, '✗ FALHOU')}"
             + (f"  {_c(C.RED, erro[:120])}" if erro else "")
         )
         if dur:
             _emit(_c(C.DIM, f"  ⏱ {dur}  ·  falhas sessão: {SESSION.falhas}"))
+        _scoreboard.appendleft(
+            {
+                "titulo": titulo_curto,
+                "dur": dur or "—",
+                "flag": "x",
+                "pubs": 0,
+            }
+        )
     rule(color=C.DIM)
+
+
+def show_scoreboard() -> None:
+    """Placar das últimas edições da sessão."""
+    if not _scoreboard:
+        return
+    _emit(_c(C.BRIGHT_MAGENTA + C.BOLD, "  ┌─ Placar recente"))
+    for i, row in enumerate(_scoreboard, start=1):
+        flag = row.get("flag", ".")
+        if flag == "I":
+            mark = _c(C.BRIGHT_GREEN + C.BOLD, "INAJÁ")
+        elif flag == "x":
+            mark = _c(C.BRIGHT_RED, "FALHA")
+        else:
+            mark = _c(C.DIM, "ok   ")
+        pubs = row.get("pubs") or 0
+        pubs_s = f" · {pubs} pub" if pubs else ""
+        _emit(
+            f"  {_c(C.BRIGHT_MAGENTA, '│')} {i:>2}. {mark}  "
+            f"{_c(C.BRIGHT_WHITE, str(row.get('titulo') or '—'))}  "
+            f"{_c(C.DIM, str(row.get('dur') or ''))}{pubs_s}"
+        )
+    _emit(
+        f"  {_c(C.BRIGHT_MAGENTA, '│')} "
+        f"{_c(C.DIM, 'trilha ')}{SESSION.spark_colored()}"
+    )
+    _emit(_c(C.BRIGHT_MAGENTA, "  └─"))
+
+
+def session_summary(*, reason: str = "sessão encerrada") -> None:
+    """Resumo final (Ctrl+C ou fim do processo)."""
+    thr = SESSION.throughput_h()
+    hr = SESSION.hit_rate()
+    lines = [
+        _c(C.BRIGHT_WHITE + C.BOLD, reason),
+        f"duração {_c(C.BRIGHT_CYAN, SESSION.elapsed())}   "
+        f"pontos {_c(C.BRIGHT_YELLOW + C.BOLD, str(SESSION.score()))}",
+        f"edições {_c(C.BRIGHT_WHITE, str(SESSION.processadas))}   "
+        f"Inajá {_c(C.BRIGHT_GREEN, str(SESSION.com_inaja))}"
+        + (f" ({hr:.0f}%)" if hr is not None else "")
+        + f"   pubs {_c(C.BRIGHT_WHITE, str(SESSION.publicacoes))}   "
+        f"falhas {_c(C.BRIGHT_RED if SESSION.falhas else C.DIM, str(SESSION.falhas))}",
+    ]
+    if thr:
+        lines.append(f"ritmo {_c(C.CYAN, f'{thr:.1f} ed/h')}")
+    if SESSION.historico:
+        lines.append("trilha " + SESSION.spark_colored())
+    if SESSION.ultima_edicao:
+        lines.append(_c(C.DIM, f"última: {SESSION.ultima_edicao[:50]}"))
+    box(lines, color=C.BRIGHT_MAGENTA, title="FIM DE SESSÃO")
+    show_scoreboard()
 
 
 def ciclo_banner(titulo: str, detalhe: str = "") -> None:
@@ -571,11 +822,12 @@ def idle_heartbeat(msg: str = "aguardando fila / próximo ciclo…") -> None:
         _c(
             C.DIM,
             f"  · [{_now()}] {msg}  ·  sessão {SESSION.elapsed()}  ·  "
-            f"{SESSION.processadas} ok / {SESSION.com_inaja} Inajá / {SESSION.falhas} falhas{thr_s}",
+            f"{SESSION.processadas} ok / {SESSION.com_inaja} Inajá / {SESSION.falhas} falhas"
+            f"  ·  pts {SESSION.score()}{thr_s}",
         )
     )
     if SESSION.historico:
-        _emit(_c(C.DIM, f"    trilha  {SESSION.spark()}  (█ Inajá ▒ ok ░ falha)"))
+        _emit("    trilha  " + SESSION.spark_colored() + _c(C.DIM, "  (█ Inajá ▒ ok ░ falha)"))
 
 
 class RichConsoleFormatter(logging.Formatter):
