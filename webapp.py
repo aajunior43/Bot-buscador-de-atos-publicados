@@ -1199,69 +1199,147 @@ def imagem_pagina(edicao_id: int, pagina: int) -> FileResponse:
 
 
 # ---------------------------------------------------------------------------
-# Admin
+# Admin (senha de porta 1999 — cookie de sessão da aba Admin)
 # ---------------------------------------------------------------------------
+
+import hashlib
+import os as _os
+
+# Senha da porta Admin (sobrescrevível por ADMIN_GATE_PASSWORD no .env)
+ADMIN_GATE_PASSWORD = (_os.getenv("ADMIN_GATE_PASSWORD", "1999") or "1999").strip()
+ADMIN_GATE_COOKIE = "monitor_admin_gate"
+
+
+def _admin_gate_token() -> str:
+    return hashlib.sha256(f"monitor-admin-gate:{ADMIN_GATE_PASSWORD}".encode()).hexdigest()[:40]
+
+
+def _admin_unlocked(request: Request) -> bool:
+    return request.cookies.get(ADMIN_GATE_COOKIE) == _admin_gate_token()
+
+
+def _admin_require(request: Request) -> None:
+    if not _admin_unlocked(request):
+        raise HTTPException(status_code=401, detail="Admin bloqueado. Informe a senha 1999.")
+
+
+def _admin_ctx(msg: str = "", teste_resultado: str | None = None) -> dict:
+    api_key = database.get_setting("opencode_api_key", "") or SETTINGS.opencode_api_key
+    model = database.get_setting("opencode_model", "") or SETTINGS.opencode_model
+    api_key_masked = (
+        f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else ("***" if api_key else "")
+    )
+    try:
+        from agente import status_agente
+
+        agente_st = status_agente()
+    except Exception:
+        agente_st = {}
+    return {
+        "api_key_configured": bool(api_key),
+        "api_key_masked": api_key_masked,
+        "model": model or "deepseek-v4-flash",
+        "ai_ativo": bool(api_key) and SETTINGS.ai_refine_publications,
+        "ai_refine": SETTINGS.ai_refine_publications,
+        "extra_terms": database.get_setting("extra_terms", "")
+        or ",".join(SETTINGS.extra_terms),
+        "ignore_terms": database.get_setting("ignore_terms", "")
+        or ",".join(SETTINGS.ignore_context_terms),
+        "smtp_host": database.get_setting("smtp_host", "") or SETTINGS.smtp_host,
+        "smtp_port": database.get_setting("smtp_port", "") or str(SETTINGS.smtp_port),
+        "smtp_user": database.get_setting("smtp_user", "") or SETTINGS.smtp_user,
+        "smtp_to": database.get_setting("smtp_to", "") or SETTINGS.smtp_to,
+        "webhook_url": database.get_setting("webhook_url", "") or SETTINGS.webhook_url,
+        "webhooks": database.get_webhooks(),
+        "msg": msg,
+        "teste_resultado": teste_resultado,
+        "agente": agente_st,
+        "agente_env": {
+            "pulse_s": SETTINGS.agente_pulse_segundos,
+            "cerebro_min": SETTINGS.agente_cerebro_minutos,
+            "max_ocr": SETTINGS.agente_max_ocr_por_ciclo,
+            "max_ia_hora": SETTINGS.agente_max_ia_por_hora,
+            "auto_lock": SETTINGS.agente_auto_limpar_lock,
+            "auto_jobs": SETTINGS.agente_auto_limpar_jobs,
+            "no_bot": SETTINGS.agente_no_bot,
+            "notificar": SETTINGS.agente_notificar,
+            "lock_max_min": SETTINGS.agente_lock_max_minutos,
+            "job_max_min": SETTINGS.agente_job_max_minutos,
+        },
+    }
+
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request, msg: str = "") -> HTMLResponse:
-    api_key = database.get_setting("opencode_api_key", "") or SETTINGS.opencode_api_key
-    model = database.get_setting("opencode_model", "") or SETTINGS.opencode_model
-    api_key_masked = f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else ("***" if api_key else "")
+    if not _admin_unlocked(request):
+        return templates.TemplateResponse(
+            request,
+            "admin.html",
+            {"admin_locked": True, "msg": msg, "login_erro": ""},
+        )
+    ctx = _admin_ctx(msg=msg)
+    ctx["admin_locked"] = False
+    return templates.TemplateResponse(request, "admin.html", ctx)
 
-    extra_terms = database.get_setting("extra_terms", "") or ",".join(SETTINGS.extra_terms)
-    ignore_terms = database.get_setting("ignore_terms", "") or ",".join(SETTINGS.ignore_context_terms)
-    smtp_host = database.get_setting("smtp_host", "") or SETTINGS.smtp_host
-    smtp_port = database.get_setting("smtp_port", "") or str(SETTINGS.smtp_port)
-    smtp_user = database.get_setting("smtp_user", "") or SETTINGS.smtp_user
-    smtp_to = database.get_setting("smtp_to", "") or SETTINGS.smtp_to
-    webhook_url = database.get_setting("webhook_url", "") or SETTINGS.webhook_url
 
-    webhooks = database.get_webhooks()
-
-    return templates.TemplateResponse(
-        request,
-        "admin.html",
-        {
-            "api_key_configured": bool(api_key),
-            "api_key_masked": api_key_masked,
-            "model": model or "deepseek-v4-flash",
-            "ai_ativo": bool(api_key) and SETTINGS.ai_refine_publications,
-            "extra_terms": extra_terms,
-            "ignore_terms": ignore_terms,
-            "smtp_host": smtp_host,
-            "smtp_port": smtp_port,
-            "smtp_user": smtp_user,
-            "smtp_to": smtp_to,
-            "webhook_url": webhook_url,
-            "webhooks": webhooks,
-            "msg": msg,
-            "teste_resultado": None,
-        },
+@app.post("/admin/login")
+async def admin_login(request: Request) -> Response:
+    form = await request.form()
+    senha = str(form.get("senha", "")).strip()
+    if senha != ADMIN_GATE_PASSWORD:
+        return templates.TemplateResponse(
+            request,
+            "admin.html",
+            {
+                "admin_locked": True,
+                "msg": "",
+                "login_erro": "Senha incorreta.",
+            },
+            status_code=401,
+        )
+    resp = RedirectResponse("/admin?msg=Admin+desbloqueado", status_code=303)
+    resp.set_cookie(
+        ADMIN_GATE_COOKIE,
+        _admin_gate_token(),
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 12,  # 12h
+        path="/",
     )
+    return resp
+
+
+@app.post("/admin/logout")
+def admin_logout() -> Response:
+    resp = RedirectResponse("/admin", status_code=303)
+    resp.delete_cookie(ADMIN_GATE_COOKIE, path="/")
+    return resp
 
 
 @app.post("/admin/backup")
-def admin_backup() -> RedirectResponse:
+def admin_backup(request: Request) -> RedirectResponse:
+    _admin_require(request)
     try:
         path = database.backup_database()
         msg = f"Backup criado: {path.name}"
     except Exception as exc:
         msg = f"Falha no backup: {exc}"
+    return RedirectResponse(f"/admin?msg={msg}", status_code=303)
+
+
+@app.post("/admin/limpar-edicoes-antigas")
+def limpar_edicoes_antigas(request: Request) -> RedirectResponse:
+    _admin_require(request)
+    database.delete_hnetsistemas_edicoes()
     return RedirectResponse(
-        f"/admin?msg={msg}",
+        "/admin?msg=Edições de sistema antigo removidas com sucesso!",
         status_code=303,
     )
 
 
-@app.post("/admin/limpar-edicoes-antigas")
-def limpar_edicoes_antigas() -> RedirectResponse:
-    database.delete_hnetsistemas_edicoes()
-    return RedirectResponse("/admin?msg=Edições de sistema antigo removidas com sucesso!", status_code=303)
-
-
 @app.post("/admin/salvar")
-
 async def admin_salvar(request: Request) -> RedirectResponse:
+    _admin_require(request)
     form = await request.form()
     fields = {
         "opencode_api_key": str(form.get("opencode_api_key", "")),
@@ -1280,7 +1358,18 @@ async def admin_salvar(request: Request) -> RedirectResponse:
     for chave, valor in fields.items():
         if valor.strip():
             database.set_setting(chave, valor.strip())
-    # Nova chave pode ser válida — libera circuit breaker de 401
+    # Toggle AI refine (hidden false + checkbox true)
+    try:
+        vals = [str(v).strip().lower() for v in form.getlist("ai_refine_publications")]
+    except Exception:
+        vals = [str(form.get("ai_refine_publications", "")).strip().lower()]
+    if vals:
+        ai_on = "true" in vals or "on" in vals or "1" in vals
+        database.set_setting("ai_refine_publications", "true" if ai_on else "false")
+        try:
+            object.__setattr__(SETTINGS, "ai_refine_publications", ai_on)
+        except Exception:
+            pass
     if fields.get("opencode_api_key", "").strip():
         from ai_processor import reset_auth_circuit
 
@@ -1290,6 +1379,7 @@ async def admin_salvar(request: Request) -> RedirectResponse:
 
 @app.post("/admin/testar")
 def admin_testar(request: Request) -> HTMLResponse:
+    _admin_require(request)
     from ai_processor import _api_key, _auth_bloqueada, _extrair_publicacao, reset_auth_circuit
 
     reset_auth_circuit()
@@ -1305,7 +1395,7 @@ def admin_testar(request: Request) -> HTMLResponse:
             if _auth_bloqueada:
                 resultado = (
                     "Falha de autenticação (401 Invalid API key). "
-                    "Renove a chave em opencode.ai e atualize OPENCODE_API_KEY no .env ou neste Admin."
+                    "Renove a chave em opencode.ai e atualize OPENCODE_API_KEY."
                 )
             elif r:
                 resultado = f"OK — Resposta recebida: {str(r)[:200]}"
@@ -1314,42 +1404,14 @@ def admin_testar(request: Request) -> HTMLResponse:
         except Exception as exc:
             resultado = f"Erro: {exc}"
 
-    api_key = database.get_setting("opencode_api_key", "") or SETTINGS.opencode_api_key
-    model = database.get_setting("opencode_model", "") or SETTINGS.opencode_model
-    api_key_masked = f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else ("***" if api_key else "")
-    webhooks = database.get_webhooks()
-    extra_terms = database.get_setting("extra_terms", "") or ",".join(SETTINGS.extra_terms)
-    ignore_terms = database.get_setting("ignore_terms", "") or ",".join(SETTINGS.ignore_context_terms)
-    smtp_host = database.get_setting("smtp_host", "") or SETTINGS.smtp_host
-    smtp_port = database.get_setting("smtp_port", "") or str(SETTINGS.smtp_port)
-    smtp_user = database.get_setting("smtp_user", "") or SETTINGS.smtp_user
-    smtp_to = database.get_setting("smtp_to", "") or SETTINGS.smtp_to
-    webhook_url = database.get_setting("webhook_url", "") or SETTINGS.webhook_url
-
-    return templates.TemplateResponse(
-        request,
-        "admin.html",
-        {
-            "api_key_configured": bool(api_key),
-            "api_key_masked": api_key_masked,
-            "model": model or "deepseek-v4-flash",
-            "ai_ativo": bool(api_key) and SETTINGS.ai_refine_publications,
-            "extra_terms": extra_terms,
-            "ignore_terms": ignore_terms,
-            "smtp_host": smtp_host,
-            "smtp_port": smtp_port,
-            "smtp_user": smtp_user,
-            "smtp_to": smtp_to,
-            "webhook_url": webhook_url,
-            "webhooks": webhooks,
-            "msg": "",
-            "teste_resultado": resultado,
-        },
-    )
+    ctx = _admin_ctx(teste_resultado=resultado)
+    ctx["admin_locked"] = False
+    return templates.TemplateResponse(request, "admin.html", ctx)
 
 
 @app.post("/admin/webhook/adicionar")
 async def admin_webhook_adicionar(request: Request) -> RedirectResponse:
+    _admin_require(request)
     form = await request.form()
     url = str(form.get("webhook_url", "")).strip()
     descricao = str(form.get("webhook_descricao", "")).strip()
@@ -1359,9 +1421,198 @@ async def admin_webhook_adicionar(request: Request) -> RedirectResponse:
 
 
 @app.post("/admin/webhook/{webhook_id}/remover")
-def admin_webhook_remover(webhook_id: int) -> RedirectResponse:
+def admin_webhook_remover(request: Request, webhook_id: int) -> RedirectResponse:
+    _admin_require(request)
     database.delete_webhook(webhook_id)
     return RedirectResponse("/admin", status_code=303)
+
+
+# ---- Admin JSON API (Agente + ferramentas) ----
+
+@app.get("/admin/api/agente/status")
+def admin_api_agente_status(request: Request) -> JSONResponse:
+    _admin_require(request)
+    from agente import status_agente, listar_log
+
+    st = status_agente()
+    st["log"] = listar_log(40)
+    return JSONResponse(st)
+
+
+@app.post("/admin/api/agente/on")
+def admin_api_agente_on(request: Request) -> JSONResponse:
+    _admin_require(request)
+    from agente import set_agente_ativo, status_agente
+
+    set_agente_ativo(True)
+    return JSONResponse({"ok": True, "status": status_agente()})
+
+
+@app.post("/admin/api/agente/off")
+def admin_api_agente_off(request: Request) -> JSONResponse:
+    _admin_require(request)
+    from agente import set_agente_ativo, status_agente
+
+    set_agente_ativo(False)
+    return JSONResponse({"ok": True, "status": status_agente()})
+
+
+@app.post("/admin/api/agente/modo")
+async def admin_api_agente_modo(request: Request) -> JSONResponse:
+    _admin_require(request)
+    from agente import MODOS, set_agente_modo, status_agente
+
+    body = await request.json()
+    modo = str(body.get("modo", "auto")).strip().casefold()
+    if modo not in MODOS:
+        raise HTTPException(400, f"Modo inválido. Use: {', '.join(MODOS)}")
+    set_agente_modo(modo)
+    return JSONResponse({"ok": True, "status": status_agente()})
+
+
+@app.post("/admin/api/agente/pulse")
+def admin_api_agente_pulse(request: Request) -> JSONResponse:
+    _admin_require(request)
+    from agente import format_ciclo, run_pulse, status_agente
+
+    res = run_pulse(force=True)
+    return JSONResponse(
+        {
+            "ok": True,
+            "texto": format_ciclo(res),
+            "acoes": [
+                {"acao": a.acao, "ok": a.ok, "detalhe": a.detalhe, "nivel": a.nivel}
+                for a in res.acoes
+            ],
+            "status": status_agente(),
+        }
+    )
+
+
+@app.post("/admin/api/agente/cerebro")
+def admin_api_agente_cerebro(request: Request) -> JSONResponse:
+    _admin_require(request)
+    from agente import format_ciclo, run_cerebro, status_agente
+
+    res = run_cerebro(force=True)
+    return JSONResponse(
+        {
+            "ok": True,
+            "texto": format_ciclo(res),
+            "acoes": [
+                {"acao": a.acao, "ok": a.ok, "detalhe": a.detalhe, "nivel": a.nivel}
+                for a in res.acoes
+            ],
+            "status": status_agente(),
+        }
+    )
+
+
+@app.post("/admin/api/agente/once")
+def admin_api_agente_once(request: Request) -> JSONResponse:
+    _admin_require(request)
+    from agente import format_ciclo, run_cerebro, run_pulse, status_agente
+
+    p = run_pulse(force=True)
+    c = run_cerebro(force=True)
+    return JSONResponse(
+        {
+            "ok": True,
+            "pulse": format_ciclo(p),
+            "cerebro": format_ciclo(c),
+            "status": status_agente(),
+        }
+    )
+
+
+@app.get("/admin/api/diagnostico")
+def admin_api_diagnostico(request: Request) -> JSONResponse:
+    _admin_require(request)
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    try:
+        from scripts import _diagnostico as diag  # type: ignore
+    except Exception:
+        # scripts com underscore: import via runpy path
+        import importlib.util
+
+        path = BASE_DIR / "scripts" / "_diagnostico.py"
+        spec = importlib.util.spec_from_file_location("diag", path)
+        diag = importlib.util.module_from_spec(spec)  # type: ignore
+        assert spec and spec.loader
+        spec.loader.exec_module(diag)  # type: ignore
+    with redirect_stdout(buf):
+        diag.main()
+    return JSONResponse({"ok": True, "texto": buf.getvalue()})
+
+
+@app.get("/admin/api/qualidade")
+def admin_api_qualidade(request: Request, modo: str = "tudo") -> JSONResponse:
+    _admin_require(request)
+    import io
+    from contextlib import redirect_stdout
+    import importlib.util
+
+    path = BASE_DIR / "scripts" / "_qualidade.py"
+    spec = importlib.util.spec_from_file_location("qualidade", path)
+    mod = importlib.util.module_from_spec(spec)  # type: ignore
+    assert spec and spec.loader
+    spec.loader.exec_module(mod)  # type: ignore
+    buf = io.StringIO()
+    # monkeypatch argv
+    import sys
+
+    old = sys.argv
+    sys.argv = ["_qualidade.py", "--modo", modo, "--limite", "25"]
+    try:
+        with redirect_stdout(buf):
+            mod.main()
+    finally:
+        sys.argv = old
+    return JSONResponse({"ok": True, "texto": buf.getvalue()})
+
+
+@app.post("/admin/api/ferramenta/{nome}")
+def admin_api_ferramenta(request: Request, nome: str) -> JSONResponse:
+    """Ferramentas: lock, jobs, backup, limpar-dry."""
+    _admin_require(request)
+    nome = nome.strip().lower()
+    if nome == "lock":
+        from process_lock import DEFAULT_LOCK
+
+        if DEFAULT_LOCK.exists():
+            DEFAULT_LOCK.unlink()
+            return JSONResponse({"ok": True, "msg": f"Lock removido: {DEFAULT_LOCK}"})
+        return JSONResponse({"ok": True, "msg": "Nenhum lock encontrado."})
+    if nome == "jobs":
+        n = database.cleanup_stuck_jobs(max_hours=0)
+        return JSONResponse({"ok": True, "msg": f"{n} job(s) limpo(s)."})
+    if nome == "backup":
+        path = database.backup_database()
+        return JSONResponse({"ok": True, "msg": f"Backup: {path}"})
+    if nome == "limpar-dry":
+        import io
+        from contextlib import redirect_stdout
+        import importlib.util
+        import sys
+
+        path = BASE_DIR / "scripts" / "_limpar_processados.py"
+        spec = importlib.util.spec_from_file_location("limpar", path)
+        mod = importlib.util.module_from_spec(spec)  # type: ignore
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)  # type: ignore
+        old = sys.argv
+        sys.argv = ["_limpar_processados.py", "--dry-run"]
+        buf = io.StringIO()
+        try:
+            with redirect_stdout(buf):
+                mod.main()
+        finally:
+            sys.argv = old
+        return JSONResponse({"ok": True, "msg": buf.getvalue()})
+    raise HTTPException(400, f"Ferramenta desconhecida: {nome}")
 
 
 # ---------------------------------------------------------------------------

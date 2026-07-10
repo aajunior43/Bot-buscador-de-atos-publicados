@@ -1,10 +1,42 @@
 {% extends "base.html" %}
 {% block title %}Admin - Monitor Inajá{% endblock %}
 {% block content %}
+
+{% if admin_locked %}
 <section class="detail-hero fade-in">
   <a class="backlink" href="/operacao">← Operação</a>
   <h1>Administração</h1>
-  <p class="hero-copy">IA, termos de busca, e-mail, webhooks e manutenção.</p>
+  <p class="hero-copy">Área restrita — informe a senha de administrador.</p>
+</section>
+
+<div class="panel fade-in admin-gate" style="max-width:420px;margin:2rem auto;">
+  <div class="panel-head"><h2>🔒 Senha do Admin</h2></div>
+  <form method="post" action="/admin/login" class="admin-form">
+    {% if login_erro %}
+    <div class="alert alert-error" style="margin-bottom:1rem;">{{ login_erro }}</div>
+    {% endif %}
+    <div class="field">
+      <label for="senha">Senha</label>
+      <input type="password" id="senha" name="senha" placeholder="••••" autocomplete="current-password" autofocus required>
+      <small>Senha da porta Admin (padrão do sistema: <code>1999</code>).</small>
+    </div>
+    <button type="submit" class="btn" style="width:100%;margin-top:.75rem;">Entrar no Admin</button>
+  </form>
+</div>
+
+{% else %}
+
+<section class="detail-hero fade-in">
+  <a class="backlink" href="/operacao">← Operação</a>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+    <div>
+      <h1>Administração</h1>
+      <p class="hero-copy">IA, agente vigilante, termos, e-mail, webhooks e manutenção.</p>
+    </div>
+    <form method="post" action="/admin/logout" style="margin:0;">
+      <button type="submit" class="btn btn-secondary" style="font-size:.8rem;">Sair do Admin</button>
+    </form>
+  </div>
 </section>
 
 {% if msg %}
@@ -19,14 +51,104 @@
 
 <form method="post" action="/admin/salvar" id="admin-form">
   <nav class="tabs-nav" id="admin-tabs" role="tablist">
-    <button type="button" class="tab-btn active" data-tab="ia-busca" role="tab">IA e busca</button>
+    <button type="button" class="tab-btn active" data-tab="agente" role="tab">🤖 Agente</button>
+    <button type="button" class="tab-btn" data-tab="ia-busca" role="tab">IA e busca</button>
     <button type="button" class="tab-btn" data-tab="smtp" role="tab">Notificações</button>
     <button type="button" class="tab-btn" data-tab="webhooks" role="tab">Webhooks</button>
     <button type="button" class="tab-btn" data-tab="manutencao" role="tab">Manutenção</button>
   </nav>
 
-  <!-- Aba: IA & Busca -->
-  <div class="tab-panel active" data-panel="ia-busca">
+  <!-- ========== AGENTE ========== -->
+  <div class="tab-panel active" data-panel="agente">
+    <div class="panel fade-in" style="margin-bottom:1.5rem;">
+      <div class="panel-head">
+        <h2>Agente de vigilância</h2>
+        <span id="ag-badge" class="pill">{{ 'ON' if agente.ativo else 'OFF' }} · {{ agente.modo_efetivo or agente.modo_config or '—' }}</span>
+      </div>
+      <div class="admin-form">
+        <p style="font-size:.85rem;color:var(--text-2);margin-bottom:1rem;">
+          Pulse (~{{ agente_env.pulse_s }}s): saúde, jobs, lock.
+          Cérebro (~{{ agente_env.cerebro_min }} min): OCR seletivo + re-IA.
+          Também roda no idle do BOT se <code>AGENTE_NO_BOT=true</code>.
+        </p>
+
+        <div class="admin-stats-grid" id="ag-stats">
+          <div class="admin-stat"><span>Ativo</span><strong id="ag-ativo">{{ 'Sim' if agente.ativo else 'Não' }}</strong></div>
+          <div class="admin-stat"><span>Modo config</span><strong id="ag-modo">{{ agente.modo_config or 'auto' }}</strong></div>
+          <div class="admin-stat"><span>Modo efetivo</span><strong id="ag-modo-ef">{{ agente.modo_efetivo or '—' }}</strong></div>
+          <div class="admin-stat"><span>Últ. pulse</span><strong id="ag-pulse">{{ agente.ultimo_pulse or '—' }}</strong></div>
+          <div class="admin-stat"><span>Últ. cérebro</span><strong id="ag-cerebro">{{ agente.ultimo_cerebro or '—' }}</strong></div>
+          <div class="admin-stat"><span>IA / hora</span><strong id="ag-ia">{{ agente.ia_hora or '0' }}</strong></div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin:1.25rem 0;">
+          <button type="button" class="btn" id="btn-ag-on">Ligar</button>
+          <button type="button" class="btn btn-secondary" id="btn-ag-off">Desligar</button>
+          <button type="button" class="btn btn-secondary" id="btn-ag-pulse">Rodar pulse</button>
+          <button type="button" class="btn btn-secondary" id="btn-ag-cerebro">Rodar cérebro</button>
+          <button type="button" class="btn" id="btn-ag-once">Pulse + cérebro</button>
+          <button type="button" class="btn btn-secondary" id="btn-ag-refresh">Atualizar status</button>
+        </div>
+
+        <div class="field" style="max-width:280px;">
+          <label for="ag-modo-sel">Modo do agente</label>
+          <select id="ag-modo-sel">
+            {% for m in ['auto','escudo','formiga','cirurgiao','sentinela'] %}
+            <option value="{{ m }}" {% if (agente.modo_config or 'auto') == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+          <small>auto escolhe sozinho · escudo=só saúde · formiga=fila · cirurgiao=qualidade · sentinela=observa</small>
+        </div>
+        <button type="button" class="btn btn-secondary" id="btn-ag-modo" style="margin-top:.5rem;">Aplicar modo</button>
+
+        <div class="info-box" style="margin-top:1.25rem;">
+          <strong>Defaults (.env)</strong>
+          <table class="status-table">
+            <tr><td>Pulse</td><td>{{ agente_env.pulse_s }}s</td></tr>
+            <tr><td>Cérebro</td><td>{{ agente_env.cerebro_min }} min</td></tr>
+            <tr><td>Max OCR / ciclo</td><td>{{ agente_env.max_ocr }}</td></tr>
+            <tr><td>Max IA / hora</td><td>{{ agente_env.max_ia_hora }}</td></tr>
+            <tr><td>Auto limpar lock</td><td>{{ 'sim' if agente_env.auto_lock else 'não' }} ({{ agente_env.lock_max_min }} min)</td></tr>
+            <tr><td>Auto limpar jobs</td><td>{{ 'sim' if agente_env.auto_jobs else 'não' }} ({{ agente_env.job_max_min }} min)</td></tr>
+            <tr><td>No BOT idle</td><td>{{ 'sim' if agente_env.no_bot else 'não' }}</td></tr>
+            <tr><td>Notificar</td><td>{{ 'sim' if agente_env.notificar else 'não' }}</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel fade-in" style="margin-bottom:1.5rem;">
+      <div class="panel-head"><h2>Saída da última ação</h2></div>
+      <pre id="ag-output" class="admin-pre">Nenhuma ação ainda. Use os botões acima.</pre>
+    </div>
+
+    <div class="panel fade-in">
+      <div class="panel-head"><h2>Log do agente</h2></div>
+      <div class="admin-form" style="overflow-x:auto;">
+        <table class="status-table" id="ag-log-table">
+          <thead>
+            <tr><th>Quando</th><th>Ciclo</th><th>Modo</th><th>Ação</th><th>Detalhe</th></tr>
+          </thead>
+          <tbody id="ag-log-body">
+            {% for r in (agente.recentes or []) %}
+            <tr>
+              <td>{{ r.criado_em }}</td>
+              <td>{{ r.ciclo }}</td>
+              <td>{{ r.modo }}</td>
+              <td>{{ r.acao }}</td>
+              <td>{{ (r.detalhe or '')[:80] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">Sem registros ainda.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== IA & BUSCA ========== -->
+  <div class="tab-panel" data-panel="ia-busca">
     <div class="panel fade-in" style="margin-bottom:1.5rem;">
       <div class="panel-head"><h2>Inteligência artificial</h2></div>
       <div class="admin-form">
@@ -43,7 +165,14 @@
           <div class="field">
             <label for="opencode_model">Modelo</label>
             <input type="text" id="opencode_model" name="opencode_model" value="{{ model }}" placeholder="deepseek-v4-flash">
-            <small>Sugestões: <code>deepseek-v4-flash</code> (barato) · <code>deepseek-v4-pro</code> · <code>qwen3.7-plus</code></small>
+            <small>Sugestões: <code>deepseek-v4-flash</code> · <code>deepseek-v4-pro</code></small>
+          </div>
+          <div class="field">
+            <input type="hidden" name="ai_refine_publications" value="false">
+            <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+              <input type="checkbox" name="ai_refine_publications" value="true" {% if ai_refine %}checked{% endif %}>
+              Refinar publicações com IA (AI_REFINE)
+            </label>
           </div>
         </div>
       </div>
@@ -54,24 +183,21 @@
       <div class="admin-form">
         <div class="field">
           <label for="extra_terms">Termos extras (separados por vírgula)</label>
-          <input type="text" id="extra_terms" name="extra_terms" value="{{ extra_terms }}" placeholder="João Eder,Luana Aiara,Amarildo Peres">
-          <small>Nomes de pessoas ou expressões adicionais a monitorar.</small>
+          <input type="text" id="extra_terms" name="extra_terms" value="{{ extra_terms }}" placeholder="João Eder,Luana Aiara">
         </div>
         <div class="field">
-          <label for="ignore_terms">Termos a ignorar no contexto (separados por vírgula)</label>
-          <input type="text" id="ignore_terms" name="ignore_terms" value="{{ ignore_terms }}" placeholder="distribuição avulsa,farmácia,loterias">
-          <small>Contextos onde menções genéricas de "Inajá" devem ser descartadas.</small>
+          <label for="ignore_terms">Termos a ignorar no contexto</label>
+          <input type="text" id="ignore_terms" name="ignore_terms" value="{{ ignore_terms }}" placeholder="farmácia,loterias">
         </div>
         <div class="field">
           <label for="absence_alert_days">Dias sem publicação para alerta</label>
           <input type="number" id="absence_alert_days" name="absence_alert_days" value="30" min="1" max="365" style="max-width:120px;">
-          <small>Se não houver publicação com Inajá neste período, um alerta é enviado.</small>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Aba: Notificações & SMTP -->
+  <!-- ========== SMTP ========== -->
   <div class="tab-panel" data-panel="smtp">
     <div class="panel fade-in" style="margin-bottom:1.5rem;">
       <div class="panel-head"><h2>📧 Notificação por E-mail (SMTP)</h2></div>
@@ -83,37 +209,34 @@
           </div>
           <div class="field">
             <label for="smtp_port">Porta</label>
-            <input type="number" id="smtp_port" name="smtp_port" value="{{ smtp_port or 587 }}" placeholder="587" style="max-width:100px;">
+            <input type="number" id="smtp_port" name="smtp_port" value="{{ smtp_port or 587 }}" style="max-width:100px;">
           </div>
           <div class="field">
-            <label for="smtp_user">Usuário (e-mail remetente)</label>
-            <input type="email" id="smtp_user" name="smtp_user" value="{{ smtp_user }}" placeholder="seu@gmail.com">
+            <label for="smtp_user">Usuário</label>
+            <input type="email" id="smtp_user" name="smtp_user" value="{{ smtp_user }}">
           </div>
           <div class="field">
             <label for="smtp_pass">Senha / App Password</label>
             <input type="password" id="smtp_pass" name="smtp_pass" placeholder="••••••••">
-            <small>Use uma "App Password" do Google se usar Gmail.</small>
           </div>
           <div class="field">
             <label for="smtp_to">Destinatário(s)</label>
-            <input type="text" id="smtp_to" name="smtp_to" value="{{ smtp_to }}" placeholder="destino@email.com">
-            <small>Múltiplos e-mails separados por vírgula.</small>
+            <input type="text" id="smtp_to" name="smtp_to" value="{{ smtp_to }}">
           </div>
           <div class="field">
-            <label for="smtp_from">Remetente (nome)</label>
-            <input type="text" id="smtp_from" name="smtp_from" value="{{ smtp_user }}" placeholder="Monitor Inajá">
+            <label for="smtp_from">Remetente</label>
+            <input type="text" id="smtp_from" name="smtp_from" value="{{ smtp_user }}">
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Barra de salvamento (visível apenas nas abas de configuração) -->
-  <div class="save-bar" id="save-bar">
+  <div class="save-bar" id="save-bar" style="display:none;">
     <button type="submit" class="btn">💾 Salvar configurações (IA, termos e SMTP)</button>
   </div>
 
-  <!-- Aba: Webhooks -->
+  <!-- ========== WEBHOOKS ========== -->
   <div class="tab-panel" data-panel="webhooks">
     <div class="panel fade-in" style="margin-bottom:1.5rem;">
       <div class="panel-head">
@@ -141,66 +264,84 @@
           </div>
           <div class="field" style="flex:1; margin:0;">
             <label for="webhook_descricao">Descrição</label>
-            <input type="text" id="webhook_descricao" name="webhook_descricao" placeholder="Zapier, n8n, etc.">
+            <input type="text" id="webhook_descricao" name="webhook_descricao" placeholder="Zapier, n8n…">
           </div>
           <button type="submit" formaction="/admin/webhook/adicionar" class="btn">Adicionar</button>
         </div>
-        <p style="font-size:.75rem; color:var(--text-3); margin-top:.75rem;">
-          Payload JSON enviado a cada detecção: <code>{ edicao_id, edicao_titulo, paginas, termos, publicacoes, mencoes, url }</code>
-        </p>
       </div>
     </div>
   </div>
 
-  <!-- Aba: Manutenção & Diagnóstico -->
+  <!-- ========== MANUTENÇÃO ========== -->
   <div class="tab-panel" data-panel="manutencao">
     <div class="panel fade-in" style="margin-bottom:1.5rem;">
-      <div class="panel-head"><h2>🧪 Diagnóstico</h2></div>
-      <div class="admin-form" style="display:flex; gap:1rem;">
-        <button type="submit" formaction="/admin/testar" class="btn btn-secondary">Testar conexão com OpenCode Go</button>
+      <div class="panel-head"><h2>🧪 Diagnóstico completo</h2></div>
+      <div class="admin-form">
+        <button type="button" class="btn btn-secondary" id="btn-diagnostico">Rodar diagnóstico</button>
+        <button type="submit" formaction="/admin/testar" class="btn btn-secondary">Testar OpenCode / IA</button>
+        <pre id="diag-out" class="admin-pre" style="margin-top:1rem;">Clique para executar…</pre>
       </div>
     </div>
 
     <div class="panel fade-in" style="margin-bottom:1.5rem;">
-      <div class="panel-head"><h2>Backup do banco</h2></div>
+      <div class="panel-head"><h2>📊 Qualidade / revisão</h2></div>
       <div class="admin-form">
-        <p style="font-size:.85rem; color:var(--text-2); margin-bottom:.75rem;">
-          Cópia segura do SQLite (WAL-aware) em <code>logs/backups/</code>. Também roda no máximo 1× por dia no ciclo do rastreador.
-        </p>
-        <button type="submit" formaction="/admin/backup" class="btn btn-secondary">Criar backup agora</button>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;">
+          <button type="button" class="btn btn-secondary btn-qual" data-modo="tudo">Tudo</button>
+          <button type="button" class="btn btn-secondary btn-qual" data-modo="fn">FN</button>
+          <button type="button" class="btn btn-secondary btn-qual" data-modo="so-mencao">Só-menção</button>
+          <button type="button" class="btn btn-secondary btn-qual" data-modo="quarentena">Quarentena</button>
+          <button type="button" class="btn btn-secondary btn-qual" data-modo="relatorio">Relatório pubs</button>
+        </div>
+        <pre id="qual-out" class="admin-pre">Escolha um relatório…</pre>
       </div>
+    </div>
+
+    <div class="panel fade-in" style="margin-bottom:1.5rem;">
+      <div class="panel-head"><h2>Ferramentas rápidas</h2></div>
+      <div class="admin-form" style="display:flex;flex-wrap:wrap;gap:.6rem;">
+        <button type="button" class="btn btn-secondary" data-tool="lock">Remover lock</button>
+        <button type="button" class="btn btn-secondary" data-tool="jobs">Limpar jobs travados</button>
+        <button type="button" class="btn btn-secondary" data-tool="backup">Backup agora</button>
+        <button type="button" class="btn btn-secondary" data-tool="limpar-dry">Dry-run limpar processados</button>
+        <button type="submit" formaction="/admin/backup" class="btn btn-secondary">Backup (form)</button>
+      </div>
+      <pre id="tool-out" class="admin-pre" style="margin:1rem 1.5rem 1.25rem;">—</pre>
     </div>
 
     <div class="panel fade-in" style="margin-bottom:1.5rem;">
       <div class="panel-head"><h2>Utilitários de limpeza</h2></div>
       <div class="admin-form">
         <p style="font-size:.85rem; color:var(--text-2); margin-bottom:.75rem;">
-          Remova as 1.074 edições cadastradas no domínio antigo (<code>hnetsistemas.com.br</code>) que estão com links quebrados e poluem a listagem.
+          Remove edições do domínio antigo (<code>hnetsistemas.com.br</code>).
         </p>
-        <button type="submit" formaction="/admin/limpar-edicoes-antigas" class="btn btn-danger" onclick="return confirm('Tem certeza que deseja apagar as edições do sistema antigo? Essa ação não pode ser desfeita.');">Apagar Edições do Sistema Antigo</button>
+        <button type="submit" formaction="/admin/limpar-edicoes-antigas" class="btn btn-danger"
+          onclick="return confirm('Apagar edições do sistema antigo?');">Apagar edições antigas</button>
       </div>
     </div>
 
     <div class="panel fade-in">
-      <div class="panel-head"><h2>📊 Status do Sistema</h2></div>
+      <div class="panel-head"><h2>Status do sistema</h2></div>
       <div class="admin-form">
         <div class="info-box" style="margin:0;">
           <table class="status-table">
-            <tr><td>IA via OpenCode Go</td><td>{{ "✅ Ativo" if ai_ativo else "❌ Desativado" }}</td></tr>
-            <tr><td>Modelo configurado</td><td><code>{{ model }}</code></td></tr>
-            <tr><td>API Key cadastrada</td><td>{{ "Sim" if api_key_configured else "Não" }}</td></tr>
-            <tr><td>Refinamento de publicações</td><td>{{ "Ligado" if ai_ativo else "Desligado" }}</td></tr>
-            <tr><td>Termos extras ativos</td><td>{{ extra_terms or "nenhum" }}</td></tr>
-            <tr><td>SMTP configurado</td><td>{{ "Sim" if smtp_host else "Não" }}</td></tr>
+            <tr><td>IA OpenCode</td><td>{{ "✅ Ativo" if ai_ativo else "❌ Desativado" }}</td></tr>
+            <tr><td>Modelo</td><td><code>{{ model }}</code></td></tr>
+            <tr><td>API Key</td><td>{{ "Sim" if api_key_configured else "Não" }}</td></tr>
+            <tr><td>Refine IA</td><td>{{ "Ligado" if ai_refine else "Desligado" }}</td></tr>
+            <tr><td>Agente</td><td>{{ 'ON / ' + (agente.modo_efetivo or '—') if agente.ativo else 'OFF' }}</td></tr>
+            <tr><td>SMTP</td><td>{{ "Sim" if smtp_host else "Não" }}</td></tr>
           </table>
         </div>
       </div>
     </div>
   </div>
 </form>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
+{% if not admin_locked %}
 <script>
 (function () {
   const tabBtns = document.querySelectorAll('#admin-tabs .tab-btn');
@@ -216,12 +357,144 @@
   }
 
   tabBtns.forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
-
   let saved = null;
   try { saved = localStorage.getItem(STORAGE_KEY); } catch (e) {}
   if (saved && document.querySelector('.tab-panel[data-panel="' + saved + '"]')) {
     activateTab(saved);
+  } else {
+    activateTab('agente');
   }
+
+  const out = document.getElementById('ag-output');
+  function setOut(t) { if (out) out.textContent = t || ''; }
+
+  function fillStatus(st) {
+    if (!st) return;
+    const $ = id => document.getElementById(id);
+    if ($('ag-ativo')) $('ag-ativo').textContent = st.ativo ? 'Sim' : 'Não';
+    if ($('ag-modo')) $('ag-modo').textContent = st.modo_config || '—';
+    if ($('ag-modo-ef')) $('ag-modo-ef').textContent = st.modo_efetivo || '—';
+    if ($('ag-pulse')) $('ag-pulse').textContent = st.ultimo_pulse || '—';
+    if ($('ag-cerebro')) $('ag-cerebro').textContent = st.ultimo_cerebro || '—';
+    if ($('ag-ia')) $('ag-ia').textContent = st.ia_hora || '0';
+    if ($('ag-badge')) {
+      $('ag-badge').textContent = (st.ativo ? 'ON' : 'OFF') + ' · ' + (st.modo_efetivo || st.modo_config || '—');
+    }
+    const tbody = document.getElementById('ag-log-body');
+    const rows = st.log || st.recentes || [];
+    if (tbody) {
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="5">Sem registros.</td></tr>';
+      } else {
+        tbody.innerHTML = rows.map(r =>
+          '<tr><td>' + (r.criado_em||'') + '</td><td>' + (r.ciclo||'') +
+          '</td><td>' + (r.modo||'') + '</td><td>' + (r.acao||'') +
+          '</td><td>' + ((r.detalhe||'').slice(0,80)) + '</td></tr>'
+        ).join('');
+      }
+    }
+  }
+
+  async function api(url, opts) {
+    const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
+    if (r.status === 401) {
+      alert('Sessão admin expirou. Recarregue e entre com a senha 1999.');
+      location.reload();
+      throw new Error('401');
+    }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    return j;
+  }
+
+  async function refresh() {
+    try {
+      const st = await api('/admin/api/agente/status');
+      fillStatus(st);
+      setOut('Status atualizado.');
+    } catch (e) { setOut('Erro: ' + e.message); }
+  }
+
+  document.getElementById('btn-ag-refresh')?.addEventListener('click', refresh);
+  document.getElementById('btn-ag-on')?.addEventListener('click', async () => {
+    try { fillStatus((await api('/admin/api/agente/on', { method: 'POST' })).status); setOut('Agente LIGADO'); }
+    catch (e) { setOut(e.message); }
+  });
+  document.getElementById('btn-ag-off')?.addEventListener('click', async () => {
+    try { fillStatus((await api('/admin/api/agente/off', { method: 'POST' })).status); setOut('Agente DESLIGADO'); }
+    catch (e) { setOut(e.message); }
+  });
+  document.getElementById('btn-ag-modo')?.addEventListener('click', async () => {
+    const modo = document.getElementById('ag-modo-sel').value;
+    try {
+      const j = await api('/admin/api/agente/modo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modo })
+      });
+      fillStatus(j.status);
+      setOut('Modo: ' + modo);
+    } catch (e) { setOut(e.message); }
+  });
+  document.getElementById('btn-ag-pulse')?.addEventListener('click', async () => {
+    setOut('Rodando pulse…');
+    try {
+      const j = await api('/admin/api/agente/pulse', { method: 'POST' });
+      fillStatus(j.status);
+      setOut(j.texto || JSON.stringify(j.acoes, null, 2));
+    } catch (e) { setOut(e.message); }
+  });
+  document.getElementById('btn-ag-cerebro')?.addEventListener('click', async () => {
+    setOut('Rodando cérebro (pode demorar se houver OCR)…');
+    try {
+      const j = await api('/admin/api/agente/cerebro', { method: 'POST' });
+      fillStatus(j.status);
+      setOut(j.texto || JSON.stringify(j.acoes, null, 2));
+    } catch (e) { setOut(e.message); }
+  });
+  document.getElementById('btn-ag-once')?.addEventListener('click', async () => {
+    setOut('Pulse + cérebro…');
+    try {
+      const j = await api('/admin/api/agente/once', { method: 'POST' });
+      fillStatus(j.status);
+      setOut((j.pulse || '') + '\n\n' + (j.cerebro || ''));
+    } catch (e) { setOut(e.message); }
+  });
+
+  document.getElementById('btn-diagnostico')?.addEventListener('click', async () => {
+    const el = document.getElementById('diag-out');
+    el.textContent = 'Executando…';
+    try {
+      const j = await api('/admin/api/diagnostico');
+      el.textContent = j.texto || 'OK';
+    } catch (e) { el.textContent = e.message; }
+  });
+
+  document.querySelectorAll('.btn-qual').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const el = document.getElementById('qual-out');
+      el.textContent = 'Carregando…';
+      try {
+        const j = await api('/admin/api/qualidade?modo=' + encodeURIComponent(btn.dataset.modo));
+        el.textContent = j.texto || 'OK';
+      } catch (e) { el.textContent = e.message; }
+    });
+  });
+
+  document.querySelectorAll('[data-tool]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const el = document.getElementById('tool-out');
+      el.textContent = '…';
+      try {
+        const j = await api('/admin/api/ferramenta/' + btn.dataset.tool, { method: 'POST' });
+        el.textContent = j.msg || JSON.stringify(j);
+      } catch (e) { el.textContent = e.message; }
+    });
+  });
+
+  // refresh leve ao abrir
+  refresh().catch(() => {});
 })();
 </script>
+{% endif %}
 {% endblock %}
