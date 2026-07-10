@@ -602,6 +602,11 @@ def _numero_parece_documento_pessoal(numero: str, linha: str) -> bool:
         return False
     if "." in numero_limpo and "/" not in numero_limpo:
         return True
+    # Sequência longa só de dígitos (RG, processo OCR) sem ano
+    if re.fullmatch(r"\d{7,}", numero_limpo):
+        ano = numero_limpo[-4:]
+        if not ano.startswith(("19", "20")):
+            return True
     contexto = _sem_acentos(linha).casefold()
     return any(chave in contexto for chave in ("cpf", "rg", "cnpj"))
 
@@ -615,11 +620,46 @@ def _normalizar_numero_ato(numero: str) -> str:
         ano = valor[-4:]
         if ano.startswith(("19", "20")):
             return f"{valor[:-4]}/{ano}"
-        # 8 dígitos sem ano reconhecível → provável ruído (RG/processo)
-        if len(valor) >= 8:
-            return valor  # deixa; filtros posteriores podem limpar
-        return f"{valor[:-4]}/{valor[-4:]}"
+        # 7–8 dígitos sem ano → lixo (ex.: 16132720) — não devolver
+        return ""
     return valor
+
+
+def _numero_ato_valido(numero: str | None) -> str | None:
+    """Sanitiza número de ato; None se for lixo OCR/RG/processo."""
+    if not numero or not str(numero).strip():
+        return None
+    n = str(numero).strip().strip(".,;:")
+    if not n:
+        return None
+    # Só dígitos longos sem separador
+    if re.fullmatch(r"\d{7,}", n):
+        ano = n[-4:]
+        if ano.startswith(("19", "20")) and 6 <= len(n) <= 8:
+            return f"{n[:-4]}/{ano}"
+        return None
+    # Formato N/AAAA ou N-AAAA
+    m = re.match(r"^(\d{1,6})\s*[/\-]\s*(\d{2,4})$", n)
+    if m:
+        seq, ano = m.group(1), m.group(2)
+        if len(ano) == 2:
+            ano = "20" + ano
+        if not ano.startswith(("19", "20")):
+            return None
+        # Anos absurdos (ex. 2036 OCR de 2026 ainda aceita; >2100 não)
+        try:
+            if int(ano) > 2100 or int(ano) < 1990:
+                return None
+        except ValueError:
+            return None
+        return f"{seq}/{ano}"
+    # Nº curto sem ano (ex.: Portaria 89)
+    if re.fullmatch(r"\d{1,5}", n):
+        return n
+    # Alfanumérico curto residual
+    if len(n) <= 12 and re.search(r"\d", n):
+        return n
+    return None
 
 
 def _extrair_data(texto: str) -> str | None:
@@ -947,7 +987,7 @@ def _publicacao_do_segmento(segmento: TextBlock, termos: set[str]) -> dict | Non
         "categoria": categoria,
         "orgao": orgao,
         "tipo": normalizar_tipo_ato(tipo),
-        "numero": numero,
+        "numero": _numero_ato_valido(numero),
         "data_documento": _extrair_data(segmento.texto),
         "assunto": assunto,
         "valor": _extrair_valor(segmento.texto),
@@ -1049,17 +1089,133 @@ def _segmentos_fallback_texto(pagina: PageText) -> list[TextBlock]:
     return out
 
 
+def _tipo_familia_dedup(tipo: str | None) -> str:
+    t = _sem_acentos(str(tipo or "")).casefold()
+    if not t:
+        return "sem_tipo"
+    if "extrato" in t and "contrato" in t:
+        return "extrato_contrato"
+    if "extrato" in t and "rescis" in t:
+        return "extrato_rescisao"
+    if "termo" in t and "aditivo" in t:
+        return "termo_aditivo"
+    if "homolog" in t or "adjudic" in t:
+        return "homologacao"
+    if "dispensa" in t:
+        return "dispensa"
+    if "contrato" in t:
+        return "contrato"
+    if "portaria" in t:
+        return "portaria"
+    if "decreto" in t:
+        return "decreto"
+    if "edital" in t:
+        return "edital"
+    if t.startswith("lei"):
+        return "lei"
+    return t[:40]
+
+
+def _orgao_familia_dedup(orgao: str | None) -> str:
+    """Agrupa Prefeitura e Município (mesmo ente) vs Câmara."""
+    o = _sem_acentos(str(orgao or "")).casefold()
+    if "camara" in o:
+        return "camara"
+    if "prefeitura" in o or "municipio" in o:
+        return "executivo"
+    if "conselho" in o:
+        return "conselho"
+    if "fundo" in o:
+        return "fundo"
+    return o[:30] or "sem_orgao"
+
+
 def _chave_pub_dedup(pub: dict) -> str:
-    """Chave para evitar duplicar o mesmo ato (blocks + fallback texto)."""
-    tipo = _sem_acentos(str(pub.get("tipo") or "")).casefold()
-    num = str(pub.get("numero") or "").strip().casefold()
-    orgao = _sem_acentos(str(pub.get("orgao") or "")).casefold()[:40]
+    """Chave para evitar duplicar o mesmo ato (blocks + fallback + órgãos sinônimos)."""
+    tipo = _tipo_familia_dedup(pub.get("tipo"))
+    num = _numero_ato_valido(pub.get("numero")) or ""
+    num = num.casefold()
+    fam = _orgao_familia_dedup(pub.get("orgao"))
     pag = pub.get("pagina")
     if num:
-        return f"{pag}|{tipo}|{num}|{orgao}"
-    trecho = _sem_acentos(str(pub.get("trecho") or "")[:180]).casefold()
+        # Mesmo nº + tipo + família de órgão (+ página se houver)
+        # Prefeitura vs Município no mesmo extrato colapsam
+        return f"{pag}|{tipo}|{num}|{fam}"
+    # Sem número: trecho normalizado (evita colapsar atos distintos)
+    trecho = _sem_acentos(str(pub.get("trecho") or "")[:200]).casefold()
     trecho = re.sub(r"\s+", " ", trecho)
-    return f"{pag}|{tipo}|{orgao}|{trecho[:80]}"
+    # Prefixo estável do corpo (ignora cabeçalho curto variável)
+    return f"{pag}|{tipo}|{fam}|{trecho[40:120] if len(trecho) > 80 else trecho[:80]}"
+
+
+def _score_qualidade_pub(pub: dict) -> float:
+    """Preferência ao fundir duplicatas (maior vence)."""
+    s = 0.0
+    if pub.get("resumo_ia"):
+        s += 12
+    if pub.get("valor"):
+        s += 5
+    if pub.get("assunto"):
+        s += 2
+    if pub.get("importancia"):
+        try:
+            s += min(5, int(pub["importancia"]))
+        except (TypeError, ValueError):
+            pass
+    orgao = _sem_acentos(str(pub.get("orgao") or "")).casefold()
+    if "prefeitura" in orgao:
+        s += 4
+    elif "municipio" in orgao:
+        s += 2
+    elif "camara" in orgao:
+        s += 3
+    num = str(pub.get("numero") or "")
+    if num and "/" in num:
+        s += 3
+    elif num:
+        s += 1
+    s += min(len(pub.get("trecho") or ""), 800) / 200.0
+    if pub.get("ia_processado") or pub.get("texto_corrigido"):
+        s += 2
+    return s
+
+
+def _deduplicar_publicacoes(publicacoes: list[dict]) -> list[dict]:
+    """Colapsa duplicatas (ex.: Extrato 04/2026 Prefeitura + Município)."""
+    melhores: dict[str, dict] = {}
+    ordem: list[str] = []
+    for pub in publicacoes:
+        if not pub:
+            continue
+        # Sanitiza número antes da chave
+        num_ok = _numero_ato_valido(pub.get("numero"))
+        if pub.get("numero") and not num_ok:
+            pub = dict(pub)
+            pub["numero"] = None
+        elif num_ok:
+            pub = dict(pub)
+            pub["numero"] = num_ok
+        chave = _chave_pub_dedup(pub)
+        if chave not in melhores:
+            melhores[chave] = pub
+            ordem.append(chave)
+            continue
+        atual = melhores[chave]
+        if _score_qualidade_pub(pub) > _score_qualidade_pub(atual):
+            # Herda campos úteis do perdedor
+            merged = dict(pub)
+            for k in ("valor", "resumo_ia", "assunto", "data_documento", "explicacao_ia"):
+                if not merged.get(k) and atual.get(k):
+                    merged[k] = atual[k]
+            if not merged.get("numero") and atual.get("numero"):
+                merged["numero"] = atual.get("numero")
+            melhores[chave] = merged
+        else:
+            # Completa o vencedor com campos do novo se faltar
+            for k in ("valor", "resumo_ia", "assunto", "data_documento"):
+                if not atual.get(k) and pub.get(k):
+                    atual[k] = pub[k]
+    return [melhores[k] for k in ordem]
 
 
 def detectar(
@@ -1172,6 +1328,8 @@ def detectar(
                 if _publicacao_suspeita_outro_municipio(publicacao):
                     descartes_vizinho += 1
                     continue
+                # Sanitiza número lixo logo na extração
+                publicacao["numero"] = _numero_ato_valido(publicacao.get("numero"))
                 chave = _chave_pub_dedup(publicacao)
                 if chave in vistos_pub:
                     continue
@@ -1179,29 +1337,28 @@ def detectar(
                 publicacoes.append(publicacao)
 
     publicacoes_brutas = len(publicacoes)
-    # Hard-filter final (redundante, barato) — garante lista limpa antes da IA
+    # Hard-filter + dedup (Prefeitura≡Município no mesmo nº/tipo)
     filtradas: list[dict] = []
-    vistos_final: set[str] = set()
     for pub in publicacoes:
         if _publicacao_suspeita_outro_municipio(pub) or _orgao_de_outro_municipio(
             pub.get("trecho") or ""
         ):
             descartes_vizinho += 1
             continue
-        chave = _chave_pub_dedup(pub)
-        if chave in vistos_final:
-            continue
-        vistos_final.add(chave)
         filtradas.append(pub)
-    publicacoes = filtradas
+    publicacoes = _deduplicar_publicacoes(filtradas)
     descartes_ia = 0
     if publicacoes:
         logger.info("Chamando IA para refinar %s publicacoes...", len(publicacoes))
         publicacoes, stats_ia = refinar_publicacoes(publicacoes)
         descartes_ia = int(stats_ia.get("descartes_ia", 0))
         descartes_vizinho += int(stats_ia.get("descartes_vizinho", 0))
+        # Pós-IA: limpa nº inventados e colapsa duplicatas restantes
+        for p in publicacoes:
+            p["numero"] = _numero_ato_valido(p.get("numero"))
+        publicacoes = _deduplicar_publicacoes(publicacoes)
         logger.info(
-            "IA concluida. Publicacoes refinadas: %s",
+            "IA concluida. Publicacoes refinadas: %s (após dedup)",
             sum(1 for p in publicacoes if p.get("resumo_ia")),
         )
 

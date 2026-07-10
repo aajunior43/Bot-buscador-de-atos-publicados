@@ -213,6 +213,25 @@ def validar_campos_ia(pub: dict, ia: dict) -> dict:
             flags.append({"campo": key, "motivo": f"não encontrado no trecho: {val!r}"})
             out[key] = None
             out.setdefault("_campos_rejeitados", []).append(key)
+    # Número de ato: rejeita lixo tipo RG/processo (16132720) mesmo se “ancorado”
+    if out.get("numero"):
+        try:
+            from detector import _numero_ato_valido
+
+            limpo = _numero_ato_valido(out.get("numero"))
+            if not limpo:
+                flags.append(
+                    {
+                        "campo": "numero",
+                        "motivo": f"formato inválido para ato: {out.get('numero')!r}",
+                    }
+                )
+                out.setdefault("_campos_rejeitados", []).append("numero")
+                out["numero"] = None
+            else:
+                out["numero"] = limpo
+        except Exception:
+            pass
     out["_validacao"] = {
         "ok": len(flags) == 0,
         "flags": flags,

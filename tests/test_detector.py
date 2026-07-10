@@ -17,6 +17,9 @@ from detector import (
     _normalizar_valor,
     _orgao_de_outro_municipio,
     _mencao_generica_sem_palavra_isolada,
+    _numero_ato_valido,
+    _deduplicar_publicacoes,
+    _chave_pub_dedup,
     detectar,
 )
 from ocr.models import PageText, TextBlock
@@ -138,6 +141,76 @@ class TestExtrairTipoNumero:
         tipo, numero = _extrair_tipo_numero(texto)
         assert tipo and "extrato" in tipo.casefold()
         assert numero and "04" in numero
+
+
+class TestNumeroAtoValido:
+    def test_aceita_com_ano(self):
+        assert _numero_ato_valido("04/2026") == "04/2026"
+        assert _numero_ato_valido("042/2026") == "042/2026"
+
+    def test_rejeita_rg_lixo(self):
+        assert _numero_ato_valido("16132720") is None
+        assert _numero_ato_valido("12345678") is None
+
+    def test_normaliza_colado_com_ano(self):
+        assert _numero_ato_valido("0422026") == "042/2026"
+
+    def test_curto_ok(self):
+        assert _numero_ato_valido("89") == "89"
+
+
+class TestDedupPublicacoes:
+    def test_prefeitura_e_municipio_mesmo_extrato(self):
+        pubs = [
+            {
+                "pagina": 6,
+                "tipo": "Extrato de Contrato",
+                "numero": "04/2026",
+                "orgao": "Prefeitura Municipal de Inajá",
+                "trecho": "A" * 100,
+                "resumo_ia": "Extrato completo com valor",
+            },
+            {
+                "pagina": 6,
+                "tipo": "Extrato de Contrato",
+                "numero": "04/2026",
+                "orgao": "Município de Inajá",
+                "trecho": "B" * 50,
+            },
+        ]
+        out = _deduplicar_publicacoes(pubs)
+        assert len(out) == 1
+        assert "Prefeitura" in (out[0].get("orgao") or "")
+        assert out[0].get("resumo_ia")
+
+    def test_chave_mesma_familia(self):
+        a = {
+            "pagina": 1,
+            "tipo": "Extrato de Contrato",
+            "numero": "04/2026",
+            "orgao": "Prefeitura Municipal de Inajá",
+        }
+        b = {
+            "pagina": 1,
+            "tipo": "Extrato de Contrato",
+            "numero": "04/2026",
+            "orgao": "Município de Inajá",
+        }
+        assert _chave_pub_dedup(a) == _chave_pub_dedup(b)
+
+    def test_lixo_numero_limpo_na_dedup(self):
+        pubs = [
+            {
+                "pagina": 1,
+                "tipo": "Termo Aditivo",
+                "numero": "16132720",
+                "orgao": "Município de Inajá",
+                "trecho": "aditivo combustivel " * 20,
+            }
+        ]
+        out = _deduplicar_publicacoes(pubs)
+        assert len(out) == 1
+        assert out[0].get("numero") is None
 
     def test_numero_normalizado(self):
         texto = "DECRETO Nº 0012026"
