@@ -157,6 +157,12 @@ FUNCOES: dict[str, dict[str, str]] = {
     "HS": {"grupo": "FERRAMENTAS", "titulo": "Historico sessao",
           "curta": "Últimas ações",
           "detalhe": "Mostra o histórico de comandos desta sessão do menu."},
+    "AG": {"grupo": "AGENTE", "titulo": "Agente vigilante",
+          "curta": "Pulse 2min + cérebro",
+          "detalhe": (
+              "Liga/desliga, muda modo (escudo/formiga/cirurgiao/sentinela/auto), "
+              "roda pulse/cérebro agora, vê log e status. No BOT idle também roda sozinho."
+          )},
     "C": {"grupo": "PERIGO", "titulo": "Limpar processados",
           "curta": "Apaga pubs · pede SIM",
           "detalhe": "Apaga pubs/menções/jobs e zera OCR. Mantém PDFs e .ocr.json. Backup + dry-run."},
@@ -171,6 +177,7 @@ ORDEM: list[tuple[str, list[str]]] = [
     ("PROCESSAMENTO", ["6", "7", "8", "9", "X", "V", "N", "F", "O"]),
     ("CONSULTA", ["S", "U", "P", "M", "Y", "J", "I"]),
     ("QUALIDADE", ["Z", "Q1", "Q2"]),
+    ("AGENTE", ["AG"]),
     ("FERRAMENTAS", ["A", "B", "R", "E", "T", "L", "Q", "G", "D", "K", "W", "CFG", "HS", "H"]),
     ("PERIGO", ["C"]),
     ("SAIR", ["0"]),
@@ -183,6 +190,7 @@ ALIASES = {
     "CFG": "CFG", "CONFIG": "CFG", "SETTINGS": "CFG",
     "HS": "HS", "HIST": "HS", "HISTORICO": "HS",
     "DIAG": "Z", "DIAGNOSTICO": "Z",
+    "AG": "AG", "AGENTE": "AG", "WATCHDOG": "AG",
 }
 
 
@@ -699,6 +707,46 @@ def _act_h() -> bool:
     return True
 
 
+def _act_ag() -> bool:
+    print("  [1] Status")
+    print("  [2] Ligar agente")
+    print("  [3] Desligar agente")
+    print("  [4] Modo (escudo/formiga/cirurgiao/sentinela/auto)")
+    print("  [5] Rodar pulse agora")
+    print("  [6] Rodar cerebro agora")
+    print("  [7] Pulse + cerebro (once)")
+    print("  [8] Ver log do agente")
+    print("  [9] Daemon em loop (Ctrl+C encerra)")
+    op = ask("Opcao", "1")
+    if op == "1":
+        run_py("scripts/_agente.py", "--status")
+    elif op == "2":
+        run_py("scripts/_agente.py", "--on")
+    elif op == "3":
+        run_py("scripts/_agente.py", "--off")
+    elif op == "4":
+        print("  Modos: escudo | formiga | cirurgiao | sentinela | auto")
+        m = ask("Modo", "auto")
+        if m:
+            run_py("scripts/_agente.py", "--modo", m, "--status")
+    elif op == "5":
+        run_py("scripts/_agente.py", "--pulse")
+    elif op == "6":
+        run_py("scripts/_agente.py", "--cerebro")
+    elif op == "7":
+        run_py("scripts/_agente.py", "--once")
+    elif op == "8":
+        n = ask("Quantas linhas", "25") or "25"
+        run_py("scripts/_agente.py", "--log", n)
+    elif op == "9":
+        print(f"  {CD}Ctrl+C encerra o daemon.{C0}")
+        run_py("scripts/_agente.py", "--daemon")
+    else:
+        print("  Cancelado.")
+    pause()
+    return True
+
+
 def _act_c() -> bool:
     print(f"  {C4}Dry-run primeiro recomendado.{C0}")
     if ask("Ver dry-run? [S/n]", "S").upper() != "N":
@@ -723,7 +771,7 @@ ACOES: dict[str, Callable[[], bool]] = {
     "Z": _act_z, "Q1": _act_q1, "Q2": _act_q2,
     "A": _act_a, "B": _act_b, "R": _act_r, "E": _act_e, "T": _act_t,
     "L": _act_l, "Q": _act_q, "G": _act_g, "D": _act_d, "K": _act_k,
-    "W": _act_w, "CFG": _act_cfg, "HS": _act_hs, "H": _act_h, "C": _act_c,
+    "W": _act_w, "CFG": _act_cfg, "HS": _act_hs, "H": _act_h, "AG": _act_ag, "C": _act_c,
 }
 
 
@@ -817,8 +865,10 @@ def run_noninteractive(op: str, extras: argparse.Namespace) -> int:
         return run_py(*args)
     if op == "N":
         return run_py("scripts/_scrape_only.py")
+    if op == "AG":
+        return run_py("scripts/_agente.py", "--once")
     print(f"Opcao --run nao suportada de forma nao-interativa: {op}")
-    print("Suportadas: S Z I Y D B A 4 L Q Q1 Q2 6 7 8 U E X N")
+    print("Suportadas: S Z I Y D B A 4 L Q Q1 Q2 6 7 8 U E X N AG")
     return 2
 
 

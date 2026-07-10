@@ -33,10 +33,23 @@ try:
     except Exception:
         pass
 
+    agente = ""
+    try:
+        from agente import agente_esta_ativo, modo_efetivo, resolver_modo_auto
+
+        if agente_esta_ativo():
+            m = modo_efetivo()
+            me = resolver_modo_auto() if m == "auto" else m
+            agente = f"  ·  AGENTE on/{me}"
+        else:
+            agente = "  ·  AGENTE off"
+    except Exception:
+        pass
+
     extra = f"  ·  jobs={jobs}" if jobs else ""
     print(
         f"  Fila: {pend} pendentes  |  {pubs} publicacoes  |  "
-        f"{ina} c/ Inaja  |  lock={lock_on}{extra}{bot}"
+        f"{ina} c/ Inaja  |  lock={lock_on}{extra}{bot}{agente}"
     )
 except Exception:
     print("  (status indisponivel)")

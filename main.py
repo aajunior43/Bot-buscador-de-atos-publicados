@@ -186,6 +186,14 @@ def main() -> None:
             except Exception:
                 logger.exception("Falha no processamento contínuo da fila.")
 
+        # Agente de vigilância (pulse ~2min / cérebro ~30min) no idle do BOT
+        try:
+            from agente import tick_from_bot
+
+            tick_from_bot()
+        except Exception:
+            logger.debug("Agente tick ignorado", exc_info=True)
+
         idle_ticks += 1
         # A cada ~5 min ocioso, mostra que o BOT segue vivo
         if idle_ticks % 10 == 0:

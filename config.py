@@ -158,6 +158,33 @@ class Settings:
     require_webapp_auth: bool = _bool_env("REQUIRE_WEBAPP_AUTH", False)
     # production | development — production implica require_webapp_auth.
     app_env: str = (os.getenv("APP_ENV", "development") or "development").strip().lower()
+    # --- Agente de vigilância (pulse + cérebro) ---
+    # escudo | formiga | cirurgiao | sentinela | auto
+    agente_ativo: bool = _bool_env("AGENTE_ATIVO", True)
+    agente_modo: str = (
+        os.getenv("AGENTE_MODO", "auto") or "auto"
+    ).strip().casefold()
+    # Pulse (saúde + correções baratas) em segundos
+    agente_pulse_segundos: int = _int_env("AGENTE_PULSE_SEGUNDOS", 120)
+    # Cérebro (OCR seletivo / re-IA / qualidade) em minutos
+    agente_cerebro_minutos: int = _int_env("AGENTE_CEREBRO_MINUTOS", 30)
+    # Teto de OCR real por ciclo cérebro
+    agente_max_ocr_por_ciclo: int = _int_env("AGENTE_MAX_OCR_POR_CICLO", 1)
+    # Teto de chamadas/re-IA por hora
+    agente_max_ia_por_hora: int = _int_env("AGENTE_MAX_IA_POR_HORA", 15)
+    # Auto-correções de infraestrutura
+    agente_auto_limpar_lock: bool = _bool_env("AGENTE_AUTO_LIMPAR_LOCK", True)
+    agente_auto_limpar_jobs: bool = _bool_env("AGENTE_AUTO_LIMPAR_JOBS", True)
+    # Lock sem atualização há N minutos = morto
+    agente_lock_max_minutos: int = _int_env("AGENTE_LOCK_MAX_MINUTOS", 45)
+    # Jobs rodando há mais de N minutos = travados
+    agente_job_max_minutos: int = _int_env("AGENTE_JOB_MAX_MINUTOS", 30)
+    # Notificar alertas do agente (Telegram/arquivo)
+    agente_notificar: bool = _bool_env("AGENTE_NOTIFICAR", True)
+    # Integrar no idle do main.py (BOT)
+    agente_no_bot: bool = _bool_env("AGENTE_NO_BOT", True)
+    # Cooldown de alerta repetido (minutos)
+    agente_alerta_cooldown_min: int = _int_env("AGENTE_ALERTA_COOLDOWN_MIN", 60)
 
 
     def __post_init__(self) -> None:

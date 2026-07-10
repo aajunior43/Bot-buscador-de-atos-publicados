@@ -121,6 +121,18 @@ CREATE TABLE IF NOT EXISTS deteccao_metricas (
 );
 
 CREATE INDEX IF NOT EXISTS idx_deteccao_metricas_edicao ON deteccao_metricas(edicao_id);
+
+CREATE TABLE IF NOT EXISTS agente_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+  ciclo TEXT,
+  modo TEXT,
+  acao TEXT NOT NULL,
+  nivel TEXT DEFAULT 'info',
+  detalhe TEXT,
+  ok INTEGER DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_agente_log_criado ON agente_log(criado_em);
 """
 
 
@@ -161,6 +173,22 @@ _MIGRATIONS: list[tuple[int, str]] = [
     (26, "ALTER TABLE publicacoes ADD COLUMN anomalia INTEGER DEFAULT 0"),
     (27, "ALTER TABLE publicacoes ADD COLUMN anomalia_motivo TEXT"),
     (28, "ALTER TABLE edicoes ADD COLUMN fn_sugestao TEXT"),
+    (
+        29,
+        """
+        CREATE TABLE IF NOT EXISTS agente_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+          ciclo TEXT,
+          modo TEXT,
+          acao TEXT NOT NULL,
+          nivel TEXT DEFAULT 'info',
+          detalhe TEXT,
+          ok INTEGER DEFAULT 1
+        )
+        """,
+    ),
+    (30, "CREATE INDEX IF NOT EXISTS idx_agente_log_criado ON agente_log(criado_em)"),
 ]
 
 # Colunas esperadas por migração — usadas para marcar versões já aplicadas
@@ -194,6 +222,7 @@ _MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
     26: ("publicacoes", "anomalia"),
     27: ("publicacoes", "anomalia_motivo"),
     28: ("edicoes", "fn_sugestao"),
+    # 29 = CREATE TABLE agente_log — sem marker de coluna; reaplicável com IF NOT EXISTS
 }
 
 
