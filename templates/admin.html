@@ -89,8 +89,21 @@
           <button type="button" class="btn btn-secondary" id="btn-ag-pulse">Rodar pulse</button>
           <button type="button" class="btn btn-secondary" id="btn-ag-cerebro">Rodar cérebro</button>
           <button type="button" class="btn" id="btn-ag-once">Pulse + cérebro</button>
+          <button type="button" class="btn" id="btn-fila-5" title="OCR real nas 5 pendentes prioritárias">Processar 5 pendentes</button>
           <button type="button" class="btn btn-secondary" id="btn-ag-refresh">Atualizar status</button>
         </div>
+
+        <div class="field" style="max-width:320px;margin-top:.5rem;">
+          <label for="auto-desde">Piso de data da fila (AUTO_PROCESS_DESDE)</label>
+          <input type="text" id="auto-desde" value="{{ agente.auto_process_desde or '' }}" placeholder="2024-01-01 (vazio = sem piso)">
+          <small>Edições anteriores a esta data saem da prioridade do agente/BOT.</small>
+        </div>
+        <button type="button" class="btn btn-secondary" id="btn-salvar-desde" style="margin-top:.4rem;">Salvar piso de data</button>
+
+        <p style="font-size:.8rem;color:var(--text-3);margin-top:1rem;" id="ag-orcamento">
+          OCR hoje: {{ agente.ocr_hoje or 0 }}/{{ agente.max_ocr_dia or '∞' }}
+          · noite={{ 'sim' if agente.noite else 'não' }}
+        </p>
 
         <div class="field" style="max-width:280px;">
           <label for="ag-modo-sel">Modo do agente</label>
@@ -294,8 +307,15 @@
           <button type="button" class="btn btn-secondary btn-qual" data-modo="so-mencao">Só-menção</button>
           <button type="button" class="btn btn-secondary btn-qual" data-modo="quarentena">Quarentena</button>
           <button type="button" class="btn btn-secondary btn-qual" data-modo="relatorio">Relatório pubs</button>
+          <button type="button" class="btn btn-secondary" id="btn-fn-lista">Listar FN (clicável)</button>
+        </div>
+        <div class="field" style="max-width:220px;">
+          <label for="fn-edicao-id">Reprocessar cache da edição (id)</label>
+          <input type="number" id="fn-edicao-id" placeholder="ex.: 67935" style="max-width:140px;">
+          <button type="button" class="btn btn-secondary" id="btn-fn-reproc" style="margin-top:.4rem;">Reprocessar + diff</button>
         </div>
         <pre id="qual-out" class="admin-pre">Escolha um relatório…</pre>
+        <div id="fn-lista" style="margin-top:1rem;"></div>
       </div>
     </div>
 
@@ -391,6 +411,12 @@
     if ($('ag-badge')) {
       $('ag-badge').textContent = (st.ativo ? 'ON' : 'OFF') + ' · ' + (st.modo_efetivo || st.modo_config || '—');
     }
+    const orc = document.getElementById('ag-orcamento');
+    if (orc) {
+      orc.textContent = 'OCR hoje: ' + (st.ocr_hoje || 0) + '/' + (st.max_ocr_dia || '∞') +
+        ' · noite=' + (st.noite ? 'sim' : 'não') +
+        (st.auto_process_desde ? ' · desde=' + st.auto_process_desde : '');
+    }
     const tbody = document.getElementById('ag-log-body');
     const rows = st.log || st.recentes || [];
     if (tbody) {
@@ -479,6 +505,58 @@
       fillStatus(j.status);
       setOut((j.pulse || '') + '\n\n' + (j.cerebro || ''));
     } catch (e) { setOut(e.message); }
+  });
+  document.getElementById('btn-fila-5')?.addEventListener('click', async () => {
+    setOut('Processando 5 pendentes prioritárias (OCR real, pode demorar)…');
+    try {
+      const j = await api('/admin/api/fila/processar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limite: 5 })
+      });
+      setOut(JSON.stringify(j, null, 2));
+      refresh();
+    } catch (e) { setOut(e.message); }
+  });
+  document.getElementById('btn-salvar-desde')?.addEventListener('click', async () => {
+    const desde = (document.getElementById('auto-desde') || {}).value || '';
+    try {
+      const j = await api('/admin/api/settings/desde', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ desde: desde.trim() })
+      });
+      setOut('Piso de data salvo: ' + (j.desde || '(sem piso)'));
+    } catch (e) { setOut(e.message); }
+  });
+  document.getElementById('btn-fn-lista')?.addEventListener('click', async () => {
+    const box = document.getElementById('fn-lista');
+    const out = document.getElementById('qual-out');
+    try {
+      const j = await api('/admin/api/fn?limit=25');
+      const itens = j.itens || [];
+      out.textContent = itens.length + ' edição(ões) só-menção / FN';
+      box.innerHTML = itens.map(function (it) {
+        return '<button type="button" class="btn btn-secondary btn-fn-item" data-id="' + it.id + '" style="margin:.25rem;">' +
+          it.id + ' · ' + (it.data_publicacao || '?') + ' · men=' + (it.mencoes_count || 0) + '</button>';
+      }).join('') || '<p>Nenhuma.</p>';
+      box.querySelectorAll('.btn-fn-item').forEach(function (b) {
+        b.addEventListener('click', function () {
+          const inp = document.getElementById('fn-edicao-id');
+          if (inp) inp.value = b.dataset.id;
+        });
+      });
+    } catch (e) { out.textContent = e.message; }
+  });
+  document.getElementById('btn-fn-reproc')?.addEventListener('click', async () => {
+    const id = (document.getElementById('fn-edicao-id') || {}).value;
+    const out = document.getElementById('qual-out');
+    if (!id) { out.textContent = 'Informe o id da edição.'; return; }
+    out.textContent = 'Reprocessando cache id=' + id + '…';
+    try {
+      const j = await api('/admin/api/edicao/' + id + '/reprocessar-cache', { method: 'POST' });
+      out.textContent = JSON.stringify(j, null, 2);
+    } catch (e) { out.textContent = e.message; }
   });
 
   document.getElementById('btn-diagnostico')?.addEventListener('click', async () => {

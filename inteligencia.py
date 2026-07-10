@@ -171,6 +171,56 @@ def _tokens_significativos(texto: str) -> set[str]:
     return {t for t in toks if t not in stop}
 
 
+def _variantes_digitos_valor(valor: str) -> set[str]:
+    """Gera variantes numéricas de um valor (com/sem centavos, sem zeros à esquerda)."""
+    digs = re.sub(r"\D", "", valor or "")
+    out: set[str] = set()
+    if not digs:
+        return out
+    out.add(digs)
+    digs_nz = digs.lstrip("0") or digs
+    out.add(digs_nz)
+    # R$ 255.800,00 → digs 25580000; OCR às vezes só tem 255800
+    if digs.endswith("00") and len(digs) > 4:
+        out.add(digs[:-2])
+        out.add((digs[:-2]).lstrip("0") or digs[:-2])
+    # últimos 6–8 dígitos (parte significativa do montante)
+    for n in (6, 7, 8):
+        if len(digs_nz) >= n:
+            out.add(digs_nz[-n:])
+    return {x for x in out if len(x) >= 3}
+
+
+def valor_ancorado_no_trecho(valor: str | None, trecho: str) -> bool:
+    """Âncora tolerante a OCR para valores monetários."""
+    if not valor or not str(valor).strip():
+        return True
+    if not trecho:
+        return False
+    c = str(valor).strip()
+    # Match textual normalizado
+    tn = _norm(trecho).replace(" ", "")
+    cn = _norm(c).replace(" ", "")
+    if len(cn) >= 4 and cn in tn:
+        return True
+    trecho_digs = re.sub(r"\D", "", trecho)
+    if not trecho_digs:
+        return False
+    for v in _variantes_digitos_valor(c):
+        if v in trecho_digs:
+            return True
+    # tokens tipo "255.800" no trecho OCR
+    if re.search(r"\d{1,3}(?:\.\d{3})+,\d{2}", c):
+        # tenta achar padrão similar no trecho
+        if re.search(r"\d{1,3}(?:[.\s]\d{3})+(?:[.,]\d{2})?", trecho):
+            # se montantes grandes batem em parte
+            digs = re.sub(r"\D", "", c)
+            core = digs[:-2] if digs.endswith("00") and len(digs) > 4 else digs
+            if len(core) >= 4 and core in trecho_digs:
+                return True
+    return False
+
+
 def campo_ancorado_no_trecho(campo: str | None, trecho: str, *, min_ratio: float = 0.35) -> bool:
     """True se o valor do campo parece suportado pelo trecho OCR."""
     if not campo or not str(campo).strip():
@@ -178,16 +228,19 @@ def campo_ancorado_no_trecho(campo: str | None, trecho: str, *, min_ratio: float
     if not trecho:
         return False
     c = str(campo).strip()
+    # Valor monetário: caminho dedicado (OCR costuma perder R$ / pontos)
+    if "r$" in _norm(c) or re.search(r"\d+[.,]\d{2}", c) or re.search(
+        r"\d{1,3}(?:\.\d{3})+", c
+    ):
+        return valor_ancorado_no_trecho(c, trecho)
     tn = _norm(trecho).replace(" ", "")
     cn = _norm(c).replace(" ", "")
     # substring direta (números, valores)
     if len(cn) >= 4 and cn in tn:
         return True
-    # valor monetário
+    # valor monetário (fallback)
     if "r$" in cn or re.search(r"\d+,\d{2}", c):
-        digs = re.sub(r"\D", "", c)
-        if len(digs) >= 3 and digs in re.sub(r"\D", "", trecho):
-            return True
+        return valor_ancorado_no_trecho(c, trecho)
     # tokens do campo presentes no trecho
     toks = _tokens_significativos(c)
     if not toks:
@@ -199,12 +252,25 @@ def campo_ancorado_no_trecho(campo: str | None, trecho: str, *, min_ratio: float
 
 def validar_campos_ia(pub: dict, ia: dict) -> dict:
     """Zera/ajusta campos da IA não ancorados no trecho (anti-alucinação)."""
-    trecho = pub.get("trecho") or ia.get("texto_corrigido") or ""
+    # Preferir trecho OCR; se curto, usar texto_corrigido da IA como âncora auxiliar
+    trecho = (pub.get("trecho") or "").strip()
+    corrigido = (ia.get("texto_corrigido") or "").strip()
+    if len(trecho) < 80 and corrigido:
+        trecho = f"{trecho}\n{corrigido}"
+    elif not trecho and corrigido:
+        trecho = corrigido
     out = dict(ia)
     flags: list[dict] = []
     for key in ("orgao", "tipo", "numero", "valor", "data_documento"):
         val = out.get(key)
-        if val and not campo_ancorado_no_trecho(str(val), trecho):
+        if not val:
+            continue
+        ok = (
+            valor_ancorado_no_trecho(str(val), trecho)
+            if key == "valor"
+            else campo_ancorado_no_trecho(str(val), trecho)
+        )
+        if not ok:
             logger.info(
                 "Anti-alucinação: campo %s=%r não ancorado no trecho — removido",
                 key,

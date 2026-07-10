@@ -1590,6 +1590,117 @@ def admin_api_agente_once(request: Request) -> JSONResponse:
     )
 
 
+@app.post("/admin/api/fila/processar")
+async def admin_api_fila_processar(request: Request) -> JSONResponse:
+    """Processa N pendentes prioritárias (OCR real)."""
+    _admin_require(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    limite = int((body or {}).get("limite") or 5)
+    limite = max(1, min(20, limite))
+    from agente import _pick_pendentes, log_acao, modo_efetivo
+    from pipeline import processar_edicao_por_id
+
+    picks = _pick_pendentes(limite)
+    resultados = []
+    for row in picks:
+        eid = int(row["id"])
+        try:
+            r = processar_edicao_por_id(
+                eid, force_ocr=True, fast_ocr=True, notificar_se_encontrado=False
+            )
+            det = {
+                "id": eid,
+                "data": row.get("data_publicacao"),
+                "ok": r is not None,
+                "inaja": bool(r.encontrado) if r else False,
+                "pubs": len(r.publicacoes) if r else 0,
+            }
+        except Exception as exc:
+            det = {"id": eid, "ok": False, "erro": str(exc)[:120]}
+        resultados.append(det)
+        log_acao(
+            ciclo="admin",
+            modo=modo_efetivo(),
+            acao="processar_pendente",
+            detalhe=str(det),
+            ok=bool(det.get("ok")),
+        )
+    return JSONResponse({"ok": True, "processadas": len(resultados), "itens": resultados})
+
+
+@app.post("/admin/api/settings/desde")
+async def admin_api_settings_desde(request: Request) -> JSONResponse:
+    """Define AUTO_PROCESS_DESDE em settings + SETTINGS em memória."""
+    _admin_require(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON inválido")
+    desde = str((body or {}).get("desde") or "").strip()
+    if desde and (len(desde) != 10 or desde[4] != "-" or desde[7] != "-"):
+        raise HTTPException(400, "Use YYYY-MM-DD ou string vazia")
+    database.set_setting("auto_process_desde", desde)
+    try:
+        object.__setattr__(SETTINGS, "auto_process_desde", desde)
+    except Exception:
+        pass
+    return JSONResponse({"ok": True, "desde": desde})
+
+
+@app.post("/admin/api/edicao/{edicao_id}/reprocessar-cache")
+def admin_api_reprocessar_cache(request: Request, edicao_id: int) -> JSONResponse:
+    """Reprocessa detecção a partir do .ocr.json e devolve diff de pubs."""
+    _admin_require(request)
+    database.init_db()
+    with database.connect() as c:
+        antes = [
+            dict(r)
+            for r in c.execute(
+                "SELECT id, tipo, numero, orgao, valor FROM publicacoes WHERE edicao_id=?",
+                (edicao_id,),
+            ).fetchall()
+        ]
+    from pipeline import reprocessar_deteccao_de_cache
+
+    try:
+        r = reprocessar_deteccao_de_cache(edicao_id, notificar_se_encontrado=False)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+    with database.connect() as c:
+        depois = [
+            dict(r)
+            for r in c.execute(
+                "SELECT id, tipo, numero, orgao, valor FROM publicacoes WHERE edicao_id=?",
+                (edicao_id,),
+            ).fetchall()
+        ]
+    chave = lambda p: f"{p.get('tipo') or ''}|{p.get('numero') or ''}|{p.get('orgao') or ''}"
+    set_a = {chave(p) for p in antes}
+    set_d = {chave(p) for p in depois}
+    return JSONResponse(
+        {
+            "ok": True,
+            "edicao_id": edicao_id,
+            "inaja": bool(r.encontrado) if r else False,
+            "pubs_antes": len(antes),
+            "pubs_depois": len(depois),
+            "entraram": [p for p in depois if chave(p) not in set_a],
+            "sairam": [p for p in antes if chave(p) not in set_d],
+        }
+    )
+
+
+@app.get("/admin/api/fn")
+def admin_api_fn(request: Request, limit: int = 20) -> JSONResponse:
+    """Lista só-menção / FN para revisão no Admin."""
+    _admin_require(request)
+    rows = [dict(r) for r in database.listar_edicoes_so_mencao(limit=limit)]
+    return JSONResponse({"ok": True, "itens": rows})
+
+
 @app.get("/admin/api/diagnostico")
 def admin_api_diagnostico(request: Request) -> JSONResponse:
     _admin_require(request)

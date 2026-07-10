@@ -36,6 +36,7 @@ _K_ATIVO = "agente_ativo"
 _K_PULSE = "agente_ultimo_pulse"
 _K_CEREBRO = "agente_ultimo_cerebro"
 _K_IA_HORA = "agente_ia_hora"  # "YYYYMMDDHH:count"
+_K_OCR_DIA = "agente_ocr_dia"  # "YYYYMMDD:count"
 _K_ALERTA = "agente_alerta_"  # prefix + key → iso cooldown
 
 
@@ -185,8 +186,14 @@ def status_agente() -> dict[str, Any]:
         "pulse_s": SETTINGS.agente_pulse_segundos,
         "cerebro_min": SETTINGS.agente_cerebro_minutos,
         "max_ocr": SETTINGS.agente_max_ocr_por_ciclo,
+        "max_ocr_dia": SETTINGS.agente_max_ocr_por_dia,
+        "ocr_hoje": _ocr_calls_hoje(),
+        "noite": _hora_noturna(),
         "max_ia_hora": SETTINGS.agente_max_ia_por_hora,
         "no_bot": SETTINGS.agente_no_bot,
+        "auto_process_desde": database.get_setting("auto_process_desde", "")
+        or SETTINGS.auto_process_desde
+        or "",
         "recentes": listar_log(8),
     }
 
@@ -403,7 +410,14 @@ def run_pulse(*, force: bool = False) -> CicloResultado:
             if _alerta_permitido("bot_parado"):
                 _notificar(
                     "BOT parado com fila alta",
-                    f"pendentes={pend}. Considere iniciar [1] ou [3].",
+                    (
+                        f"pendentes={pend}.\n"
+                        "Como ligar:\n"
+                        "1) iniciar.bat → [1] Web+BOT ou [3] só BOT\n"
+                        "2) ou: python main.py\n"
+                        "3) Admin (senha) → Agente → Ligar + modo formiga\n"
+                        f"OCR agente hoje: {_ocr_calls_hoje()}/{SETTINGS.agente_max_ocr_por_dia or '∞'}"
+                    ),
                 )
                 _marcar_alerta("bot_parado")
                 res.add("alerta_bot", True, "BOT parado + fila alta", "warn")
@@ -452,32 +466,105 @@ def _score_edicao(row: dict) -> int:
             score += 10
     except Exception:
         pass
+    titulo = (row.get("titulo") or "").casefold()
+    if "inaj" in titulo or "inava" in titulo:
+        score += 40
+    caminho = row.get("caminho_local") or ""
+    if caminho and Path(caminho).exists():
+        score += 15
+    # Prefere edições com cache OCR (redetecção barata se já processou parcialmente)
+    if caminho:
+        p = Path(caminho)
+        if p.with_name(p.stem + ".ocr.json").exists():
+            score += 5
     return score
 
 
+def _ocr_calls_hoje() -> int:
+    raw = database.get_setting(_K_OCR_DIA, "")
+    if not raw or ":" not in raw:
+        return 0
+    bucket, n = raw.split(":", 1)
+    if bucket != _now().strftime("%Y%m%d"):
+        return 0
+    try:
+        return int(n)
+    except ValueError:
+        return 0
+
+
+def _inc_ocr_calls(n: int = 1) -> None:
+    hoje = _now().strftime("%Y%m%d")
+    cur = _ocr_calls_hoje()
+    database.set_setting(_K_OCR_DIA, f"{hoje}:{cur + n}")
+
+
+def _pode_ocr(n: int = 1) -> bool:
+    teto = int(SETTINGS.agente_max_ocr_por_dia or 0)
+    if teto <= 0:
+        return True
+    return _ocr_calls_hoje() + n <= teto
+
+
+def _hora_noturna() -> bool:
+    h = _now().hour
+    ini = int(SETTINGS.agente_noite_inicio or 22) % 24
+    fim = int(SETTINGS.agente_noite_fim or 6) % 24
+    if ini == fim:
+        return False
+    if ini < fim:
+        return ini <= h < fim
+    # ex.: 22–6
+    return h >= ini or h < fim
+
+
+def _max_ocr_ciclo(modo: str) -> int:
+    base = max(0, int(SETTINGS.agente_max_ocr_por_ciclo or 1))
+    if modo == "cirurgiao":
+        base = min(base, 1)
+    elif modo == "formiga":
+        base = max(1, base)
+    if _hora_noturna() and modo in {"formiga", "auto", "cirurgiao"}:
+        mult = max(1, int(SETTINGS.agente_ocr_noite_mult or 1))
+        base = max(base, base * mult if base else mult)
+    # respeita orçamento diário restante
+    teto_dia = int(SETTINGS.agente_max_ocr_por_dia or 0)
+    if teto_dia > 0:
+        resto = max(0, teto_dia - _ocr_calls_hoje())
+        base = min(base, resto)
+    return base
+
+
 def _pick_pendentes(limit: int) -> list[dict]:
+    desde = (SETTINGS.auto_process_desde or "").strip()
+    sql = """
+        SELECT id, titulo, data_publicacao, caminho_local,
+               score_candidatura, score_prioridade, falhas_processamento
+        FROM edicoes
+        WHERE ocr_processado = 0
+          AND COALESCE(falhas_processamento, 0) < ?
+    """
+    params: list[Any] = [max(1, SETTINGS.auto_process_max_falhas)]
+    if desde:
+        sql += " AND (data_publicacao IS NULL OR data_publicacao >= ?)"
+        params.append(desde)
+    sql += """
+        ORDER BY
+          COALESCE(score_prioridade, 1) DESC,
+          COALESCE(score_candidatura, 0) DESC,
+          data_publicacao DESC,
+          id DESC
+        LIMIT ?
+    """
+    params.append(max(limit * 8, 40))
     with database.connect() as c:
-        rows = c.execute(
-            """
-            SELECT id, titulo, data_publicacao, caminho_local,
-                   score_candidatura, score_prioridade, falhas_processamento
-            FROM edicoes
-            WHERE ocr_processado = 0
-              AND COALESCE(falhas_processamento, 0) < ?
-            ORDER BY
-              COALESCE(score_prioridade, 1) DESC,
-              COALESCE(score_candidatura, 0) DESC,
-              data_publicacao DESC,
-              id DESC
-            LIMIT ?
-            """,
-            (max(1, SETTINGS.auto_process_max_falhas), max(limit * 5, 20)),
-        ).fetchall()
+        rows = c.execute(sql, params).fetchall()
     ranked = sorted((dict(r) for r in rows), key=_score_edicao, reverse=True)
     return ranked[:limit]
 
 
 def _pubs_fracas(limit: int) -> list[dict]:
+    """Pubs sem resumo/valor; prioriza contratos/aditivos/extratos recentes."""
     with database.connect() as c:
         rows = c.execute(
             """
@@ -491,9 +578,24 @@ def _pubs_fracas(limit: int) -> list[dict]:
             ORDER BY e.data_publicacao DESC, p.id DESC
             LIMIT ?
             """,
-            (limit,),
+            (max(limit * 4, 20),),
         ).fetchall()
-        return [dict(r) for r in rows]
+    items = [dict(r) for r in rows]
+
+    def prio(p: dict) -> tuple:
+        tipo = (p.get("tipo") or "").casefold()
+        bonus = 0
+        for kw in ("contrato", "aditivo", "extrato", "pregão", "pregao", "licita"):
+            if kw in tipo:
+                bonus += 10
+        if not (p.get("valor") or "").strip():
+            bonus += 3
+        if not (p.get("resumo_ia") or "").strip():
+            bonus += 2
+        return (-bonus, p.get("data_publicacao") or "")
+
+    items.sort(key=prio)
+    return items[:limit]
 
 
 def run_cerebro(*, force: bool = False) -> CicloResultado:
@@ -530,11 +632,15 @@ def run_cerebro(*, force: bool = False) -> CicloResultado:
         )
         logger.info("[agente/cerebro] OCR adiado: %s", skip_ocr_motivo)
     else:
-        max_ocr = SETTINGS.agente_max_ocr_por_ciclo
-        if modo == "formiga":
-            max_ocr = max(1, max_ocr)
-        elif modo == "cirurgiao":
-            max_ocr = min(max_ocr, 1)  # cirurgião prioriza qualidade
+        max_ocr = _max_ocr_ciclo(modo)
+        if not _pode_ocr(1) and modo in {"formiga", "cirurgiao", "auto"}:
+            res.add(
+                "skip_ocr",
+                True,
+                f"orçamento OCR diário esgotado ({_ocr_calls_hoje()}/{SETTINGS.agente_max_ocr_por_dia})",
+                "warn",
+            )
+            max_ocr = 0
 
         if max_ocr > 0 and modo in {"formiga", "cirurgiao", "auto"}:
             picks = _pick_pendentes(max_ocr)
@@ -542,6 +648,9 @@ def run_cerebro(*, force: bool = False) -> CicloResultado:
                 res.add("fila", True, "nenhuma pendente prioritária")
             for row in picks:
                 eid = int(row["id"])
+                if not _pode_ocr(1):
+                    res.add("skip_ocr", True, "orçamento OCR diário esgotado", "warn")
+                    break
                 # Re-checa lock entre edições (BOT pode ter iniciado OCR)
                 if is_lock_held():
                     det = f"lock adquirido por outro processo antes de id={eid}"
@@ -563,6 +672,7 @@ def run_cerebro(*, force: bool = False) -> CicloResultado:
                         fast_ocr=True,
                         notificar_se_encontrado=True,
                     )
+                    _inc_ocr_calls(1)
                     if r is None:
                         res.add(
                             "ocr",
@@ -573,7 +683,8 @@ def run_cerebro(*, force: bool = False) -> CicloResultado:
                     else:
                         det = (
                             f"id={eid} {row.get('data_publicacao')} "
-                            f"inaja={r.encontrado} pubs={len(r.publicacoes)}"
+                            f"inaja={r.encontrado} pubs={len(r.publicacoes)} "
+                            f"ocr_dia={_ocr_calls_hoje()}"
                         )
                         res.add("ocr", True, det, "acao")
                         log_acao(ciclo="cerebro", modo=modo, acao="ocr", detalhe=det)

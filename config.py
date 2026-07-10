@@ -170,6 +170,12 @@ class Settings:
     agente_cerebro_minutos: int = _int_env("AGENTE_CEREBRO_MINUTOS", 30)
     # Teto de OCR real por ciclo cérebro
     agente_max_ocr_por_ciclo: int = _int_env("AGENTE_MAX_OCR_POR_CICLO", 1)
+    # Orçamento diário de OCR do agente (0 = sem teto diário)
+    agente_max_ocr_por_dia: int = _int_env("AGENTE_MAX_OCR_POR_DIA", 40)
+    # Madrugada (hora local): multiplica OCR por ciclo (formiga noturna)
+    agente_ocr_noite_mult: int = _int_env("AGENTE_OCR_NOITE_MULT", 3)
+    agente_noite_inicio: int = _int_env("AGENTE_NOITE_INICIO", 22)
+    agente_noite_fim: int = _int_env("AGENTE_NOITE_FIM", 6)
     # Teto de chamadas/re-IA por hora
     agente_max_ia_por_hora: int = _int_env("AGENTE_MAX_IA_POR_HORA", 15)
     # Auto-correções de infraestrutura
