@@ -4,6 +4,7 @@
 Uso:
   python scripts/_processar_pendentes.py
   python scripts/_processar_pendentes.py --limite 5
+  python scripts/_processar_pendentes.py --limite 10 --estimar
   python scripts/_processar_pendentes.py --limite 3 --sem-ia
 """
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -25,6 +27,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("processar_pendentes")
 
+# Estimativa grosseira (min por edição com OCR hibrido)
+MIN_POR_EDICAO = 1.5
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -36,8 +41,13 @@ def main() -> int:
         default=0,
         help="Só edições dos últimos N dias (0 = usa config)",
     )
+    ap.add_argument(
+        "--estimar",
+        action="store_true",
+        help="Só mostra estimativa e sai",
+    )
     args = ap.parse_args()
-    lim = max(1, min(50, args.limite))
+    lim = max(1, min(200, args.limite))
 
     if args.sem_ia:
         object.__setattr__(config.SETTINGS, "ai_refine_publications", False)
@@ -49,9 +59,16 @@ def main() -> int:
         pend = c.execute(
             "SELECT COUNT(*) FROM edicoes WHERE ocr_processado = 0"
         ).fetchone()[0]
+    est_min = lim * MIN_POR_EDICAO
     print(f"\n  Pendentes no banco: {pend}")
-    print(f"  Processando até {lim}…\n")
+    print(f"  Nesta rodada:      até {lim}")
+    print(f"  Estimativa:        ~{est_min:.0f}–{est_min * 2:.0f} min (OCR real)")
+    if args.estimar:
+        print()
+        return 0
 
+    print(f"  Processando…\n")
+    t0 = time.time()
     try:
         from ai_processor import reset_ai_call_counter
 
@@ -68,7 +85,8 @@ def main() -> int:
         recent_days=args.dias if args.dias > 0 else None,
         quiet=False,
     )
-    print(f"\n  Concluído: {n} edição(ões) processada(s).\n")
+    elapsed = time.time() - t0
+    print(f"\n  Concluído: {n} edição(ões) em {elapsed / 60:.1f} min.\n")
     return 0
 
 

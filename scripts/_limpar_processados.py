@@ -16,6 +16,16 @@ import database
 
 
 def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Só mostra o que seria apagado, sem alterar",
+    )
+    args = ap.parse_args()
+
     database.init_db()
     root = Path(__file__).resolve().parents[1]
 
@@ -31,6 +41,15 @@ def main() -> None:
             ).fetchone()[0],
         }
         print("ANTES:", before)
+        if args.dry_run:
+            print()
+            print("DRY-RUN: nada foi apagado.")
+            print(
+                "Seria removido: publicacoes, mencoes, jobs, notificacoes, "
+                "metricas; flags OCR zeradas; pasta atos/ limpa."
+            )
+            print("Mantido: edicoes, PDFs, .ocr.json")
+            return
 
         c.execute("DELETE FROM publicacoes")
         c.execute("DELETE FROM mencoes")
