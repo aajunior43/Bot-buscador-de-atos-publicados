@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Perguntar aos atos - Monitor Inajá{% endblock %}
+{% block content %}
+<section class="detail-hero fade-in">
+  <p class="eyebrow">Leitura · IA</p>
+  <h1>Pergunte aos atos</h1>
+  <p class="hero-copy">
+    A IA responde só com base nos atos já indexados (busca + contexto).
+    Cite fontes quando possível.
+  </p>
+</section>
+
+<section class="panel fade-in">
+  <form method="get" action="/perguntar" class="dash-search" style="padding:1.25rem 1.5rem;">
+    <div class="search-row">
+      <input name="q" value="{{ q }}" placeholder="Ex.: houve dispensa de licitação em 2026?" aria-label="Pergunta" style="flex:1;">
+      <button type="submit">Perguntar</button>
+    </div>
+  </form>
+
+  {% if erro %}
+  <p class="empty empty-pad" style="color:var(--amber);">{{ erro }}</p>
+  {% endif %}
+
+  {% if resposta %}
+  <div style="padding:0 1.5rem 1.5rem;">
+    <h2 style="font-size:1rem; margin-bottom:.75rem;">Resposta</h2>
+    <div class="ia-resumo" style="white-space:pre-wrap; line-height:1.55;">{{ resposta }}</div>
+
+    {% if citacoes %}
+    <h3 style="font-size:.9rem; margin:1.25rem 0 .5rem; color:var(--text-2);">Fontes citadas</h3>
+    <ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:.5rem;">
+      {% for c in citacoes %}
+      <li style="padding:.65rem .85rem; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface);">
+        <strong>{{ c.tipo or "Ato" }} {% if c.numero %}{{ c.numero }}{% endif %}</strong>
+        {% if c.orgao %}<span style="color:var(--text-3);"> · {{ c.orgao }}</span>{% endif %}
+        {% if c.edicao_id %}
+        <a href="/edicoes/{{ c.edicao_id }}" style="display:block; margin-top:.35rem; font-size:.85rem;">Abrir edição →</a>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% elif q and not erro %}
+  <p class="empty empty-pad">Sem resposta (IA desligada ou sem contexto).</p>
+  {% endif %}
+</section>
+{% endblock %}

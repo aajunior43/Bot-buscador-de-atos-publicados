@@ -17,6 +17,35 @@ logger = logging.getLogger(__name__)
 # Circuit breaker: após 401/AuthError, não dispara dezenas de requisições no mesmo processo.
 _auth_bloqueada: bool = False
 _auth_aviso_emitido: bool = False
+# Contador de calls no processo (ciclo / web)
+_calls_no_ciclo: int = 0
+
+
+def reset_ai_call_counter() -> None:
+    global _calls_no_ciclo
+    _calls_no_ciclo = 0
+
+
+def ai_calls_no_ciclo() -> int:
+    return _calls_no_ciclo
+
+
+def _pode_chamar_ia() -> bool:
+    lim = int(getattr(SETTINGS, "ai_max_calls_por_ciclo", 50) or 50)
+    if lim <= 0:
+        return True
+    if _calls_no_ciclo >= lim:
+        logger.warning(
+            "Limite AI_MAX_CALLS_POR_CICLO=%s atingido — novas calls de IA neste ciclo ignoradas.",
+            lim,
+        )
+        return False
+    return True
+
+
+def _registrar_call_ia() -> None:
+    global _calls_no_ciclo
+    _calls_no_ciclo += 1
 
 
 def _api_key() -> str:
@@ -102,7 +131,11 @@ Campos do JSON de retorno:
 - resumo: string — resumo objetivo de 2-3 linhas sobre o conteúdo da publicação
 - pertence_a_inaja: boolean — se pertence diretamente ao município de Inajá-PR
 - tem_mencao_inaja: boolean — se menciona direta ou indiretamente Inajá-PR
-- tags: array de strings — até 3 marcadores curtos (ex: ["licitação", "obra", "saúde"])"""
+- tags: array de strings — até 3 marcadores curtos (ex: ["licitação", "obra", "saúde"])
+- importancia: inteiro 1 a 5 — relevância para gestão/transparência de Inajá
+  (1=rotina menor, 3=relevante, 5=crítico: valores altos, licitação, nomeação, LRF)
+- importancia_motivo: string curta explicando a nota
+- notificar: boolean — true se vale alerta imediato (Telegram); false se pode só arquivar"""
 
 
 def _prompt_usuario(trecho: str) -> str:
@@ -185,8 +218,11 @@ def _chamar_ia_json(
 ) -> dict[str, Any] | None:
     if _auth_bloqueada:
         return None
+    if not _pode_chamar_ia():
+        return None
     content = ""
     try:
+        _registrar_call_ia()
         resp = requests.post(
             SETTINGS.opencode_api_url,
             headers=_headers(),
@@ -268,8 +304,11 @@ def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
                 "_triagem": triagem,
             }
         # manter → segue extração completa
+    if not _pode_chamar_ia():
+        return None
     content = ""
     try:
+        _registrar_call_ia()
         resp = requests.post(
             SETTINGS.opencode_api_url,
             headers=_headers(),
@@ -585,6 +624,27 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
                     ia.get("data_documento")
                 ) or pub.get("data_documento")
                 pub["assunto"] = ia.get("assunto") or pub.get("assunto")
+                # Importância / alerta (mesmo JSON — sem call extra)
+                if getattr(SETTINGS, "ai_importancia", True):
+                    try:
+                        imp = int(ia.get("importancia") or 0)
+                    except (TypeError, ValueError):
+                        imp = 0
+                    if 1 <= imp <= 5:
+                        pub["importancia"] = imp
+                    else:
+                        pub["importancia"] = _heuristica_importancia(pub, ia)
+                    pub["importancia_motivo"] = (
+                        ia.get("importancia_motivo")
+                        or pub.get("importancia_motivo")
+                        or ""
+                    )
+                    if "notificar" in ia:
+                        pub["notificar_ia"] = bool(ia.get("notificar"))
+                    else:
+                        pub["notificar_ia"] = pub["importancia"] >= int(
+                            getattr(SETTINGS, "ai_importancia_min_notificar", 3) or 3
+                        )
                 valor_extraido = _normalizar_valor_ia(ia.get("valor"))
                 if valor_extraido:
                     valor_norm = (
@@ -700,4 +760,191 @@ def retry_pending_ia() -> int:
         total_atualizadas,
     )
     return total_atualizadas
+
+
+def _heuristica_importancia(pub: dict, ia: dict | None = None) -> int:
+    """Fallback se a IA não devolver importância válida."""
+    texto = " ".join(
+        str(x or "")
+        for x in (
+            pub.get("tipo"),
+            pub.get("assunto"),
+            pub.get("resumo_ia"),
+            (ia or {}).get("resumo"),
+            pub.get("valor"),
+        )
+    )
+    n = _sem_acentos(texto).casefold()
+    score = 2
+    if any(k in n for k in ("contrato", "dispensa", "homolog", "licitacao", "pregao")):
+        score = max(score, 4)
+    if any(k in n for k in ("rgf", "rreo", "lrf", "balanco", "fiscal")):
+        score = max(score, 4)
+    if any(k in n for k in ("nomeacao", "exoneracao", "portaria", "decreto")):
+        score = max(score, 3)
+    if pub.get("valor") or (ia or {}).get("valor"):
+        score = max(score, 3)
+        digs = re.sub(r"\D", "", str(pub.get("valor") or (ia or {}).get("valor") or ""))
+        if len(digs) >= 7:  # >= ~R$ 100.000
+            score = max(score, 5)
+    return min(5, max(1, score))
+
+
+def gerar_explicacao_leiga(pub: dict) -> str | None:
+    """Explica o ato em linguagem simples (3–5 frases)."""
+    if not getattr(SETTINGS, "ai_explicacao", True) or not ia_disponivel():
+        return None
+    trecho = _limpar_trecho_ocr(
+        pub.get("texto_corrigido") or pub.get("trecho") or ""
+    )[:3000]
+    if not trecho:
+        return None
+    system = (
+        "Você explica publicações oficiais de Inajá-PR para cidadãos leigos. "
+        "Use português claro, sem juridiquês desnecessário. "
+        "NÃO invente números, valores ou órgãos que não estejam no texto. "
+        "Se o trecho for confuso por OCR, diga o que dá para entender. "
+        'Responda JSON: {"explicacao": "3 a 5 frases", "publico_afetado": "frase curta"}'
+    )
+    user = (
+        f"Tipo: {pub.get('tipo')}\nNúmero: {pub.get('numero')}\n"
+        f"Órgão: {pub.get('orgao')}\nValor: {pub.get('valor')}\n"
+        f"Resumo: {pub.get('resumo_ia') or pub.get('assunto')}\n\n"
+        f"Trecho OCR:\n{trecho}"
+    )
+    data = _chamar_ia_json(system, user, timeout=max(20, SETTINGS.ai_timeout_seconds), max_tokens=600)
+    if not data:
+        return None
+    exp = (data.get("explicacao") or "").strip()
+    afet = (data.get("publico_afetado") or "").strip()
+    if afet:
+        exp = f"{exp}\n\nQuem pode ser afetado: {afet}".strip()
+    return exp or None
+
+
+def gerar_resumo_periodo_ia(texto_base: str, *, dia: str) -> str | None:
+    """Reescreve o resumo diário em tom de assessoria (1 call)."""
+    if not getattr(SETTINGS, "ai_resumo_diario", True) or not ia_disponivel():
+        return None
+    if not (texto_base or "").strip():
+        return None
+    system = (
+        "Você é assessor de comunicação da Prefeitura de Inajá-PR. "
+        "Com base na lista de atos oficiais do dia, escreva um resumo executivo em português: "
+        "1 parágrafo de abertura + até 5 bullets do que importa (valores, licitações, pessoal, LRF). "
+        "Não invente atos que não estejam na lista. "
+        'JSON: {"titulo": "...", "paragrafo": "...", "bullets": ["...", "..."]}'
+    )
+    user = f"Data: {dia}\n\nLista/base:\n{texto_base[:6000]}"
+    data = _chamar_ia_json(
+        system, user, timeout=max(30, SETTINGS.ai_timeout_seconds), max_tokens=900
+    )
+    if not data:
+        return None
+    linhas = []
+    if data.get("titulo"):
+        linhas.append(str(data["titulo"]).strip())
+        linhas.append("")
+    if data.get("paragrafo"):
+        linhas.append(str(data["paragrafo"]).strip())
+        linhas.append("")
+    bullets = data.get("bullets") or []
+    if isinstance(bullets, list):
+        for b in bullets[:6]:
+            linhas.append(f"• {str(b).strip()}")
+    texto = "\n".join(linhas).strip()
+    return texto or None
+
+
+def auditar_so_mencao(trechos: list[dict], *, titulo: str = "") -> dict | None:
+    """Classifica por que há menção a Inajá sem publicação estruturada."""
+    if not getattr(SETTINGS, "ai_auditoria_so_mencao", True) or not ia_disponivel():
+        return None
+    if not trechos:
+        return {
+            "classificacao": "sem_trecho",
+            "motivo": "Nenhuma menção bruta gravada",
+            "acao_sugerida": "revisar_ocr",
+        }
+    blocos = []
+    for t in trechos[:8]:
+        blocos.append(
+            f"pág.{t.get('pagina')}: {(t.get('trecho') or '')[:400]}"
+        )
+    system = (
+        "Você audita detecções do monitor de atos de Inajá-PR no jornal O Regional. "
+        "Há menção a Inajá mas o detector não extraiu publicação oficial estruturada. "
+        "Classifique. "
+        'JSON: {"classificacao": "ato_perdido"|"materia"|"outro_municipio"|"ruido_ocr"|"outro", '
+        '"motivo": "frase", "acao_sugerida": "reprocessar"|"ignorar"|"revisar_manual", '
+        '"confianca": 0.0-1.0}'
+    )
+    user = f"Edição: {titulo}\n\nTrechos:\n" + "\n---\n".join(blocos)
+    data = _chamar_ia_json(
+        system, user, timeout=max(25, SETTINGS.ai_timeout_seconds), max_tokens=400
+    )
+    if not data:
+        return None
+    data["classificacao"] = str(data.get("classificacao") or "outro").casefold()
+    return data
+
+
+def responder_pergunta_atos(
+    pergunta: str, contextos: list[dict]
+) -> dict[str, Any] | None:
+    """Responde pergunta com base nos trechos/resumos fornecidos (RAG simples)."""
+    if not getattr(SETTINGS, "ai_chat", True) or not ia_disponivel():
+        return None
+    if not (pergunta or "").strip():
+        return None
+    if not contextos:
+        return {
+            "resposta": "Não encontrei atos no acervo que batam com essa pergunta.",
+            "citacoes": [],
+        }
+    blocos = []
+    for i, c in enumerate(contextos[:8], start=1):
+        blocos.append(
+            f"[{i}] id={c.get('id')} edicao_id={c.get('edicao_id')} "
+            f"tipo={c.get('tipo')} num={c.get('numero')} orgao={c.get('orgao')} "
+            f"data={c.get('data_publicacao')} valor={c.get('valor')}\n"
+            f"resumo={c.get('resumo_ia') or c.get('assunto') or ''}\n"
+            f"trecho={(c.get('trecho') or '')[:500]}"
+        )
+    system = (
+        "Você responde perguntas sobre atos oficiais de Inajá-PR com base APENAS nos "
+        "trechos numerados fornecidos. Cite os números [1], [2] usados. "
+        "Se a resposta não estiver nos trechos, diga que não sabe. Não invente. "
+        'JSON: {"resposta": "...", "citacoes": [1, 2]}'
+    )
+    user = f"Pergunta: {pergunta}\n\nFontes:\n" + "\n\n".join(blocos)
+    data = _chamar_ia_json(
+        system, user, timeout=max(40, SETTINGS.ai_timeout_seconds), max_tokens=800
+    )
+    if not data:
+        return None
+    cits = data.get("citacoes") or []
+    if not isinstance(cits, list):
+        cits = []
+    # Mapear índices → ids
+    citacoes = []
+    for idx in cits:
+        try:
+            i = int(idx) - 1
+            if 0 <= i < len(contextos):
+                citacoes.append(
+                    {
+                        "id": contextos[i].get("id"),
+                        "edicao_id": contextos[i].get("edicao_id"),
+                        "tipo": contextos[i].get("tipo"),
+                        "numero": contextos[i].get("numero"),
+                        "orgao": contextos[i].get("orgao"),
+                    }
+                )
+        except (TypeError, ValueError):
+            continue
+    return {
+        "resposta": str(data.get("resposta") or "").strip(),
+        "citacoes": citacoes,
+    }
 

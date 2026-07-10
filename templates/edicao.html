@@ -32,6 +32,9 @@
       <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
         <span class="badge {{ 'badge-ia' if item.ia_processado else '' }}">{{ item.categoria_ia or item.categoria }}</span>
         {% if item.ia_processado %}<span class="badge badge-ia-tag">✨ IA</span>{% endif %}
+        {% if item.importancia %}
+        <span class="badge" style="background:rgba(99,102,241,.15);color:#a5b4fc;border-color:rgba(99,102,241,.3);" title="{{ item.importancia_motivo or '' }}">★ {{ item.importancia }}/5</span>
+        {% endif %}
         {% if item.valor %}<span class="badge" style="background:rgba(251,191,36,.12);color:#fbbf24;border-color:rgba(251,191,36,.25);">{{ item.valor }}</span>{% endif %}
       </div>
 
@@ -39,6 +42,13 @@
 
       {% if item.resumo_ia %}
       <blockquote class="ia-resumo markdown-body" data-markdown>{{ item.resumo_ia|e }}</blockquote>
+      {% endif %}
+
+      {% if item.explicacao_ia %}
+      <div class="explicacao-ia" style="margin:.75rem 0; padding:.85rem 1rem; border-left:3px solid var(--accent); background:var(--surface); border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+        <strong style="font-size:.8rem; color:var(--accent-2);">Em linguagem simples</strong>
+        <p style="margin:.4rem 0 0; white-space:pre-wrap; color:var(--text-2); font-size:.9rem; line-height:1.5;">{{ item.explicacao_ia }}</p>
+      </div>
       {% endif %}
 
       {% if item.tags %}
@@ -71,6 +81,12 @@
         <a href="/edicoes/{{ edicao.id }}/pdf#page={{ item.pagina }}" target="_blank" class="btn btn-secondary">📄 PDF pág. {{ item.pagina }}</a>
         <a href="/edicoes/{{ edicao.id }}/pdf" target="_blank" class="btn btn-secondary">📄 PDF completo</a>
         <button class="btn btn-copy" onclick="copiarPublicacao(this)">📋 Copiar</button>
+        {% if not item.explicacao_ia %}
+        <form method="post" action="/publicacoes/{{ item.id }}/explicar" style="margin:0;display:inline;">
+          <input type="hidden" name="next" value="/edicoes/{{ edicao.id }}">
+          <button type="submit" class="btn btn-secondary btn-small">✨ Explicar</button>
+        </form>
+        {% endif %}
         <form method="post" action="/publicacoes/{{ item.id }}/feedback" class="feedback-form" style="display:inline-flex;gap:.35rem;margin:0;">
           <input type="hidden" name="next" value="/edicoes/{{ edicao.id }}">
           <button type="submit" name="feedback" value="correto" class="btn btn-secondary btn-small {% if item.feedback == 'correto' %}is-active-ok{% endif %}" title="Marcar como correto">✓ Certo</button>

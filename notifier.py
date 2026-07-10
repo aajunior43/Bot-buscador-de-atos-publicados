@@ -237,11 +237,73 @@ def _disparar_webhooks(payload: dict) -> None:
         t.start()
 
 
+def _publicacoes_para_alerta(resultado: DetectionResult) -> list[dict]:
+    """Filtra pubs que merecem alerta (importância / notificar_ia)."""
+    pubs = list(resultado.publicacoes or [])
+    if not pubs:
+        return []
+    if not getattr(SETTINGS, "ai_importancia", True):
+        return pubs
+    limiar = int(getattr(SETTINGS, "ai_importancia_min_notificar", 3) or 3)
+    filtradas = []
+    for p in pubs:
+        notif = p.get("notificar_ia")
+        if notif is False or notif == 0:
+            continue
+        if notif is True or notif == 1:
+            filtradas.append(p)
+            continue
+        imp = p.get("importancia")
+        try:
+            imp_i = int(imp) if imp is not None else limiar
+        except (TypeError, ValueError):
+            imp_i = limiar
+        if imp_i >= limiar:
+            filtradas.append(p)
+    return filtradas
+
+
 def notificar(resultado: DetectionResult, edicao: Edicao) -> None:
     if not resultado.encontrado:
         return
 
+    # Inteligência: só alerta se houver pub “importante” (ou menção sem pubs)
+    pubs_alerta = _publicacoes_para_alerta(resultado)
+    if resultado.publicacoes and not pubs_alerta:
+        logger.info(
+            "Notificação suprimida (importância baixa) edição %s — %s pub(s) sem alerta",
+            resultado.edicao_id,
+            len(resultado.publicacoes),
+        )
+        path = _salvar_alerta(
+            montar_mensagem(resultado, edicao)
+            + "\n\n[suprimido Telegram: importancia < limiar / notificar=false]"
+        )
+        database.insert_notificacao(
+            resultado.edicao_id, "arquivo", path.read_text(encoding="utf-8")[:2000], True
+        )
+        return
+
+    # Mensagem só com pubs relevantes quando filtro ativo
+    if pubs_alerta and len(pubs_alerta) < len(resultado.publicacoes or []):
+        from dataclasses import replace
+
+        resultado = replace(resultado, publicacoes=pubs_alerta)
+
     mensagem = montar_mensagem(resultado, edicao)
+    # Destaque de importância no Telegram
+    if pubs_alerta:
+        tops = [
+            p
+            for p in pubs_alerta
+            if p.get("importancia")
+        ]
+        if tops:
+            melhor = max(int(p.get("importancia") or 0) for p in tops)
+            mensagem = (
+                f"⭐ *Importância* {melhor}/5\n\n" + mensagem
+            )
+
     canal_usado = "arquivo"
     sucesso = False
     erro_str = None

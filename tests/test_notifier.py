@@ -157,6 +157,43 @@ class TestEscapeMarkdownV2:
         assert r"Edicao\_25\.06\-2026" in msg
 
 
+class TestFiltroImportancia:
+    def test_suprimir_baixa_importancia(self, mock_settings):
+        from notifier import _publicacoes_para_alerta
+
+        object.__setattr__(mock_settings, "ai_importancia", True)
+        object.__setattr__(mock_settings, "ai_importancia_min_notificar", 3)
+        pubs = [
+            {"tipo": "Aviso", "importancia": 1, "notificar_ia": False},
+            {"tipo": "Decreto", "importancia": 4, "notificar_ia": True},
+        ]
+        resultado = _make_resultado(publicacoes=pubs)
+        with patch("notifier.SETTINGS", mock_settings):
+            filtradas = _publicacoes_para_alerta(resultado)
+        assert len(filtradas) == 1
+        assert filtradas[0]["tipo"] == "Decreto"
+
+    def test_desligado_retorna_todas(self, mock_settings):
+        from notifier import _publicacoes_para_alerta
+
+        object.__setattr__(mock_settings, "ai_importancia", False)
+        pubs = [{"importancia": 1}, {"importancia": 5}]
+        resultado = _make_resultado(publicacoes=pubs)
+        with patch("notifier.SETTINGS", mock_settings):
+            assert len(_publicacoes_para_alerta(resultado)) == 2
+
+    def test_sem_campo_usa_limiar(self, mock_settings):
+        from notifier import _publicacoes_para_alerta
+
+        object.__setattr__(mock_settings, "ai_importancia", True)
+        object.__setattr__(mock_settings, "ai_importancia_min_notificar", 3)
+        # sem importancia/notificar_ia → trata como limiar (entra)
+        pubs = [{"tipo": "Portaria"}]
+        resultado = _make_resultado(publicacoes=pubs)
+        with patch("notifier.SETTINGS", mock_settings):
+            assert len(_publicacoes_para_alerta(resultado)) == 1
+
+
 class TestFallbackNotificacao:
     def test_fallback_para_email_quando_telegram_falha(self, db, mock_settings):
         import database

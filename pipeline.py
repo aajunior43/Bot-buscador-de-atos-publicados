@@ -236,6 +236,20 @@ def _processar_edicao_unlocked(
             progress_current=70,
             progress_total=100,
         )
+        # Explicações leigas antes do INSERT (grava no mesmo INSERT)
+        if getattr(SETTINGS, "ai_explicacao_auto", False) and resultado.publicacoes:
+            try:
+                from ai_processor import gerar_explicacao_leiga
+
+                for pub in resultado.publicacoes:
+                    if pub.get("explicacao_ia"):
+                        continue
+                    exp = gerar_explicacao_leiga(pub)
+                    if exp:
+                        pub["explicacao_ia"] = exp
+            except Exception:
+                logger.debug("explicacao auto falhou", exc_info=True)
+
         database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
         database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
         database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
@@ -311,6 +325,29 @@ def _processar_edicao_unlocked(
             console_ui.step("Alerta", "enviado", ok=True, phase="ALR")
         else:
             console_ui.phase_set("ALR", "skip")
+
+        # Auditoria IA: tem Inajá mas zero publicações
+        if (
+            getattr(SETTINGS, "ai_auditoria_so_mencao", True)
+            and resultado.encontrado
+            and not resultado.publicacoes
+            and resultado.mencoes_db
+        ):
+            try:
+                from ai_processor import auditar_so_mencao
+
+                aud = auditar_so_mencao(
+                    resultado.mencoes_db, titulo=edicao.titulo or ""
+                )
+                if aud:
+                    database.salvar_auditoria_so_mencao(download.edicao_id, aud)
+                    logger.info(
+                        "Auditoria só-menção id=%s: %s",
+                        download.edicao_id,
+                        aud.get("classificacao"),
+                    )
+            except Exception:
+                logger.debug("auditoria so-mencao falhou", exc_info=True)
 
         database.limpar_falhas_processamento(download.edicao_id)
         logger.info(
@@ -742,6 +779,12 @@ def executar_ciclo(
     database.init_db()
     database.registrar_heartbeat_bot()
     try:
+        from ai_processor import reset_ai_call_counter
+
+        reset_ai_call_counter()
+    except Exception:
+        pass
+    try:
         n_scores = database.recalcular_scores_pendentes(limit=800)
         if n_scores:
             logger.info("Scores de candidatura atualizados: %s edições", n_scores)
@@ -848,14 +891,25 @@ def executar_ciclo(
         from inteligencia import gerar_resumo_diario_from_db
 
         r = gerar_resumo_diario_from_db()
-        logger.info("Resumo diário: %s (%s pubs)", r.get("dia"), r.get("n_pubs"))
+        logger.info(
+            "Resumo diário: %s (%s pubs, fonte=%s)",
+            r.get("dia"),
+            r.get("n_pubs"),
+            r.get("fonte"),
+        )
         try:
             console_ui.step(
                 "Resumo diário",
-                f"{r.get('n_pubs', 0)} pub(s) no recorte de hoje",
+                f"{r.get('n_pubs', 0)} pub(s) · fonte={r.get('fonte', '?')}",
                 ok=True,
             )
         except Exception:
             pass
     except Exception:
         logger.debug("gerar_resumo_diario falhou", exc_info=True)
+    try:
+        from ai_processor import ai_calls_no_ciclo
+
+        logger.info("IA calls neste ciclo: %s", ai_calls_no_ciclo())
+    except Exception:
+        pass

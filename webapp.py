@@ -521,6 +521,67 @@ def feedback_publicacao(
     return RedirectResponse(url=dest, status_code=303)
 
 
+@app.post("/publicacoes/{pub_id}/explicar")
+def explicar_publicacao(
+    pub_id: int,
+    next: str = Form("/"),
+) -> RedirectResponse:
+    """Gera explicação leiga sob demanda."""
+    from ai_processor import gerar_explicacao_leiga
+
+    database.init_db()
+    pub = database.get_publicacao_by_id(pub_id)
+    if pub and not pub.get("explicacao_ia"):
+        exp = gerar_explicacao_leiga(pub)
+        if exp:
+            database.update_explicacao_publicacao(pub_id, exp)
+    dest = next.strip() or "/"
+    if not dest.startswith("/"):
+        dest = "/"
+    return RedirectResponse(url=dest, status_code=303)
+
+
+@app.get("/perguntar", response_class=HTMLResponse)
+def perguntar_atos(
+    request: Request,
+    q: str = Query("", description="Pergunta em linguagem natural"),
+) -> HTMLResponse:
+    """Chat simples: busca smart + IA com citações."""
+    database.init_db()
+    pergunta = q.strip()
+    resposta = None
+    citacoes: list = []
+    erro = None
+    if pergunta:
+        if not getattr(SETTINGS, "ai_chat", True):
+            erro = "Chat de IA desligado (AI_CHAT=false)."
+        else:
+            from ai_processor import ia_disponivel, responder_pergunta_atos
+            from inteligencia import rankear_publicacoes
+
+            if not ia_disponivel():
+                erro = "IA indisponível (chave, refine ou circuit breaker)."
+            else:
+                base = database.buscar_publicacoes_texto(limit=400)
+                contextos = rankear_publicacoes(pergunta, base, limit=8)
+                out = responder_pergunta_atos(pergunta, contextos)
+                if out:
+                    resposta = out.get("resposta")
+                    citacoes = out.get("citacoes") or []
+                else:
+                    erro = "A IA não retornou resposta. Tente de novo."
+    return templates.TemplateResponse(
+        request,
+        "perguntar.html",
+        {
+            "q": pergunta,
+            "resposta": resposta,
+            "citacoes": citacoes,
+            "erro": erro,
+        },
+    )
+
+
 @app.post("/operacao/quarentena/{edicao_id}/liberar")
 def liberar_quarentena_edicao(edicao_id: int) -> RedirectResponse:
     """Zera falhas e devolve a edição à fila automática."""
@@ -550,7 +611,23 @@ def revisao_so_mencao(
     """Fila humana: tem_inaja sem publicações."""
     database.init_db()
     incluir = todas.strip() in {"1", "true", "sim", "yes"}
-    edicoes = database.listar_edicoes_so_mencao(incluir_revisadas=incluir)
+    raw = database.listar_edicoes_so_mencao(incluir_revisadas=incluir)
+    # Enriquece com JSON da auditoria IA (classificação / motivo)
+    edicoes = []
+    for row in raw:
+        item = dict(row)
+        aud_raw = item.get("auditoria_so_mencao") or ""
+        item["auditoria"] = None
+        if aud_raw:
+            try:
+                import json as _json
+
+                parsed = _json.loads(aud_raw) if isinstance(aud_raw, str) else aud_raw
+                if isinstance(parsed, dict):
+                    item["auditoria"] = parsed
+            except Exception:
+                item["auditoria"] = {"motivo": str(aud_raw)[:200]}
+        edicoes.append(item)
     # Contagens globais
     with _conn() as conn:
         base = """

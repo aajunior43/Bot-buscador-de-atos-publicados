@@ -42,6 +42,19 @@
         <p class="so-mencao-termos">{{ e.termos }}</p>
         {% endif %}
         <span class="chip-status">{{ e.revisao_so_mencao or "pendente" }}</span>
+        {% if e.auditoria %}
+        <p class="so-mencao-termos" style="margin-top:.4rem;">
+          <span class="badge" style="background:rgba(99,102,241,.15);color:#a5b4fc;border-color:rgba(99,102,241,.3);">
+            IA: {{ e.auditoria.classificacao or "—" }}
+          </span>
+          {% if e.auditoria.acao_sugerida %}
+          <span class="badge">{{ e.auditoria.acao_sugerida }}</span>
+          {% endif %}
+          {% if e.auditoria.motivo %}
+          <span style="color:var(--text-3); font-size:.85rem;"> — {{ e.auditoria.motivo }}</span>
+          {% endif %}
+        </p>
+        {% endif %}
       </div>
       <div class="so-mencao-actions">
         <a class="btn btn-secondary btn-small" href="/edicoes/{{ e.id }}">Abrir</a>

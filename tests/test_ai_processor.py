@@ -6,6 +6,7 @@ Cobre pré-limpeza de OCR e pós-processamento (normalização de valor, data e 
 from __future__ import annotations
 
 from ai_processor import (
+    _heuristica_importancia,
     _limpar_trecho_ocr,
     _normalizar_valor_ia,
     _normalizar_data_ia,
@@ -132,3 +133,18 @@ class TestNormalizarTipo:
     def test_vazio(self):
         assert normalizar_tipo_ato(None) is None
         assert normalizar_tipo_ato("") is None
+
+
+class TestHeuristicaImportancia:
+    def test_licitacao_alta(self):
+        assert _heuristica_importancia({"tipo": "Dispensa de Licitação"}) >= 4
+
+    def test_valor_alto_critico(self):
+        assert _heuristica_importancia({"tipo": "Contrato", "valor": "R$ 150.000,00"}) >= 4
+
+    def test_rotina_baixa(self):
+        score = _heuristica_importancia({"tipo": "Aviso", "assunto": "horário de atendimento"})
+        assert 1 <= score <= 3
+
+    def test_lrf(self):
+        assert _heuristica_importancia({"tipo": "RGF", "assunto": "Relatório de Gestão Fiscal"}) >= 4

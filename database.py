@@ -147,6 +147,12 @@ _MIGRATIONS: list[tuple[int, str]] = [
     # Feedback humano nas publicações
     (15, "ALTER TABLE publicacoes ADD COLUMN feedback TEXT"),
     (16, "ALTER TABLE publicacoes ADD COLUMN feedback_em TEXT"),
+    # IA avançada: importância, explicação, auditoria só-menção
+    (17, "ALTER TABLE publicacoes ADD COLUMN importancia INTEGER"),
+    (18, "ALTER TABLE publicacoes ADD COLUMN importancia_motivo TEXT"),
+    (19, "ALTER TABLE publicacoes ADD COLUMN notificar_ia INTEGER DEFAULT 1"),
+    (20, "ALTER TABLE publicacoes ADD COLUMN explicacao_ia TEXT"),
+    (21, "ALTER TABLE edicoes ADD COLUMN auditoria_so_mencao TEXT"),
 ]
 
 # Colunas esperadas por migração — usadas para marcar versões já aplicadas
@@ -168,6 +174,11 @@ _MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
     14: ("edicoes", "score_prioridade"),
     15: ("publicacoes", "feedback"),
     16: ("publicacoes", "feedback_em"),
+    17: ("publicacoes", "importancia"),
+    18: ("publicacoes", "importancia_motivo"),
+    19: ("publicacoes", "notificar_ia"),
+    20: ("publicacoes", "explicacao_ia"),
+    21: ("edicoes", "auditoria_so_mencao"),
 }
 
 
@@ -630,9 +641,10 @@ def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
             INSERT INTO publicacoes (
               edicao_id, pagina, bloco, categoria, orgao, tipo, numero,
               data_documento, assunto, valor, trecho,
-              resumo_ia, categoria_ia, texto_corrigido, ia_processado
+              resumo_ia, categoria_ia, texto_corrigido, ia_processado,
+              importancia, importancia_motivo, notificar_ia, explicacao_ia
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -651,10 +663,75 @@ def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
                     item.get("categoria_ia"),
                     item.get("texto_corrigido"),
                     1 if item.get("resumo_ia") or item.get("categoria_ia") else 0,
+                    item.get("importancia"),
+                    item.get("importancia_motivo"),
+                    1
+                    if item.get("notificar_ia", True) in (True, 1, "1", "true")
+                    else 0,
+                    item.get("explicacao_ia"),
                 )
                 for item in publicacoes
             ],
         )
+
+
+def update_explicacao_publicacao(pub_id: int, explicacao: str) -> bool:
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE publicacoes SET explicacao_ia = ? WHERE id = ?",
+            (explicacao, pub_id),
+        )
+        return cur.rowcount > 0
+
+
+def get_publicacao_by_id(pub_id: int) -> dict | None:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao, e.url
+            FROM publicacoes p
+            JOIN edicoes e ON e.id = p.edicao_id
+            WHERE p.id = ?
+            """,
+            (pub_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def salvar_auditoria_so_mencao(edicao_id: int, payload: dict | str) -> None:
+    texto = (
+        payload
+        if isinstance(payload, str)
+        else json.dumps(payload, ensure_ascii=False)
+    )
+    with connect() as conn:
+        conn.execute(
+            "UPDATE edicoes SET auditoria_so_mencao = ? WHERE id = ?",
+            (texto, edicao_id),
+        )
+
+
+def listar_edicoes_auditoria_pendente(limit: int = 20) -> list[dict]:
+    """Edições com Inajá, sem pubs, ainda sem auditoria IA (ou pendente)."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.id, e.titulo, e.data_publicacao, e.url, e.auditoria_so_mencao,
+                   (SELECT COUNT(*) FROM mencoes m WHERE m.edicao_id = e.id) AS n_mencoes
+            FROM edicoes e
+            WHERE e.tem_inaja = 1
+              AND e.ocr_processado = 1
+              AND NOT EXISTS (SELECT 1 FROM publicacoes p WHERE p.edicao_id = e.id)
+              AND (
+                e.auditoria_so_mencao IS NULL OR e.auditoria_so_mencao = ''
+                OR e.auditoria_so_mencao LIKE '%"classificacao": "pendente"%'
+              )
+            ORDER BY e.data_publicacao DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def start_job(
@@ -1523,7 +1600,7 @@ def listar_edicoes_so_mencao(
             conn.execute(
                 f"""
                 SELECT e.id, e.titulo, e.data_publicacao, e.url, e.ocr_processado,
-                       e.revisao_so_mencao,
+                       e.revisao_so_mencao, e.auditoria_so_mencao,
                        (SELECT COUNT(*) FROM mencoes m WHERE m.edicao_id = e.id) AS mencoes_count,
                        (SELECT GROUP_CONCAT(DISTINCT m2.termo_encontrado)
                           FROM mencoes m2 WHERE m2.edicao_id = e.id) AS termos

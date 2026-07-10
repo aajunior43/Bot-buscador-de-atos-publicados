@@ -90,6 +90,78 @@ class TestInsertMencoes:
         assert count == 1  # deduplica pelo hash_trecho
 
 
+class TestInsertPublicacoesIA:
+    def test_grava_importancia_e_explicacao(self, db):
+        import database
+        import sqlite3
+
+        database.init_db()
+        eid = database.insert_or_get_edicao(
+            "https://example.com/ed-ia.pdf", "Ed IA", "2026-07-01"
+        )
+        database.insert_publicacoes(
+            eid,
+            [
+                {
+                    "pagina": 1,
+                    "bloco": 0,
+                    "categoria": "publicacao_oficial",
+                    "orgao": "Prefeitura Municipal de Inajá",
+                    "tipo": "Decreto",
+                    "numero": "001/2026",
+                    "data_documento": "01/07/2026",
+                    "assunto": "Teste",
+                    "valor": "R$ 1.000,00",
+                    "trecho": "DECRETO ... Inajá",
+                    "resumo_ia": "Resumo teste",
+                    "categoria_ia": "publicacao_oficial",
+                    "texto_corrigido": "DECRETO",
+                    "importancia": 4,
+                    "importancia_motivo": "valor e decreto",
+                    "notificar_ia": True,
+                    "explicacao_ia": "Explica em linguagem simples.",
+                }
+            ],
+        )
+        conn = sqlite3.connect(database.SETTINGS.db_path)
+        row = conn.execute(
+            "SELECT importancia, importancia_motivo, notificar_ia, explicacao_ia "
+            "FROM publicacoes WHERE edicao_id=?",
+            (eid,),
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == 4
+        assert "decreto" in (row[1] or "").casefold()
+        assert row[2] == 1
+        assert "linguagem" in (row[3] or "")
+
+    def test_salvar_auditoria_so_mencao(self, db):
+        import database
+        import sqlite3
+        import json
+
+        database.init_db()
+        eid = database.insert_or_get_edicao(
+            "https://example.com/ed-aud.pdf", "Ed Aud", "2026-07-02"
+        )
+        database.salvar_auditoria_so_mencao(
+            eid,
+            {
+                "classificacao": "materia",
+                "motivo": "reportagem local",
+                "acao_sugerida": "ignorar",
+            },
+        )
+        conn = sqlite3.connect(database.SETTINGS.db_path)
+        raw = conn.execute(
+            "SELECT auditoria_so_mencao FROM edicoes WHERE id=?", (eid,)
+        ).fetchone()[0]
+        conn.close()
+        data = json.loads(raw)
+        assert data["classificacao"] == "materia"
+
+
 class TestPendingEdicoes:
     def test_ordena_recentes_primeiro(self, db):
         import database

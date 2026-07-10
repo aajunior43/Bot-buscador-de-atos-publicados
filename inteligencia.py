@@ -306,7 +306,7 @@ def montar_resumo_diario_texto(
 
 
 def gerar_resumo_diario_from_db(conn_factory=None) -> dict[str, Any]:
-    """Agrega estatísticas do dia e grava em settings."""
+    """Agrega estatísticas do dia e grava em settings (opcionalmente reescrito pela IA)."""
     import database
 
     hoje = date.today().isoformat()
@@ -379,7 +379,7 @@ def gerar_resumo_diario_from_db(conn_factory=None) -> dict[str, Any]:
     except Exception:
         valores_txt = ""
 
-    texto = montar_resumo_diario_texto(
+    texto_base = montar_resumo_diario_texto(
         dia=hoje,
         n_pubs=int(n_pubs or 0),
         n_edicoes_inaja=int(n_ed or 0),
@@ -387,6 +387,19 @@ def gerar_resumo_diario_from_db(conn_factory=None) -> dict[str, Any]:
         valores_txt=valores_txt,
         destaques=destaques,
     )
+    texto = texto_base
+    fonte = "regras"
+    if getattr(SETTINGS, "ai_resumo_diario", True) and int(n_pubs or 0) > 0:
+        try:
+            from ai_processor import gerar_resumo_periodo_ia
+
+            ia_txt = gerar_resumo_periodo_ia(texto_base, dia=hoje)
+            if ia_txt:
+                texto = ia_txt
+                fonte = "ia"
+        except Exception:
+            logger.debug("resumo diário IA falhou — mantendo regras", exc_info=True)
+
     database.set_setting("resumo_diario_data", hoje)
     database.set_setting("resumo_diario_texto", texto)
     database.set_setting(
@@ -397,10 +410,11 @@ def gerar_resumo_diario_from_db(conn_factory=None) -> dict[str, Any]:
                 "n_pubs": n_pubs,
                 "n_edicoes_inaja": n_ed,
                 "tipos": tipos,
+                "fonte": fonte,
                 "gerado_em": datetime.now().isoformat(timespec="seconds"),
             },
             ensure_ascii=False,
         ),
     )
-    logger.info("Resumo diário gerado (%s): %s pubs", hoje, n_pubs)
-    return {"dia": hoje, "texto": texto, "n_pubs": n_pubs}
+    logger.info("Resumo diário gerado (%s): %s pubs (fonte=%s)", hoje, n_pubs, fonte)
+    return {"dia": hoje, "texto": texto, "n_pubs": n_pubs, "fonte": fonte}
