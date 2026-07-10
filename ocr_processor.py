@@ -387,7 +387,7 @@ def _extrair_blocos_tesseract_imagem(
                     )
                 return blocos
 
-    logger.warning("Falha de OCR na página %s coluna %s após todas as estratégias", pagina, coluna + 1)
+    logger.debug("OCR sem texto na página %s coluna %s após todas as estratégias", pagina, coluna + 1)
     if avisos is not None:
         avisos.append(f"Falha de OCR na página {pagina}, coluna {coluna + 1}")
     return []

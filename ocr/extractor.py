@@ -99,6 +99,17 @@ def _texto_ocr_paginas(
     total = len(imagens_filtradas)
     avisos_ref = avisos or []
 
+    # Marca t0 da barra antes do 1º término (evita taxa milagrosa no 1/N)
+    if on_progress and total > 0:
+        on_progress(
+            {
+                "step": "ocr_structured",
+                "current": 0,
+                "total": total,
+                "msg": f"[ocr-estruturado] Iniciando {total} página(s)",
+            }
+        )
+
     def _job(pair: tuple[int, Image.Image]) -> PageText:
         num, img = pair
         return _ocr_completo_pagina(num, img, avisos_ref)
@@ -216,6 +227,7 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
 
     texto = ""
     estrategia_ok = ""
+    melhor_curto = ""
     for estrategia, candidata, psm, timeout in tentativas:
         candidato = _tentar_image_to_string(candidata, idx, estrategia, psm, timeout)
         if candidato and _ocr_rapido_texto_valido(candidato):
@@ -223,7 +235,9 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
             estrategia_ok = estrategia
             break
         if candidato:
-            logger.info(
+            if len(candidato) > len(melhor_curto):
+                melhor_curto = candidato
+            logger.debug(
                 "OCR rápido na página %s (%s) com pouco texto (%s chars); tentando próxima estratégia",
                 idx,
                 estrategia,
@@ -233,6 +247,21 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
     if texto and estrategia_ok != "psm 6":
         logger.info("OCR rápido na página %s recuperado (%s)", idx, estrategia_ok)
     elif not texto:
+        # Já há algum texto curto (ex.: 100–130 chars de ruído/foto): não vale
+        # gastar OCR estruturado multi-coluna se for claramente sem corpo legível.
+        # Só escala se quase não saiu nada (possível texto fino/ilegível no DPI baixo).
+        if len(melhor_curto) >= 80:
+            logger.info(
+                "OCR rápido na página %s ficou curto (%s chars); mantém resultado sem estruturado",
+                idx,
+                len(melhor_curto),
+            )
+            return PageText(
+                pagina=idx,
+                texto=melhor_curto,
+                metodo="ocr-rapido",
+                blocks=[TextBlock(pagina=idx, bloco=1, texto=melhor_curto)],
+            )
         logger.info("OCR rápido insuficiente na página %s; aplicando OCR estruturado", idx)
         pagina = _ocr_completo_pagina(idx, imagem, avisos, alta_qualidade=True)
         if _ocr_rapido_texto_valido(pagina.texto):

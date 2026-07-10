@@ -610,6 +610,12 @@ def step(
     _emit(f"  {icon} {_c(C.BOLD, name)}{detail_s}")
 
 
+# Evita ETA/taxa absurda no 1º tick (t0 resetado no mesmo frame do current=1).
+_PROGRESS_MIN_ELAPSED_S = 1.5
+# Teto de exibição — OCR real raramente passa disso
+_PROGRESS_MAX_PPM = 180.0
+
+
 def progress(
     current: int,
     total: int,
@@ -632,14 +638,20 @@ def progress(
     speed_s = ""
     if _progress_t0 and current > 0:
         elapsed = time.time() - _progress_t0
-        rate = current / elapsed if elapsed > 0 else 0
-        if rate > 0:
-            # páginas por minuto
-            ppm = rate * 60
-            speed_s = f"  {_c(C.DIM, f'{ppm:.1f} pág/min')}"
-            if total > current:
-                rem = (total - current) / rate
-                eta_s = f"  {_c(C.YELLOW, 'ETA ' + _fmt_dur(rem))}"
+        # Só estima velocidade após amostra mínima — senão aparece
+        # "6291456 pág/min" / "ETA 0.0s" no primeiro update da fase.
+        if elapsed >= _PROGRESS_MIN_ELAPSED_S:
+            rate = current / elapsed
+            if rate > 0:
+                ppm = min(rate * 60.0, _PROGRESS_MAX_PPM)
+                # Se a taxa bruta estourou o teto, ETA fica conservador (usa teto)
+                rate_ui = min(rate, _PROGRESS_MAX_PPM / 60.0)
+                speed_s = f"  {_c(C.DIM, f'{ppm:.1f} pág/min')}"
+                if total > current:
+                    rem = (total - current) / rate_ui
+                    # Esconde ETA se ainda for irrealmente curto com pouco progresso
+                    if rem >= 0.5 or current >= 2:
+                        eta_s = f"  {_c(C.YELLOW, 'ETA ' + _fmt_dur(rem))}"
 
     body = (
         f"  {_c(C.DIM, '│')} {_c(color, b)} "

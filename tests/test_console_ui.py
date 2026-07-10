@@ -20,6 +20,33 @@ def test_parse_progress_dict():
     assert "rápido" in label.lower() or "OCR" in label
 
 
+def test_progress_nao_mostra_taxa_no_primeiro_tick(capsys, monkeypatch):
+    """Regressão: 1/16 com elapsed≈0 gerava 6e6 pág/min e ETA 0.0s."""
+    console_ui._progress_t0 = None
+    console_ui._progress_label = ""
+    console_ui._last_progress_line = ""
+    # Congela o tempo: primeiro call seta t0, segundo com +0.01s ainda sem ETA
+    t = {"v": 1000.0}
+
+    def fake_time():
+        return t["v"]
+
+    monkeypatch.setattr(console_ui.time, "time", fake_time)
+    console_ui.progress(1, 16, label="OCR estruturado")
+    out1 = capsys.readouterr().out
+    assert "1/16" in out1 or "1/16" in out1.replace(" ", "")
+    assert "pág/min" not in out1
+    assert "ETA" not in out1
+
+    t["v"] = 1000.0 + 2.0  # passou o mínimo de amostragem
+    console_ui.progress(2, 16, label="OCR estruturado")
+    out2 = capsys.readouterr().out
+    assert "pág/min" in out2
+    # Nunca taxa milagrosa
+    assert "6291456" not in out2
+    assert "999999" not in out2
+
+
 def test_parse_progress_string():
     cur, tot, label = console_ui.parse_progress_payload(
         "OCR rápido: Página 4/20 processada"
