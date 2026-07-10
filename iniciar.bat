@@ -24,32 +24,32 @@ set "CB=%ESC%[1m"
 cls
 echo.
 echo  %C1%%CB%============================================================%C0%
-echo  %C1%%CB%        MONITOR DE ATOS — Inaja / O Regional%C0%
+echo  %C1%%CB%        MONITOR DE ATOS - Inaja / O Regional%C0%
 echo  %C1%%CB%============================================================%C0%
 echo.
 call :HEADER_STATUS
 echo.
 echo  %C5%%CB%  SERVICOS%C0%
-echo  %C2%  [1]%C0% Iniciar TUDO            %CD%(Web + BOT)  http://localhost:8001%C0%
+echo  %C2%  [1]%C0% Iniciar TUDO            %CD%Web + BOT  http://localhost:8001%C0%
 echo  %C2%  [2]%C0% So interface WEB
 echo  %C2%  [3]%C0% So BOT continuo
-echo  %C2%  [4]%C0% Um ciclo BOT e encerra  %CD%(--once)%C0%
+echo  %C2%  [4]%C0% Um ciclo BOT e encerra  %CD%--once%C0%
 echo  %C2%  [5]%C0% Abrir navegador         %CD%http://localhost:8001%C0%
 echo.
 echo  %C5%%CB%  PROCESSAMENTO%C0%
-echo  %C2%  [6]%C0% Processar um MES         %CD%(AAAA-MM, cache+IA)%C0%
-echo  %C2%  [7]%C0% Processar JULHO/2026     %CD%(atalho)%C0%
-echo  %C2%  [8]%C0% Processar N pendentes    %CD%(OCR fila)%C0%
+echo  %C2%  [6]%C0% Processar um MES         %CD%AAAA-MM, cache+IA%C0%
+echo  %C2%  [7]%C0% Processar JULHO/2026     %CD%atalho%C0%
+echo  %C2%  [8]%C0% Processar N pendentes    %CD%OCR fila%C0%
 echo  %C2%  [9]%C0% Reprocessar subdetectados
-echo  %C2%  [F]%C0% Ciclo com force-rescan   %CD%(cuidado)%C0%
-echo  %C2%  [O]%C0% Um ciclo com force-OCR   %CD%(Tesseract todas as paginas)%C0%
+echo  %C2%  [F]%C0% Ciclo com force-rescan   %CD%cuidado%C0%
+echo  %C2%  [O]%C0% Um ciclo com force-OCR   %CD%Tesseract todas as paginas%C0%
 echo.
 echo  %C5%%CB%  CONSULTA%C0%
-echo  %C2%  [S]%C0% Status da fila           %CD%(completo)%C0%
+echo  %C2%  [S]%C0% Status da fila           %CD%completo%C0%
 echo  %C2%  [U]%C0% Ultimas publicacoes
-echo  %C2%  [P]%C0% Buscar publicacao        %CD%(termo)%C0%
+echo  %C2%  [P]%C0% Buscar publicacao        %CD%termo%C0%
 echo  %C2%  [M]%C0% Mencoes de um mes
-echo  %C2%  [Y]%C0% Resumo mensal            %CD%(edicoes/pubs)%C0%
+echo  %C2%  [Y]%C0% Resumo mensal            %CD%edicoes/pubs%C0%
 echo  %C2%  [J]%C0% Status julho/2026
 echo  %C2%  [I]%C0% Status da IA / chaves
 echo.
@@ -67,7 +67,7 @@ echo  %C2%  [K]%C0% Bot Telegram interativo
 echo  %C2%  [W]%C0% Abrir pasta do projeto
 echo  %C2%  [H]%C0% Ajuda rapida
 echo.
-echo  %C4%  [C]%C0% Limpar dados processados  %CD%(pede SIM)%C0%
+echo  %C4%  [C]%C0% Limpar dados processados  %CD%pede SIM%C0%
 echo  %C2%  [0]%C0% Sair
 echo.
 echo  %C1%============================================================%C0%
@@ -155,7 +155,7 @@ goto MENU
 :BOT_ONCE
 cls
 echo.
-echo  %C2%Um ciclo%C0% do BOT (--once)...
+echo  %C2%Um ciclo%C0% do BOT --once...
 echo.
 python main.py --once
 echo.
@@ -172,11 +172,11 @@ goto MENU
 :PROC_MES
 cls
 echo.
-echo  %C2%Processar um mes%C0% (cache OCR + IA)
+echo  %C2%Processar um mes%C0% - cache OCR + IA
 echo  Exemplo: 2026-07   2026-06   2025-12
 echo.
 set "MES="
-set /p MES="  Mes (AAAA-MM): "
+set /p MES="  Mes AAAA-MM: "
 if not defined MES (
   echo  Cancelado.
   timeout /t 1 >nul
@@ -208,7 +208,7 @@ goto MENU
 :PROC_PEND
 cls
 echo.
-echo  %C2%Processar pendentes%C0% (OCR + deteccao + IA)
+echo  %C2%Processar pendentes%C0% - OCR + deteccao + IA
 echo.
 set "N=5"
 set /p N="  Quantas edicoes [5]: "
@@ -222,7 +222,7 @@ goto MENU
 :REPROC_SUB
 cls
 echo.
-echo  %C2%Reprocessar subdetectados%C0% (IA)
+echo  %C2%Reprocessar subdetectados%C0% - IA
 echo.
 set "DESDE=2026-01-01"
 set "LIMITE=20"
@@ -375,7 +375,7 @@ goto MENU
 :EXPORT_MES
 cls
 echo.
-echo  %C2%Exportar publicacoes CSV%C0%  %CD%(pasta exportacoes/)%C0%
+echo  %C2%Exportar publicacoes CSV%C0%  %CD%pasta exportacoes/%C0%
 set "MES=2026-07"
 set /p MES="  Mes [2026-07]: "
 if not defined MES set MES=2026-07
@@ -408,7 +408,7 @@ goto MENU
 :LIMPAR_JOBS
 cls
 echo.
-echo  %C2%Limpar jobs travados (status=rodando)...%C0%
+echo  %C2%Limpar jobs travados status=rodando...%C0%
 echo.
 python scripts\_limpar_jobs.py
 echo.
@@ -466,17 +466,17 @@ echo.
 echo  %C5%Dia a dia%C0%
 echo    [1] sobe Web + BOT e deixa rodando
 echo    [S] ve fila, lock, jobs e ultimas edicoes
-echo    [U]/[P] consulta publicacoes
+echo    [U] [P] consulta publicacoes
 echo.
 echo  %C5%Validar um mes%C0%
 echo    [6] processa AAAA-MM via cache OCR + IA
 echo    [7] atalho julho/2026
-echo    [M] lista mencoes  ·  [Y] resumo mensal  ·  [E] exporta CSV
+echo    [M] lista mencoes  -  [Y] resumo mensal  -  [E] exporta CSV
 echo.
 echo  %C5%Fila grande%C0%
-echo    [8] processa N pendentes (OCR real)
+echo    [8] processa N pendentes OCR real
 echo    [3] BOT continuo esvazia a fila sozinho
-echo    [L]/[Q] se travar (lock / jobs rodando)
+echo    [L] [Q] se travar lock / jobs rodando
 echo.
 echo  %C5%Qualidade%C0%
 echo    [9] reprocessa subdetectados com IA
@@ -485,7 +485,7 @@ echo    [A] teste Telegram/arquivo
 echo    [O] force-OCR se texto embutido for ruim
 echo.
 echo  %C5%Cuidado%C0%
-echo    [F] force-rescan  ·  [C] apaga pubs/mencoes (pede SIM)
+echo    [F] force-rescan  -  [C] apaga pubs/mencoes pede SIM
 echo.
 echo  %C5%Pastas%C0%
 echo    edicoes\   PDFs + .ocr.json

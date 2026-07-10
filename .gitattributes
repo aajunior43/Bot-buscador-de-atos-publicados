@@ -1,0 +1,4 @@
+# Batch files MUST use CRLF on Windows — LF breaks cmd.exe
+# (first character of each line is eaten: "echo" -> "ho", "cd /d" -> "/d")
+*.bat text eol=crlf
+*.cmd text eol=crlf
