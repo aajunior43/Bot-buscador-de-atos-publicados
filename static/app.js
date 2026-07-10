@@ -301,8 +301,61 @@
     });
   }
 
+  /** Chips leves no topo: BOT vivo + fila pendente (sem poluir o menu). */
+  function initNavLiveChips() {
+    var host = document.getElementById("nav-live-chips");
+    if (!host || !window.fetch) return;
+
+    function chip(label, cls, title) {
+      return (
+        '<span class="nav-chip ' +
+        (cls || "") +
+        '" title="' +
+        (title || "") +
+        '">' +
+        label +
+        "</span>"
+      );
+    }
+
+    function refresh() {
+      fetch("/api/automacao", { headers: { Accept: "application/json" } })
+        .then(function (r) {
+          return r.ok ? r.json() : null;
+        })
+        .then(function (st) {
+          if (!st) return;
+          var parts = [];
+          if (st.bot_vivo) {
+            parts.push(chip("BOT", "is-on", "Bot de processamento ativo"));
+          } else {
+            parts.push(
+              chip("BOT off", "is-off", "Bot parado — use o menu [1] ou [3]")
+            );
+          }
+          var pend = st.pendentes_ocr;
+          if (pend != null) {
+            parts.push(
+              chip(
+                pend + " fila",
+                pend > 100 ? "is-warn" : pend > 0 ? "" : "is-on",
+                pend + " edição(ões) pendente(s) de OCR"
+              )
+            );
+          }
+          host.innerHTML = parts.join("");
+        })
+        .catch(function () {});
+    }
+
+    refresh();
+    setInterval(refresh, 60000);
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     initGlobalActivity();
     initMobileNav();
+    initNavLiveChips();
   });
 })();
+

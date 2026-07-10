@@ -25,27 +25,42 @@
           <span></span><span></span><span></span>
         </button>
 
+        {# path helpers #}
+        {% set p = request.url.path %}
+
         <nav class="main-nav" id="main-nav" aria-label="Principal">
-          <div class="nav-group" data-zone="leitura">
-            <span class="nav-group-label">Leitura</span>
-            <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>Atos</a>
-            <a href="/perguntar" {% if request.url.path == '/perguntar' %}class="active"{% endif %}>Perguntar</a>
-            <a href="/inteligencia" {% if request.url.path == '/inteligencia' %}class="active"{% endif %}>Inteligência</a>
-            <a href="/exportar" {% if request.url.path == '/exportar' %}class="active"{% endif %}>Exportar</a>
+          {# --- CONSULTAR: resultado final (atos, busca, análises, export) --- #}
+          <div class="nav-group" data-zone="consultar">
+            <span class="nav-group-label">Consultar</span>
+            <a href="/" {% if p == '/' or p == '/atos' %}class="active"{% endif %} title="Publicações oficiais detectadas">Atos</a>
+            <a href="/perguntar" {% if p == '/perguntar' %}class="active"{% endif %} title="Pergunte à IA sobre os atos">Chat IA</a>
+            <a href="/inteligencia" {% if p == '/inteligencia' %}class="active"{% endif %} title="Gráficos, temas e anomalias">Análises</a>
+            <a href="/exportar" {% if p == '/exportar' %}class="active"{% endif %} title="CSV / JSON">Exportar</a>
           </div>
+
           <div class="nav-divider" aria-hidden="true"></div>
-          <div class="nav-group" data-zone="operacao">
-            <span class="nav-group-label">Operação</span>
-            <a href="/operacao" {% if request.url.path == '/operacao' %}class="active"{% endif %}>Painel</a>
-            <a href="/edicoes-detectadas" {% if '/edicoes-detectadas' in request.url.path %}class="active"{% endif %}>Edições</a>
-            <a href="/revisao/so-mencao" {% if '/revisao/so-mencao' in request.url.path %}class="active"{% endif %}>Só menção</a>
-            <a href="/status" {% if request.url.path == '/status' %}class="active"{% endif %}>Fila</a>
-            <a href="/notificacoes" {% if request.url.path == '/notificacoes' %}class="active"{% endif %}>Alertas</a>
-            <a href="/admin" {% if request.url.path == '/admin' %}class="active"{% endif %}>Admin</a>
+
+          {# --- OPERAR: trabalho diário do operador --- #}
+          <div class="nav-group" data-zone="operar">
+            <span class="nav-group-label">Operar</span>
+            <a href="/operacao" {% if p == '/operacao' %}class="active"{% endif %} title="Cockpit: automação e resumo">Painel</a>
+            <a href="/edicoes-detectadas" {% if p.startswith('/edicoes') %}class="active"{% endif %} title="Edições do jornal e detecção">Edições</a>
+            <a href="/status" {% if p == '/status' %}class="active"{% endif %} title="Fila de OCR e jobs">Fila</a>
+            <a href="/revisao/so-mencao" {% if p.startswith('/revisao') %}class="active"{% endif %} title="Inajá sem ato completo — revisar">Revisão</a>
+            <a href="/notificacoes" {% if p == '/notificacoes' %}class="active"{% endif %} title="Histórico de alertas">Alertas</a>
           </div>
-          <a href="/status" id="global-processing" class="global-processing" style="display:none;" title="Há jobs em execução">
-            <span class="processing-dot"></span>Processando
-          </a>
+
+          <div class="nav-divider nav-divider-sys" aria-hidden="true"></div>
+
+          {# --- SISTEMA: admin e status ao vivo --- #}
+          <div class="nav-group nav-group-sys" data-zone="sistema">
+            <span class="nav-group-label">Sistema</span>
+            <a href="/admin" class="nav-admin{% if p.startswith('/admin') %} active{% endif %}" title="Agente, IA, senha 1999">Admin</a>
+            <a href="/status" id="global-processing" class="global-processing" style="display:none;" title="Há jobs em execução">
+              <span class="processing-dot"></span>Processando
+            </a>
+            <span id="nav-live-chips" class="nav-live-chips" aria-live="polite"></span>
+          </div>
         </nav>
       </header>
 

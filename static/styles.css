@@ -116,36 +116,90 @@ main {
   border-bottom: 1px solid var(--border);
 }
 
-/* Nav: dois grupos (Leitura | Operação) */
+/* Nav: Consultar | Operar | Sistema */
 .main-nav {
   display: flex;
   align-items: center;
-  gap: .35rem 1rem;
+  gap: .35rem .85rem;
   flex-wrap: wrap;
+  flex: 1;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .nav-group {
   display: flex;
   align-items: center;
-  gap: .15rem;
+  gap: .12rem;
   flex-wrap: wrap;
 }
 
 .nav-group-label {
-  font-size: .65rem;
+  font-size: .62rem;
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--text-3);
-  margin-right: .35rem;
+  margin-right: .3rem;
   user-select: none;
+  opacity: .85;
 }
 
 .nav-divider {
   width: 1px;
-  height: 1.4rem;
+  height: 1.35rem;
   background: var(--border-2);
-  margin: 0 .25rem;
+  margin: 0 .15rem;
+  flex-shrink: 0;
+}
+
+.nav-group-sys {
+  margin-left: .15rem;
+}
+
+.nav-admin {
+  border: 1px solid rgba(99, 102, 241, .35) !important;
+  background: rgba(99, 102, 241, .08);
+  color: var(--accent-2, #a5b4fc) !important;
+}
+.nav-admin:hover,
+.nav-admin.active {
+  background: rgba(99, 102, 241, .18) !important;
+  border-color: rgba(99, 102, 241, .55) !important;
+}
+
+.nav-live-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  margin-left: .25rem;
+}
+.nav-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  font-size: .68rem;
+  font-weight: 600;
+  padding: .18rem .45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  background: rgba(255,255,255,.03);
+  white-space: nowrap;
+}
+.nav-chip.is-on {
+  color: var(--green);
+  border-color: rgba(34, 211, 165, .35);
+  background: rgba(34, 211, 165, .08);
+}
+.nav-chip.is-off {
+  color: var(--text-3);
+  opacity: .75;
+}
+.nav-chip.is-warn {
+  color: var(--amber, #fbbf24);
+  border-color: rgba(251, 191, 36, .35);
+  background: rgba(251, 191, 36, .08);
 }
 
 .nav-toggle {
@@ -2480,13 +2534,23 @@ details[open] summary::before { transform: rotate(90deg); }
     align-items: stretch;
     gap: .75rem;
     padding: .5rem 0 .25rem;
+    justify-content: flex-start;
   }
   .main-nav.is-open { display: flex; }
   .nav-group { flex-direction: column; align-items: stretch; gap: .2rem; }
+  .nav-group-sys { margin-left: 0; }
   .nav-group-label { margin: .35rem 0 .15rem; }
   .nav-divider { display: none; }
   .main-nav a { display: block; }
+  .nav-live-chips { margin: .35rem 0 0; flex-wrap: wrap; }
 }
+
+/* Telas médias: esconde rótulos de grupo para caber numa linha */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .nav-group-label { display: none; }
+  .main-nav { gap: .25rem .45rem; }
+}
+
 
 @media (max-width: 600px) {
   .stats-grid-compact { grid-template-columns: 1fr 1fr; }
