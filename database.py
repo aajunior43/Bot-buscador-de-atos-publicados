@@ -615,9 +615,12 @@ def update_tem_inaja(edicao_id: int, tem_inaja: bool) -> None:
         )
 
 
-def _hash_trecho(pagina: int, trecho: str, termo: str) -> str:
-    """Gera hash único para deduplicar menções."""
-    raw = f"{pagina}|{trecho}|{termo}"
+def _hash_trecho(pagina: int, trecho: str, termo: str = "") -> str:
+    """Hash por página+trecho (termo não entra — evita 3 linhas no mesmo snippet)."""
+    # termo mantido na assinatura por compatibilidade; não participa do hash
+    _ = termo
+    trecho_n = " ".join((trecho or "").split())
+    raw = f"{pagina}|{trecho_n}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 

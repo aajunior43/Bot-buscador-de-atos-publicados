@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 BASE_TERMS = [
     "Inajá",
     "Inaja",
-    "INAVÁ",  # OCR comum
-    "INAVA",
+    # INAVÁ/INAVA: normalizados no texto para Inajá — não listar à parte
     "Prefeitura de Inajá",
     "Prefeitura Municipal de Inajá",
     "Câmara de Inajá",
@@ -29,6 +28,7 @@ BASE_TERMS = [
 ]
 
 GENERIC_TERMS = {"inajá", "inaja"}
+# Termos genéricos que batem dentro de nomes mais longos — preferir o específico
 CEP_RE = re.compile(r"\b87\.?\d{3}-\d{3}\b")
 CPF_RE = re.compile(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b")
 VALOR_RE = re.compile(r"R\s*[$S]\s*[\d\.\,]+", re.IGNORECASE)
@@ -258,15 +258,90 @@ def _contexto(texto: str, inicio: int, fim: int, margem: int = 180) -> str:
 
 
 def _termos() -> list[str]:
+    """Lista de busca sem duplicar o mesmo texto normalizado (ex.: Inajá/Inaja)."""
     termos = BASE_TERMS + SETTINGS.extra_terms
-    vistos: set[str] = set()
-    resultado: list[str] = []
+    por_norm: dict[str, str] = {}
     for termo in termos:
+        if not (termo or "").strip():
+            continue
         chave = _sem_acentos(termo).casefold()
-        if termo and chave not in vistos:
-            vistos.add(chave)
-            resultado.append(termo)
-    return resultado
+        if chave in {"inava", "inavá"}:
+            chave = "inaja"
+            termo = "Inajá"
+        # Preferir o rótulo mais específico (mais longo) para o mesmo norm
+        if chave not in por_norm or len(termo) > len(por_norm[chave]):
+            por_norm[chave] = "Inajá" if chave == "inaja" else termo
+    # Ordem: mais específicos primeiro (evita “Inajá” engolir contexto do match longo)
+    return sorted(por_norm.values(), key=lambda t: (-len(t), t.casefold()))
+
+
+def _score_termo_mencao(termo: str) -> int:
+    """Quanto maior, mais específico (usado ao colapsar menções no mesmo trecho)."""
+    t = _sem_acentos(termo or "").casefold()
+    if "prefeitura municipal" in t:
+        return 100
+    if "camara municipal" in t:
+        return 95
+    if "municipio de" in t:
+        return 85
+    if "prefeitura de" in t:
+        return 80
+    if "camara de" in t:
+        return 75
+    if "joao eder" in t:
+        return 70
+    if re.search(r"\d{2}\.\d{3}\.\d{3}", termo or "") or "cnpj" in t:
+        return 65
+    if t.startswith("cep"):
+        return 50
+    if t in GENERIC_TERMS:
+        return 10
+    return 40
+
+
+def _contexto_marca_comercial(texto: str, inicio: int, fim: int) -> bool:
+    """True se 'Inajá' parece marca de produto (ex.: combustível SR 10 Marca: Inajá)."""
+    ctx = _sem_acentos(_contexto(texto, inicio, fim, margem=50)).casefold()
+    if re.search(r"\bmarca\s*[:\-]?\s*inaja\b", ctx) or re.search(
+        r"\binaja\s*\d+\b", ctx
+    ):
+        # Ainda é menção municipal se órgão aparece perto
+        largo = _sem_acentos(_contexto(texto, inicio, fim, margem=200)).casefold()
+        if any(
+            k in largo
+            for k in (
+                "prefeitura",
+                "municipio de inaja",
+                "camara municipal",
+                "cnpj",
+            )
+        ):
+            return False
+        return True
+    return False
+
+
+def _deduplicar_mencoes(mencoes: list[dict]) -> list[dict]:
+    """Uma menção por trecho/página — fica o termo mais específico."""
+    melhores: dict[tuple, dict] = {}
+    for m in mencoes:
+        trecho = re.sub(
+            r"\s+", " ", _sem_acentos(m.get("trecho") or "").casefold()
+        ).strip()
+        # Janela estável do trecho (sem variar com o termo no meio)
+        chave = (m.get("pagina"), trecho[:160])
+        if chave not in melhores:
+            melhores[chave] = m
+            continue
+        if _score_termo_mencao(m.get("termo") or "") > _score_termo_mencao(
+            melhores[chave].get("termo") or ""
+        ):
+            melhores[chave] = m
+    # Ordena por página
+    return sorted(
+        melhores.values(),
+        key=lambda x: (int(x.get("pagina") or 0), str(x.get("termo") or "")),
+    )
 
 
 def _cep_de_inaja(cep: str) -> bool:
@@ -1260,24 +1335,23 @@ def detectar(
                 )
             texto_norm = _sem_acentos(texto).casefold()
             termos_segmento: set[str] = set()
-
+            # Evita buscar o mesmo norm 2x (Inajá/Inaja já colapsados em _termos)
             for termo in termos:
                 termo_norm = _sem_acentos(termo).casefold()
-                # Mapear variantes OCR para termo canônico Inajá
                 if termo_norm in {"inava", "inavá"}:
                     termo_norm = "inaja"
+                    termo = "Inajá"
                 start = 0
                 while termo_norm and (idx := texto_norm.find(termo_norm, start)) != -1:
                     fim = idx + len(termo_norm)
-                    if (
-                        termo_norm in GENERIC_TERMS
-                        and (
+                    if termo_norm in GENERIC_TERMS:
+                        if (
                             _contexto_ignorado_para_mencao_generica(texto, idx, fim)
                             or _mencao_generica_sem_palavra_isolada(texto, idx, fim)
-                        )
-                    ):
-                        start = fim
-                        continue
+                            or _contexto_marca_comercial(texto, idx, fim)
+                        ):
+                            start = fim
+                            continue
                     trecho = _snippet(texto, idx, fim)
                     paginas_com_mencao.add(pagina.pagina)
                     termos_encontrados.add(termo)
@@ -1335,6 +1409,21 @@ def detectar(
                     continue
                 vistos_pub.add(chave)
                 publicacoes.append(publicacao)
+
+    # Menções: colapsa Inajá+Prefeitura no mesmo trecho; remove INAVÁ duplicado
+    mencoes_db = _deduplicar_mencoes(mencoes_db)
+    # Trechos de UI/notificação alinhados às menções únicas
+    trechos = [
+        {
+            "pagina": m["pagina"],
+            "bloco": 0,
+            "trecho": m["trecho"],
+        }
+        for m in mencoes_db
+    ]
+    termos_encontrados = {m["termo"] for m in mencoes_db}
+    if mencoes_db:
+        paginas_com_mencao = {int(m["pagina"]) for m in mencoes_db if m.get("pagina")}
 
     publicacoes_brutas = len(publicacoes)
     # Hard-filter + dedup (Prefeitura≡Município no mesmo nº/tipo)

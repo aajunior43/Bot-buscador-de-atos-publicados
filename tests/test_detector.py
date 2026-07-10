@@ -19,7 +19,10 @@ from detector import (
     _mencao_generica_sem_palavra_isolada,
     _numero_ato_valido,
     _deduplicar_publicacoes,
+    _deduplicar_mencoes,
     _chave_pub_dedup,
+    _contexto_marca_comercial,
+    _termos,
     detectar,
 )
 from ocr.models import PageText, TextBlock
@@ -211,6 +214,41 @@ class TestDedupPublicacoes:
         out = _deduplicar_publicacoes(pubs)
         assert len(out) == 1
         assert out[0].get("numero") is None
+
+
+class TestDedupMencoes:
+    def test_mesmo_trecho_fica_termo_especifico(self):
+        trecho = "...PREFEITURA MUNICIPAL DE INAJÁ ESTADO DO PARANÁ..."
+        mencoes = [
+            {"pagina": 6, "trecho": trecho, "termo": "Inajá"},
+            {"pagina": 6, "trecho": trecho, "termo": "INAVÁ"},
+            {"pagina": 6, "trecho": trecho, "termo": "Prefeitura Municipal de Inajá"},
+        ]
+        out = _deduplicar_mencoes(mencoes)
+        assert len(out) == 1
+        assert "Prefeitura" in out[0]["termo"]
+
+    def test_trechos_diferentes_permanecem(self):
+        mencoes = [
+            {"pagina": 6, "trecho": "...ato A Inajá prefeitura...", "termo": "Inajá"},
+            {"pagina": 6, "trecho": "...ato B contrato extrato...", "termo": "Inajá"},
+        ]
+        assert len(_deduplicar_mencoes(mencoes)) == 2
+
+    def test_termos_nao_duplica_inaja_inava(self):
+        ts = _termos()
+        norms = {_sem_acentos(t).casefold() for t in ts}
+        assert "inava" not in norms
+        assert sum(1 for t in ts if _sem_acentos(t).casefold() == "inaja") == 1
+
+    def test_marca_comercial(self):
+        texto = "Item SR 10 Marca: Inajá 11, quantidade original 104.000 litros"
+        idx = texto.casefold().find("inajá")
+        # sem órgão municipal perto → marca
+        assert _contexto_marca_comercial(texto, idx, idx + 5) is True
+        texto2 = "PREFEITURA MUNICIPAL DE INAJÁ decreta o seguinte"
+        idx2 = texto2.casefold().find("inajá")
+        assert _contexto_marca_comercial(texto2, idx2, idx2 + 5) is False
 
     def test_numero_normalizado(self):
         texto = "DECRETO Nº 0012026"
