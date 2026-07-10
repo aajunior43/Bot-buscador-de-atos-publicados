@@ -37,6 +37,51 @@
   </article>
 </section>
 
+<section class="panel fade-in" style="margin-bottom:1.25rem;">
+  <div class="panel-head">
+    <h2>Fila de jobs (resumo)</h2>
+    <a href="/status">Ver fila completa →</a>
+  </div>
+  <div class="stats-grid stats-grid-compact" style="padding:1rem 1.5rem;">
+    <article {% if fila_resumo and fila_resumo.rodando %}class="stat-alert"{% endif %}>
+      <strong>{{ fila_resumo.rodando if fila_resumo else 0 }}</strong>
+      <span>Rodando</span>
+    </article>
+    <article {% if fila_resumo and fila_resumo.erro %}class="stat-alert"{% endif %}>
+      <strong>{{ fila_resumo.erro if fila_resumo else 0 }}</strong>
+      <span>Erros</span>
+    </article>
+    <article>
+      <strong>{{ fila_resumo.concluido if fila_resumo else 0 }}</strong>
+      <span>Concluídos</span>
+    </article>
+  </div>
+  {% if jobs_recentes %}
+  <div style="padding:0 1.5rem 1.25rem;overflow-x:auto;">
+    <table class="status-table">
+      <thead>
+        <tr><th>Quando</th><th>Status</th><th>Etapa</th><th>Edição</th><th>Msg</th></tr>
+      </thead>
+      <tbody>
+        {% for j in jobs_recentes %}
+        <tr>
+          <td>{{ j.atualizado_em or '—' }}</td>
+          <td>{{ j.status }}</td>
+          <td>{{ j.etapa }}</td>
+          <td>
+            {% if j.edicao_id %}
+            <a href="/edicoes/{{ j.edicao_id }}">{{ j.data_publicacao or j.edicao_id }}</a>
+            {% else %}—{% endif %}
+          </td>
+          <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ (j.mensagem or '')[:80] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
 <section class="panel fade-in ciclo-panel" id="ciclo-panel">
   <div class="panel-head">
     <h2>Status da automação</h2>

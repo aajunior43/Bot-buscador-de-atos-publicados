@@ -46,6 +46,12 @@
       <small>· {{ saude.bot_heartbeat_rel }}</small>
     {% endif %}
   </li>
+  <li class="{% if agente_home and agente_home.ativo %}ok{% else %}neutral{% endif %}" title="Agente de vigilância">
+    AG {% if agente_home and agente_home.ativo %}{{ agente_home.modo_efetivo or 'on' }}{% else %}off{% endif %}
+    {% if agente_home and agente_home.ocr_hoje is defined %}
+      <small>· OCR {{ agente_home.ocr_hoje }}/{{ agente_home.max_ocr_dia or '∞' }}</small>
+    {% endif %}
+  </li>
   <li class="{% if saude and saude.pendentes_ocr %}warn{% else %}ok{% endif %}">
     {% if saude and saude.pendentes_ocr %}
       <a href="/operacao">{{ saude.pendentes_ocr }} pend. OCR</a>
@@ -72,6 +78,38 @@
   {% endif %}
   <li class="neutral"><a href="/operacao">Operação →</a></li>
 </ul>
+
+<section class="panel fade-in ops-cta-panel" style="margin-bottom:1.25rem;">
+  <div class="panel-head">
+    <h2>Operação rápida</h2>
+    <span>atalhos · <kbd>?</kbd> no teclado</span>
+  </div>
+  <div class="admin-form" style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;">
+    <a class="btn" href="/operacao">Painel / fila</a>
+    <a class="btn btn-secondary" href="/admin">Admin / Agente</a>
+    <a class="btn btn-secondary" href="/status">Jobs ao vivo</a>
+    <a class="btn btn-secondary" href="/edicoes-detectadas">Edições</a>
+    {% if saude and saude.pendentes_ocr %}
+    <span style="font-size:.85rem;color:var(--text-3);">
+      {{ saude.pendentes_ocr }} pendentes — use Admin → «Processar 5 pendentes» ou deixe o BOT/agente rodar.
+    </span>
+    {% endif %}
+  </div>
+  {% if agente_log %}
+  <div style="padding:0 1.5rem 1.25rem;">
+    <strong style="font-size:.8rem;color:var(--text-3);">Últimas ações do agente</strong>
+    <ul style="margin:.4rem 0 0;padding-left:1.1rem;font-size:.82rem;color:var(--text-2);">
+      {% for r in agente_log %}
+      <li>
+        <code>{{ r.criado_em }}</code>
+        {{ r.ciclo }}/{{ r.modo }} · <strong>{{ r.acao }}</strong>
+        {% if r.detalhe %}<span style="opacity:.8;">— {{ r.detalhe[:90] }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</section>
 
 {% if atividade and atividade.tem_atividade %}
 <p class="ops-banner fade-in">

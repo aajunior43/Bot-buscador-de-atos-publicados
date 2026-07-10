@@ -40,6 +40,8 @@ def test_admin_login_ok_and_api(db, mock_settings, monkeypatch):
     r = _login(client)
     assert r.status_code in (303, 302)
     assert "monitor_admin_gate" in r.cookies
+    tok = r.cookies.get("monitor_admin_gate")
+    assert tok and len(tok) > 20  # sessão aleatória
 
     # com cookie
     r2 = client.get("/admin")
@@ -53,6 +55,20 @@ def test_admin_login_ok_and_api(db, mock_settings, monkeypatch):
     data = r3.json()
     assert "ativo" in data
     assert "modo_config" in data
+
+
+def test_admin_login_rate_limit(db, mock_settings, monkeypatch):
+    import webapp
+
+    monkeypatch.setattr(webapp, "_ADMIN_LOGIN_MAX", 3)
+    # limpa hits de outros testes
+    webapp._admin_login_hits.clear()
+    client = _client(db, mock_settings, monkeypatch)
+    for _ in range(3):
+        r = client.post("/admin/login", data={"senha": "xxxx"})
+        assert r.status_code == 401
+    r = client.post("/admin/login", data={"senha": "xxxx"})
+    assert r.status_code == 429
 
 
 def test_admin_api_blocked_without_login(db, mock_settings, monkeypatch):

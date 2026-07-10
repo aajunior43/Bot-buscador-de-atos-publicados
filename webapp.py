@@ -442,6 +442,14 @@ def dashboard(
 
     saude = _saude_sistema()
     saude["so_mencao_pendentes"] = so_mencao_pend
+    try:
+        from agente import listar_log, status_agente
+
+        agente_home = status_agente()
+        agente_log = listar_log(5)
+    except Exception:
+        agente_home = {}
+        agente_log = []
 
     return templates.TemplateResponse(
         request,
@@ -458,6 +466,8 @@ def dashboard(
             "tipos": tipos,
             "saude": saude,
             "resumo_diario": database.get_resumo_diario(),
+            "agente_home": agente_home,
+            "agente_log": agente_log,
         },
     )
 
@@ -480,6 +490,31 @@ def operacao(request: Request) -> HTMLResponse:
     with _conn() as conn:
         stats = _stats_basicos(conn)
         atividade = _atividade_atual(conn)
+        # Resumo compacto da fila de jobs (cockpit unificado)
+        fila_resumo = {
+            "rodando": conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status='rodando'"
+            ).fetchone()[0],
+            "erro": conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status='erro'"
+            ).fetchone()[0],
+            "concluido": conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status='concluido'"
+            ).fetchone()[0],
+        }
+        jobs_recentes = [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT j.id, j.etapa, j.status, j.mensagem, j.atualizado_em,
+                       j.edicao_id, e.titulo AS edicao_titulo, e.data_publicacao
+                FROM jobs j
+                LEFT JOIN edicoes e ON e.id = j.edicao_id
+                ORDER BY j.id DESC
+                LIMIT 12
+                """
+            ).fetchall()
+        ]
     metricas = database.get_metricas_qualidade()
     automacao = database.get_status_automacao()
     resumo = database.get_resumo_diario()
@@ -493,6 +528,8 @@ def operacao(request: Request) -> HTMLResponse:
             "saude": _saude_sistema(),
             "automacao": automacao,
             "resumo_diario": resumo,
+            "fila_resumo": fila_resumo,
+            "jobs_recentes": jobs_recentes,
         },
     )
 
@@ -1211,6 +1248,11 @@ from urllib.parse import quote as _url_quote
 ADMIN_GATE_PASSWORD = (_os.getenv("ADMIN_GATE_PASSWORD", "1999") or "1999").strip()
 ADMIN_GATE_COOKIE = "monitor_admin_gate"
 _ADMIN_LOCKED_DETAIL = "Admin bloqueado. Faça login na área Admin."
+_ADMIN_SESSION_HOURS = 12
+# Rate limit login: N tentativas por IP em janela de minutos
+_ADMIN_LOGIN_MAX = 8
+_ADMIN_LOGIN_WINDOW_S = 15 * 60
+_admin_login_hits: dict[str, list[float]] = {}
 
 
 class AdminGateError(Exception):
@@ -1228,14 +1270,59 @@ async def _admin_gate_error_handler(request: Request, exc: AdminGateError) -> Re
     )
 
 
-def _admin_gate_token() -> str:
-    return hashlib.sha256(f"monitor-admin-gate:{ADMIN_GATE_PASSWORD}".encode()).hexdigest()[:40]
+def _client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for") or ""
+    if xff:
+        return xff.split(",")[0].strip() or "unknown"
+    if request.client:
+        return request.client.host or "unknown"
+    return "unknown"
+
+
+def _admin_login_allowed(ip: str) -> bool:
+    agora = time.time()
+    hits = [t for t in _admin_login_hits.get(ip, []) if agora - t < _ADMIN_LOGIN_WINDOW_S]
+    _admin_login_hits[ip] = hits
+    return len(hits) < _ADMIN_LOGIN_MAX
+
+
+def _admin_login_register(ip: str) -> None:
+    _admin_login_hits.setdefault(ip, []).append(time.time())
+
+
+def _admin_create_session() -> str:
+    """Gera token aleatório de sessão (não deriva da senha)."""
+    from datetime import datetime, timedelta
+
+    token = _secrets.token_urlsafe(32)
+    exp = (datetime.now() + timedelta(hours=_ADMIN_SESSION_HOURS)).isoformat(
+        timespec="seconds"
+    )
+    database.set_setting("admin_session_token", token)
+    database.set_setting("admin_session_exp", exp)
+    return token
+
+
+def _admin_clear_session() -> None:
+    database.set_setting("admin_session_token", "")
+    database.set_setting("admin_session_exp", "")
 
 
 def _admin_unlocked(request: Request) -> bool:
+    from datetime import datetime
+
     cookie = request.cookies.get(ADMIN_GATE_COOKIE) or ""
-    token = _admin_gate_token()
-    if not cookie or len(cookie) != len(token):
+    token = database.get_setting("admin_session_token", "") or ""
+    exp_s = database.get_setting("admin_session_exp", "") or ""
+    if not cookie or not token or not exp_s:
+        return False
+    try:
+        exp = datetime.fromisoformat(exp_s)
+    except ValueError:
+        return False
+    if exp < datetime.now():
+        return False
+    if len(cookie) != len(token):
         return False
     return _secrets.compare_digest(cookie, token)
 
@@ -1329,11 +1416,27 @@ def admin_page(request: Request, msg: str = "") -> HTMLResponse:
 
 @app.post("/admin/login")
 async def admin_login(request: Request) -> Response:
+    ip = _client_ip(request)
+    if not _admin_login_allowed(ip):
+        return templates.TemplateResponse(
+            request,
+            "admin.html",
+            {
+                "admin_locked": True,
+                "msg": "",
+                "login_erro": "Muitas tentativas. Aguarde 15 minutos.",
+            },
+            status_code=429,
+        )
     form = await request.form()
     senha = str(form.get("senha", "")).strip()
     # compare_digest exige mesmo comprimento; fallback evita exceção em senha vazia
     expected = ADMIN_GATE_PASSWORD
-    if not senha or len(senha) != len(expected) or not _secrets.compare_digest(senha, expected):
+    ok = bool(senha) and len(senha) == len(expected) and _secrets.compare_digest(
+        senha, expected
+    )
+    if not ok:
+        _admin_login_register(ip)
         return templates.TemplateResponse(
             request,
             "admin.html",
@@ -1344,17 +1447,20 @@ async def admin_login(request: Request) -> Response:
             },
             status_code=401,
         )
+    # sucesso: limpa tentativas deste IP
+    _admin_login_hits.pop(ip, None)
+    token = _admin_create_session()
     resp = RedirectResponse(
         "/admin?msg=" + _url_quote("Admin desbloqueado"),
         status_code=303,
     )
     resp.set_cookie(
         ADMIN_GATE_COOKIE,
-        _admin_gate_token(),
+        token,
         httponly=True,
         samesite="lax",
         secure=_admin_cookie_secure(request),
-        max_age=60 * 60 * 12,  # 12h
+        max_age=60 * 60 * _ADMIN_SESSION_HOURS,
         path="/",
     )
     return resp
@@ -1362,6 +1468,7 @@ async def admin_login(request: Request) -> Response:
 
 @app.post("/admin/logout")
 def admin_logout() -> Response:
+    _admin_clear_session()
     resp = RedirectResponse("/admin", status_code=303)
     resp.delete_cookie(ADMIN_GATE_COOKIE, path="/")
     return resp
@@ -1752,7 +1859,7 @@ def admin_api_qualidade(request: Request, modo: str = "tudo") -> JSONResponse:
 
 @app.post("/admin/api/ferramenta/{nome}")
 def admin_api_ferramenta(request: Request, nome: str) -> JSONResponse:
-    """Ferramentas: lock, jobs, backup, limpar-dry."""
+    """Ferramentas: lock, jobs, backup, limpar-dry, disco-dry, disco-aplicar."""
     _admin_require(request)
     nome = nome.strip().lower()
     if nome == "lock":
@@ -1788,6 +1895,18 @@ def admin_api_ferramenta(request: Request, nome: str) -> JSONResponse:
         finally:
             sys.argv = old
         return JSONResponse({"ok": True, "msg": buf.getvalue()})
+    if nome in {"disco-dry", "disco-aplicar"}:
+        import importlib.util
+
+        path = BASE_DIR / "scripts" / "_limpeza_disco.py"
+        spec = importlib.util.spec_from_file_location("disco", path)
+        mod = importlib.util.module_from_spec(spec)  # type: ignore
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)  # type: ignore
+        dry = nome == "disco-dry"
+        r1 = mod.limpar_pdfs_sem_inaja(meses=18, dry_run=dry)
+        r2 = mod.reter_backups(manter=10, dry_run=dry)
+        return JSONResponse({"ok": True, "pdfs": r1, "backups": r2})
     raise HTTPException(status_code=400, detail=f"Ferramenta desconhecida: {nome}")
 
 

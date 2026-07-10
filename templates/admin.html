@@ -326,6 +326,9 @@
         <button type="button" class="btn btn-secondary" data-tool="jobs">Limpar jobs travados</button>
         <button type="button" class="btn btn-secondary" data-tool="backup">Backup agora</button>
         <button type="button" class="btn btn-secondary" data-tool="limpar-dry">Dry-run limpar processados</button>
+        <button type="button" class="btn btn-secondary" data-tool="disco-dry">Disco dry-run (PDFs antigos)</button>
+        <button type="button" class="btn btn-danger" data-tool="disco-aplicar"
+          onclick="return confirm('Apagar PDFs sem Inajá (&gt;18 meses) e backups excedentes?');">Disco aplicar</button>
         <button type="submit" formaction="/admin/backup" class="btn btn-secondary">Backup (form)</button>
       </div>
       <pre id="tool-out" class="admin-pre" style="margin:1rem 1.5rem 1.25rem;">—</pre>
