@@ -29,6 +29,14 @@ class TestExtrairOrgao:
         texto = "Prefeitura Municipal de Inajá\nDECRETO Nº 001/2026"
         assert _extrair_orgao(texto) == "Prefeitura Municipal de Inajá"
 
+    def test_prefeitura_ocr_truncada(self):
+        texto = "PREFEITURA MUNICIPAL DE IN\nESTADO DO PARANÁ\nDECRETO Nº 1/2026"
+        assert _extrair_orgao(texto) == "Prefeitura Municipal de Inajá"
+
+    def test_municipio_inava_ocr(self):
+        texto = "O Município de INAVÁ, Estado do Paraná\nCNPJ 76.970.318/0001-67"
+        assert _extrair_orgao(texto) == "Município de Inajá"
+
     def test_prefeitura_com_variacao(self):
         texto = "Prefeitura de Inajá - Paraná"
         assert _extrair_orgao(texto) == "Prefeitura Municipal de Inajá"
@@ -119,6 +127,17 @@ class TestExtrairTipoNumero:
         texto = "Texto sem tipo de ato algum"
         tipo, numero = _extrair_tipo_numero(texto)
         assert tipo is None
+
+    def test_quinto_termo_aditivo(self):
+        texto = "PREFEITURA MUNICIPAL DE INAJÁ\nQUINTO TERMO ADITIVO DE CONTRATO, PARA O ADITIVO"
+        tipo, numero = _extrair_tipo_numero(texto)
+        assert tipo and "aditivo" in tipo.casefold()
+
+    def test_extrato_contrato_ocr_rato(self):
+        texto = "PREFEITURA MUNICIPAL DE INAJÁ\nRATO DO CONTRATO Nº 04/2026"
+        tipo, numero = _extrair_tipo_numero(texto)
+        assert tipo and "extrato" in tipo.casefold()
+        assert numero and "04" in numero
 
     def test_numero_normalizado(self):
         texto = "DECRETO Nº 0012026"

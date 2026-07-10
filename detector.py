@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 BASE_TERMS = [
     "Inajá",
     "Inaja",
+    "INAVÁ",  # OCR comum
+    "INAVA",
     "Prefeitura de Inajá",
     "Prefeitura Municipal de Inajá",
     "Câmara de Inajá",
@@ -59,22 +61,41 @@ TIPOS_ATO = [
     "RGF",
     "RREO",
 ]
+# Prefixo ordinal comum em aditivos: "QUINTO TERMO ADITIVO..."
+_ORDINAL_ATO = (
+    r"(?:(?:PRIMEIRO|SEGUNDO|TERCEIRO|QUARTO|QUINTO|SEXTO|S[ÉE]TIMO|OITAVO|NONO|"
+    r"D[ÉE]CIMO|1[ºO.]|2[ºO.]|3[ºO.]|4[ºO.]|5[ºO.]|6[ºO.]|7[ºO.]|8[ºO.]|9[ºO.]|"
+    r"10[ºO.])\s+)?"
+)
+# Tipos compostos (mais específicos primeiro)
+_TIPOS_COMPOSTOS = (
+    r"EXTRATO\s+(?:DO\s+|DE\s+|RE\s+)?(?:TERMO\s+(?:DE\s+)?)?CONTRATO|"
+    r"EXTRATO\s+DE\s+CONTRATO|"
+    r"CONTRATO\s+ADMINISTRATIVO|"
+    r"TERMO\s+(?:DE\s+)?ADITIVO(?:\s+DE\s+CONTRATO)?|"
+    r"TERMO\s+ADITIVO|"
+    r"TERMO\s+DE\s+HOMOLOGA[CÇ][AÃ]O|"
+    r"DISPENSA\s+(?:DE\s+)?LICITA[CÇ][AÃ]O|"
+    r"PREG[AÃ]O\s+ELETR[OÔ]NICO"
+)
+_TIPOS_SIMPLES = "|".join(re.escape(tipo) for tipo in TIPOS_ATO)
 TIPO_ATO_RE = re.compile(
-    r"\b("
-    + "|".join(re.escape(tipo) for tipo in TIPOS_ATO)
-    + r")\b\s*(?:N[º°O.]?\s*)?(\d{1,6}(?:[./-]\d{1,4})?)?",
+    rf"\b(?:{_ORDINAL_ATO})(?:({_TIPOS_COMPOSTOS})|({_TIPOS_SIMPLES}))\b"
+    r"\s*(?:N[º°O.]?\s*)?(\d{1,6}(?:[./-]\d{1,4})?)?",
     re.IGNORECASE,
 )
 LINHA_TITULO_ATO_RE = re.compile(
-    r"^\s*(?:"
-    r"(?:"
-    + "|".join(re.escape(tipo) for tipo in TIPOS_ATO)
-    + r")\b"
-    r"|(?:[A-ZÁÉÍÓÚÃÕÇ ]{3,}\s+-\s+)?(?:"
-    + "|".join(re.escape(tipo) for tipo in TIPOS_ATO)
-    + r")\b"
-    r")",
+    rf"^\s*(?:{_ORDINAL_ATO})(?:(?:{_TIPOS_COMPOSTOS})|(?:{_TIPOS_SIMPLES}))\b",
     re.IGNORECASE,
+)
+# Cabeçalho de órgão Inajá (mesmo com OCR truncado: "PREFEITURA MUNICIPAL DE IN")
+_CABECALHO_INAJA_RE = re.compile(
+    r"(?im)^\s*(?:"
+    r"PREFEITURA\s+MUNICIPAL\s+DE\s+IN(?:AJ[AÁ])?|"
+    r"PREFEITURA\s+DE\s+IN(?:AJ[AÁ])?|"
+    r"C[AÂ]MARA\s+MUNICIPAL\s+DE\s+IN(?:AJ[AÁ])?|"
+    r"MUNIC[IÍ]PIO\s+DE\s+IN(?:AJ[AÁ])?"
+    r")\b"
 )
 LINHA_ASSUNTO_RE = re.compile(
     r"\b(S[ÚU]MULA|EMENTA|OBJETO|ASSUNTO)\b\s*[:\-]?\s*(.+)",
@@ -158,6 +179,75 @@ def _normalizar_ocr_para_extracao(texto: str) -> str:
     normalizado = re.sub(r"\bLEIN[º°O.]", "LEI Nº", normalizado, flags=re.IGNORECASE)
     normalizado = re.sub(r"\bPORTARIAN[º°O.]", "PORTARIA Nº", normalizado, flags=re.IGNORECASE)
     normalizado = re.sub(r"\bDECRETON[º°O.]", "DECRETO Nº", normalizado, flags=re.IGNORECASE)
+    # Variantes OCR de Inajá (INAVÁ, INA JA, truncado)
+    normalizado = re.sub(
+        r"\bINA\s*V[AÁ]\b", "Inajá", normalizado, flags=re.IGNORECASE
+    )
+    normalizado = re.sub(
+        r"\bINA\s*J\s*A\b", "Inajá", normalizado, flags=re.IGNORECASE
+    )
+    normalizado = re.sub(
+        r"\bINAJA\b", "Inajá", normalizado, flags=re.IGNORECASE
+    )
+    # Títulos de ato truncados pelo OCR
+    normalizado = re.sub(
+        r"\bE?X?TRATO\s+DO\s+CONTRATO\b",
+        "EXTRATO DO CONTRATO",
+        normalizado,
+        flags=re.IGNORECASE,
+    )
+    normalizado = re.sub(
+        r"\bRATO\s+DO\s+CONTRATO\b",
+        "EXTRATO DO CONTRATO",
+        normalizado,
+        flags=re.IGNORECASE,
+    )
+    normalizado = re.sub(
+        r"\bEXTRATO\s+RE\s+CONTRATO\b",
+        "EXTRATO DE CONTRATO",
+        normalizado,
+        flags=re.IGNORECASE,
+    )
+    normalizado = re.sub(
+        r"\bCONTRATO\s+ADMINISTRATIVO\b",
+        "CONTRATO ADMINISTRATIVO",
+        normalizado,
+        flags=re.IGNORECASE,
+    )
+
+    # "PREFEITURA MUNICIPAL DE IN" / "DE IN." truncado pelo OCR
+    normalizado = re.sub(
+        r"\b(PREFEITURA\s+MUNICIPAL\s+DE\s+IN)\b(?!\s*AJ)",
+        r"\1ajá",
+        normalizado,
+        flags=re.IGNORECASE,
+    )
+    normalizado = re.sub(
+        r"\b(C[AÂ]MARA\s+MUNICIPAL\s+DE\s+IN)\b(?!\s*AJ)",
+        r"\1ajá",
+        normalizado,
+        flags=re.IGNORECASE,
+    )
+    normalizado = re.sub(
+        r"\b(MUNIC[IÍ]PIO\s+DE\s+IN)\b(?!\s*AJ)",
+        r"\1ajá",
+        normalizado,
+        flags=re.IGNORECASE,
+    )
+    # CNPJ Inajá com OCR quebrado: 76.970.318/0001-67 → 76970318...
+    # Aceita espaços/pontuação soltos no miolo
+    normalizado = re.sub(
+        r"76[\s.\-_/|]*970[\s.\-_/|]*318[\s.\-_/|]*0*0*0*1[\s.\-_/|]*6?7?",
+        "76.970.318/0001-67",
+        normalizado,
+        flags=re.IGNORECASE,
+    )
+    normalizado = re.sub(
+        r"75[\s.\-_/|]*771[\s.\-_/|]*400[\s.\-_/|]*0*0*0*1[\s.\-_/|]*4?8?",
+        "75.771.400/0001-48",
+        normalizado,
+        flags=re.IGNORECASE,
+    )
     return normalizado
 
 
@@ -202,10 +292,76 @@ def _contexto_ignorado_para_mencao_generica(
 
 def _segmentos(pagina: PageText) -> list[TextBlock]:
     if pagina.blocks:
-        return _agrupar_blocos_oficiais(
+        base = _agrupar_blocos_oficiais(
             [block for block in pagina.blocks if block.texto.strip()]
         )
-    return [TextBlock(pagina=pagina.pagina, bloco=1, texto=pagina.texto)]
+    else:
+        base = [TextBlock(pagina=pagina.pagina, bloco=1, texto=pagina.texto)]
+    # Divide mega-blocos com vários cabeçalhos de Inajá / títulos de ato
+    out: list[TextBlock] = []
+    for seg in base:
+        out.extend(_dividir_segmento_multi_atos(seg))
+    return out
+
+
+def _dividir_segmento_multi_atos(segmento: TextBlock) -> list[TextBlock]:
+    """Parte segmentos longos que misturam 2+ atos oficiais de Inajá."""
+    texto = segmento.texto or ""
+    if len(texto) < 900:
+        return [segmento]
+
+    # Pontos de corte: cabeçalho Inajá ou título de ato com N°
+    cortes: list[int] = []
+    for m in _CABECALHO_INAJA_RE.finditer(texto):
+        if m.start() > 40:
+            cortes.append(m.start())
+    titulo_mid = re.compile(
+        rf"(?im)^(?=.{{0,20}}(?:{_ORDINAL_ATO})(?:(?:{_TIPOS_COMPOSTOS})|(?:{_TIPOS_SIMPLES}))\b"
+        r".{{0,40}}N[º°O.]?\s*\d)",
+    )
+    for m in titulo_mid.finditer(texto):
+        if m.start() > 80:
+            cortes.append(m.start())
+
+    if not cortes:
+        return [segmento]
+
+    cortes = sorted(set(cortes))
+    # Evita cortes densos demais
+    filtrados: list[int] = []
+    ultimo = -9999
+    for c in cortes:
+        if c - ultimo >= 120:
+            filtrados.append(c)
+            ultimo = c
+    if not filtrados:
+        return [segmento]
+
+    pedacos: list[TextBlock] = []
+    inicio = 0
+    for i, c in enumerate(filtrados):
+        pedaco = texto[inicio:c].strip()
+        if len(pedaco) >= 40:
+            pedacos.append(
+                TextBlock(
+                    pagina=segmento.pagina,
+                    bloco=segmento.bloco * 100 + i + 1,
+                    texto=pedaco,
+                    bbox=segmento.bbox,
+                )
+            )
+        inicio = c
+    resto = texto[inicio:].strip()
+    if len(resto) >= 40:
+        pedacos.append(
+            TextBlock(
+                pagina=segmento.pagina,
+                bloco=segmento.bloco * 100 + len(filtrados) + 1,
+                texto=resto,
+                bbox=segmento.bbox,
+            )
+        )
+    return pedacos if pedacos else [segmento]
 
 
 def _coluna_do_bloco(bloco: TextBlock) -> int:
@@ -314,7 +470,9 @@ def _categoria(texto: str) -> str:
 
 
 def _extrair_orgao(texto: str) -> str | None:
-    inicio_norm = _sem_acentos(_limpar(texto)[:220]).casefold()
+    texto = _normalizar_ocr_para_extracao(texto)
+    inicio_norm = _sem_acentos(_limpar(texto)[:280]).casefold()
+    full_norm = _sem_acentos(_limpar(texto)[:800]).casefold()
     if re.match(r"^\s*(art\.?\s*\d+|paragrafo|inciso)\b", inicio_norm):
         return None
     if re.match(
@@ -325,6 +483,19 @@ def _extrair_orgao(texto: str) -> str | None:
     if re.match(r"^(camara( municipal)? de inaja|camara municipal de inaja)\b", inicio_norm):
         return "Câmara Municipal de Inajá"
     if re.match(r"^municipio de inaja\b", inicio_norm):
+        return "Município de Inajá"
+    # OCR truncado no cabeçalho: "prefeitura municipal de in" sem "aja"
+    if re.match(r"^prefeitura\s+municipal\s+de\s+in\b", inicio_norm):
+        return "Prefeitura Municipal de Inajá"
+    if re.match(r"^camara\s+municipal\s+de\s+in\b", inicio_norm):
+        return "Câmara Municipal de Inajá"
+    # Órgão no miolo (não só na 1ª linha) — comum quando OCR mistura colunas
+    if re.search(r"\bprefeitura\s+(municipal\s+)?de\s+inaja\b", full_norm):
+        if not re.search(
+            r"\bprefeitura\s+(municipal\s+)?de\s+(?!inaja)\w+", full_norm[:200]
+        ):
+            return "Prefeitura Municipal de Inajá"
+    if re.search(r"\bmunicipio\s+de\s+inaja\b", full_norm):
         return "Município de Inajá"
     # Conselho Municipal de Saúde de Inajá — exige "inaja" no texto para confirmar
     if re.match(r"^conselho municipal de saude\b", inicio_norm):
@@ -357,11 +528,12 @@ def _extrair_orgao(texto: str) -> str | None:
 def _extrair_tipo_numero(texto: str) -> tuple[str | None, str | None]:
     texto = _normalizar_ocr_para_extracao(texto)
     linhas = [_limpar(linha) for linha in texto.splitlines() if _limpar(linha)]
+    # Também varre as 3 primeiras linhas coladas (OCR quebra títulos)
+    if linhas:
+        linhas = linhas + [" ".join(linhas[:3])]
     for linha in linhas:
         tem_marcador_explicito = re.search(
-            r"\b("
-            + "|".join(re.escape(tipo) for tipo in TIPOS_ATO)
-            + r")\b\s*N[º°O.]?",
+            rf"(?:{_TIPOS_COMPOSTOS}|{_TIPOS_SIMPLES})\b\s*N[º°O.]?",
             linha,
             re.IGNORECASE,
         )
@@ -372,21 +544,53 @@ def _extrair_tipo_numero(texto: str) -> tuple[str | None, str | None]:
         ):
             continue
         if not LINHA_TITULO_ATO_RE.search(linha) and not tem_marcador_explicito:
-            continue
+            # Aceita tipo composto no meio da linha (ex.: "QUINTO TERMO ADITIVO DE CONTRATO")
+            if not TIPO_ATO_RE.search(linha):
+                continue
+            # exige indício de ato (Nº, ADITIVO, CONTRATO, DISPENSA…)
+            if not re.search(
+                r"N[º°O.]?|ADITIVO|CONTRATO|DISPENSA|HOMOLOG|EXTRATO|DECRETO|PORTARIA",
+                linha,
+                re.I,
+            ):
+                continue
         match = TIPO_ATO_RE.search(linha)
         if not match:
             continue
-        tipo = match.group(1)
-        numero = match.group(2)
+        tipo = match.group(1) or match.group(2)
+        numero = match.group(3)
+        if not tipo:
+            continue
+        tipo_limpo = _limpar(tipo)
+        # Normaliza compostos longos
+        tn = _sem_acentos(tipo_limpo).casefold()
+        if "termo" in tn and "aditivo" in tn:
+            tipo_limpo = "Termo Aditivo"
+        elif "extrato" in tn and "contrato" in tn:
+            tipo_limpo = "Extrato de Contrato"
+        elif "dispensa" in tn:
+            tipo_limpo = "Dispensa"
+        elif "homolog" in tn:
+            tipo_limpo = "Homologação/Adjudicação"
+        elif "pregao" in tn:
+            tipo_limpo = "Pregão"
+        else:
+            tipo_limpo = tipo_limpo.title()
         if numero and _numero_parece_documento_pessoal(numero, linha):
             numero = None
-        if _sem_acentos(tipo).casefold() == "lei" and REFERENCIA_LEGAL_RE.search(linha):
+        if _sem_acentos(tipo_limpo).casefold() == "lei" and REFERENCIA_LEGAL_RE.search(linha):
             continue
-        if _sem_acentos(tipo).casefold() == "lei" and not re.search(r"N[º°O.]?", linha, re.IGNORECASE):
+        if _sem_acentos(tipo_limpo).casefold() == "lei" and not re.search(
+            r"N[º°O.]?", linha, re.IGNORECASE
+        ):
             continue
-        if REFERENCIA_LEGAL_RE.search(linha) and not re.search(r"N[º°O.]?", linha, re.IGNORECASE):
-            continue
-        return tipo.title(), _normalizar_numero_ato(numero) if numero else None
+        if REFERENCIA_LEGAL_RE.search(linha) and not re.search(
+            r"N[º°O.]?", linha, re.IGNORECASE
+        ):
+            # linhas de fundamentação legal sem número de ato
+            if "aditivo" not in tn and "extrato" not in tn and "dispensa" not in tn:
+                continue
+        return tipo_limpo, _normalizar_numero_ato(numero) if numero else None
     return None, None
 
 
@@ -406,7 +610,14 @@ def _normalizar_numero_ato(numero: str) -> str:
     valor = numero.strip().strip(".,;:")
     if "/" in valor or "-" in valor or "." in valor:
         return valor
-    if len(valor) in {6, 7, 8}:
+    # Nº típico de ato: 1–4 dígitos + ano (ex.: 0422026 → 042/2026)
+    if len(valor) in {6, 7, 8} and valor.isdigit():
+        ano = valor[-4:]
+        if ano.startswith(("19", "20")):
+            return f"{valor[:-4]}/{ano}"
+        # 8 dígitos sem ano reconhecível → provável ruído (RG/processo)
+        if len(valor) >= 8:
+            return valor  # deixa; filtros posteriores podem limpar
         return f"{valor[:-4]}/{valor[-4:]}"
     return valor
 
@@ -514,8 +725,10 @@ def _corrigir_ocr_basico(texto: str) -> str:
         "servidores públicas": "servidores públicos",
         "Município do Inajá": "Município de Inajá",
         "LEINº": "LEI Nº",
+        "INAVÁ": "Inajá",
+        "INAVA": "Inajá",
     }
-    corrigido = texto
+    corrigido = _normalizar_ocr_para_extracao(texto)
     for errado, certo in substituicoes.items():
         corrigido = corrigido.replace(errado, certo)
     corrigido = re.sub(r"prefeitura[gq@d]inaja\.?\s*pr\.?\s*gov\.?\s*br", "prefeitura@inaja.pr.gov.br", corrigido, flags=re.IGNORECASE)
@@ -574,8 +787,17 @@ def _cnpj_digits(texto: str) -> str:
 
 
 def _tem_cnpj_inaja(texto: str) -> bool:
-    digits = _cnpj_digits(texto)
-    return any(p in digits for p in CNPJ_INAJA_PREFIXES)
+    # Normaliza OCR antes de extrair dígitos
+    texto_n = _normalizar_ocr_para_extracao(texto)
+    digits = _cnpj_digits(texto_n)
+    if any(p in digits for p in CNPJ_INAJA_PREFIXES):
+        return True
+    # Fallback: sequência completa ou raiz OCR (769703/0/000] S → 769703…)
+    compact = re.sub(r"\D", "", texto or "")
+    if "76970318" in compact or "75771400" in compact:
+        return True
+    # Raiz dos CNPJs oficiais (8 dígitos) — OCR costuma manter o início
+    return "76970318"[:6] in compact or "75771400"[:6] in compact
 
 
 def _mencao_orgao_municipio(texto_norm: str, municipio: str) -> bool:
@@ -667,12 +889,28 @@ def _publicacao_do_segmento(segmento: TextBlock, termos: set[str]) -> dict | Non
         return None
     if categoria == "publicacao_oficial" and not (orgao or tipo or eh_lrf):
         return None
+    # Com órgão Inajá + texto longo, aceita mesmo sem tipo OCR-limpo
+    # (ex.: aditivo/corpo de contrato com OCR ruim)
+    orgao_inaja = bool(orgao and "inaja" in _sem_acentos(orgao).casefold())
+    texto_longo_util = len((segmento.texto or "").strip()) >= 400
     if orgao and not tipo and not LINHA_ASSUNTO_RE.search(segmento.texto) and not eh_lrf:
-        assunto_tentativo = _extrair_assunto(segmento.texto)
-        if not assunto_tentativo or _parece_linha_de_rodape_ou_assinatura(assunto_tentativo):
+        if not (orgao_inaja and texto_longo_util and _tem_cnpj_inaja(segmento.texto)):
+            assunto_tentativo = _extrair_assunto(segmento.texto)
+            if not assunto_tentativo or _parece_linha_de_rodape_ou_assinatura(
+                assunto_tentativo
+            ):
+                return None
+    if (
+        categoria == "publicacao_oficial"
+        and orgao
+        and not (tipo or LINHA_ASSUNTO_RE.search(segmento.texto) or eh_lrf)
+    ):
+        if not (orgao_inaja and texto_longo_util):
             return None
-    if categoria == "publicacao_oficial" and orgao and not (tipo or LINHA_ASSUNTO_RE.search(segmento.texto) or eh_lrf):
-        return None
+        # Fallback de tipo genérico para não perder o ato
+        if not tipo and orgao_inaja:
+            if re.search(r"aditivo|contrato|clausula", texto_clean):
+                tipo = "Termo Aditivo" if "aditivo" in texto_clean else "Contrato"
     if categoria == "materia_jornalistica" and not (orgao or tipo or tem_cabecalho or eh_lrf):
         return None
     if categoria == "materia_jornalistica" and (tipo or tem_cabecalho or eh_lrf):
@@ -748,12 +986,24 @@ def detectar(
     termos = _termos()
     for pagina in paginas:
         for segmento in _segmentos(pagina):
-            texto = segmento.texto or ""
+            # Normaliza OCR antes de buscar termos (INAVÁ, CNPJ, etc.)
+            texto = _normalizar_ocr_para_extracao(segmento.texto or "")
+            # Mantém bbox/bloco; troca só o texto normalizado no segmento lógico
+            if texto != (segmento.texto or ""):
+                segmento = TextBlock(
+                    pagina=segmento.pagina,
+                    bloco=segmento.bloco,
+                    texto=texto,
+                    bbox=segmento.bbox,
+                )
             texto_norm = _sem_acentos(texto).casefold()
             termos_segmento: set[str] = set()
 
             for termo in termos:
                 termo_norm = _sem_acentos(termo).casefold()
+                # Mapear variantes OCR para termo canônico Inajá
+                if termo_norm in {"inava", "inavá"}:
+                    termo_norm = "inaja"
                 start = 0
                 while termo_norm and (idx := texto_norm.find(termo_norm, start)) != -1:
                     fim = idx + len(termo_norm)
