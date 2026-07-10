@@ -966,6 +966,102 @@ def _pagina_ocr_fraco(pagina: PageText) -> bool:
     return False
 
 
+_RE_CABECALHO_INAJA_TEXTO = re.compile(
+    r"(?i)(?:"
+    r"prefeitura\s+municipal\s+de\s+inaj[aá]|"
+    r"prefeitura\s+de\s+inaj[aá]|"
+    r"c[aâ]mara\s+municipal\s+de\s+inaj[aá]|"
+    r"munic[ií]pio\s+de\s+inaj[aá]|"
+    r"prefeitura\s+municipal\s+de\s+in\b|"
+    r"munic[ií]pio\s+de\s+in\b"
+    r")"
+)
+
+
+def _segmentos_fallback_texto(pagina: PageText) -> list[TextBlock]:
+    """Recupera atos no texto integral da página (quando blocks/colunas falham).
+
+    Corta janelas a partir de cabeçalhos de Inajá e títulos de ato próximos.
+    """
+    bruto = pagina.texto or ""
+    if len(bruto.strip()) < 100:
+        return []
+    texto = _normalizar_ocr_para_extracao(bruto)
+    n = _sem_acentos(texto).casefold()
+    if "inaja" not in n and not _tem_cnpj_inaja(texto):
+        return []
+
+    starts: list[int] = []
+    for m in _RE_CABECALHO_INAJA_TEXTO.finditer(texto):
+        starts.append(m.start())
+
+    # Títulos de ato (DECRETO Nº …) com Inajá/CNPJ na vizinhança
+    for m in TIPO_ATO_RE.finditer(texto):
+        ini = max(0, m.start() - 450)
+        fim = min(len(texto), m.end() + 500)
+        janela = texto[ini:fim]
+        jn = _sem_acentos(janela).casefold()
+        if "inaja" in jn or _tem_cnpj_inaja(janela):
+            # recua ao início de linha se possível
+            line_start = texto.rfind("\n", 0, m.start()) + 1
+            starts.append(max(0, line_start))
+
+    if not starts:
+        # Página com menção + sinais oficiais: 1 janela ampla
+        if any(s in n for s in SINAIS_OFICIAIS):
+            return [
+                TextBlock(
+                    pagina=pagina.pagina,
+                    bloco=9000,
+                    texto=texto[:4000],
+                )
+            ]
+        return []
+
+    starts = sorted(set(starts))
+    filtrados: list[int] = []
+    ultimo = -9999
+    for s in starts:
+        if s - ultimo >= 100:
+            filtrados.append(s)
+            ultimo = s
+
+    out: list[TextBlock] = []
+    for i, s in enumerate(filtrados):
+        fim = filtrados[i + 1] if i + 1 < len(filtrados) else min(len(texto), s + 2200)
+        # janela mínima útil
+        if fim - s < 60:
+            fim = min(len(texto), s + 800)
+        pedaco = texto[s:fim].strip()
+        if len(pedaco) < 50:
+            continue
+        # exige indício de ato ou órgão Inajá
+        pn = _sem_acentos(pedaco).casefold()
+        if "inaja" not in pn and not _tem_cnpj_inaja(pedaco):
+            continue
+        out.append(
+            TextBlock(
+                pagina=pagina.pagina,
+                bloco=9100 + i,
+                texto=pedaco[:3500],
+            )
+        )
+    return out
+
+
+def _chave_pub_dedup(pub: dict) -> str:
+    """Chave para evitar duplicar o mesmo ato (blocks + fallback texto)."""
+    tipo = _sem_acentos(str(pub.get("tipo") or "")).casefold()
+    num = str(pub.get("numero") or "").strip().casefold()
+    orgao = _sem_acentos(str(pub.get("orgao") or "")).casefold()[:40]
+    pag = pub.get("pagina")
+    if num:
+        return f"{pag}|{tipo}|{num}|{orgao}"
+    trecho = _sem_acentos(str(pub.get("trecho") or "")[:180]).casefold()
+    trecho = re.sub(r"\s+", " ", trecho)
+    return f"{pag}|{tipo}|{orgao}|{trecho[:80]}"
+
+
 def detectar(
     edicao_id: int,
     edicao_titulo: str,
@@ -982,10 +1078,20 @@ def detectar(
     mencoes_db: list[dict] = []
     publicacoes: list[dict] = []
     descartes_vizinho = 0
+    vistos_pub: set[str] = set()
 
     termos = _termos()
     for pagina in paginas:
-        for segmento in _segmentos(pagina):
+        # Blocos estruturados + fallback por texto integral (recupera FN)
+        segmentos = list(_segmentos(pagina))
+        existentes = {_sem_acentos((s.texto or "")[:120]).casefold() for s in segmentos}
+        for fb in _segmentos_fallback_texto(pagina):
+            chave = _sem_acentos((fb.texto or "")[:120]).casefold()
+            if chave and chave not in existentes:
+                segmentos.append(fb)
+                existentes.add(chave)
+
+        for segmento in segmentos:
             # Normaliza OCR antes de buscar termos (INAVÁ, CNPJ, etc.)
             texto = _normalizar_ocr_para_extracao(segmento.texto or "")
             # Mantém bbox/bloco; troca só o texto normalizado no segmento lógico
@@ -1066,17 +1172,26 @@ def detectar(
                 if _publicacao_suspeita_outro_municipio(publicacao):
                     descartes_vizinho += 1
                     continue
+                chave = _chave_pub_dedup(publicacao)
+                if chave in vistos_pub:
+                    continue
+                vistos_pub.add(chave)
                 publicacoes.append(publicacao)
 
     publicacoes_brutas = len(publicacoes)
     # Hard-filter final (redundante, barato) — garante lista limpa antes da IA
     filtradas: list[dict] = []
+    vistos_final: set[str] = set()
     for pub in publicacoes:
         if _publicacao_suspeita_outro_municipio(pub) or _orgao_de_outro_municipio(
             pub.get("trecho") or ""
         ):
             descartes_vizinho += 1
             continue
+        chave = _chave_pub_dedup(pub)
+        if chave in vistos_final:
+            continue
+        vistos_final.add(chave)
         filtradas.append(pub)
     publicacoes = filtradas
     descartes_ia = 0
