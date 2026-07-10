@@ -23,6 +23,13 @@ def test_dashboard_vazio(db):
     assert "BOT" in response.text
 
 
+def test_inteligencia_page(db):
+    client = TestClient(app)
+    r = client.get("/inteligencia")
+    assert r.status_code == 200
+    assert "Inteligência" in r.text or "temas" in r.text.casefold()
+
+
 def test_dashboard_filtro_tipo(db):
     eid = database.insert_or_get_edicao(
         "https://example.com/tipo_filtro.pdf", "Ed Tipo", "2026-07-01"

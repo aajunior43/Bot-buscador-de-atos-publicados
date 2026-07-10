@@ -201,6 +201,7 @@ def validar_campos_ia(pub: dict, ia: dict) -> dict:
     """Zera/ajusta campos da IA não ancorados no trecho (anti-alucinação)."""
     trecho = pub.get("trecho") or ia.get("texto_corrigido") or ""
     out = dict(ia)
+    flags: list[dict] = []
     for key in ("orgao", "tipo", "numero", "valor", "data_documento"):
         val = out.get(key)
         if val and not campo_ancorado_no_trecho(str(val), trecho):
@@ -209,11 +210,225 @@ def validar_campos_ia(pub: dict, ia: dict) -> dict:
                 key,
                 val,
             )
+            flags.append({"campo": key, "motivo": f"não encontrado no trecho: {val!r}"})
             out[key] = None
             out.setdefault("_campos_rejeitados", []).append(key)
-    # resumo: se inventar número/valor absurdo, mantém mas marca
+    out["_validacao"] = {
+        "ok": len(flags) == 0,
+        "flags": flags,
+    }
     return out
 
+
+# Vocabulário controlado de temas (#12)
+TEMAS_CANONICOS = (
+    "licitacao",
+    "contrato",
+    "obra",
+    "saude",
+    "educacao",
+    "rh",
+    "fiscal",
+    "assistencia",
+    "infraestrutura",
+    "meio_ambiente",
+    "cultura",
+    "transporte",
+    "outros",
+)
+
+_TEMA_ALIASES = {
+    "licitação": "licitacao",
+    "licitacoes": "licitacao",
+    "pregão": "licitacao",
+    "pregao": "licitacao",
+    "dispensa": "licitacao",
+    "contratos": "contrato",
+    "aditivo": "contrato",
+    "obras": "obra",
+    "asfalto": "obra",
+    "paviment": "obra",
+    "saúde": "saude",
+    "saude": "saude",
+    "educação": "educacao",
+    "escola": "educacao",
+    "pessoal": "rh",
+    "nomeacao": "rh",
+    "nomeação": "rh",
+    "exoneracao": "rh",
+    "portaria": "rh",
+    "rgf": "fiscal",
+    "rreo": "fiscal",
+    "lrf": "fiscal",
+    "balanco": "fiscal",
+    "balanço": "fiscal",
+    "assistência": "assistencia",
+    "social": "assistencia",
+}
+
+
+def normalizar_tema(tag: str | None) -> str | None:
+    if not tag or not str(tag).strip():
+        return None
+    t = _norm(str(tag).strip())
+    t = t.replace(" ", "_").replace("-", "_")
+    if t in TEMAS_CANONICOS:
+        return t
+    if t in _TEMA_ALIASES:
+        return _TEMA_ALIASES[t]
+    for alias, canon in _TEMA_ALIASES.items():
+        if alias in t or t in alias:
+            return canon
+    for canon in TEMAS_CANONICOS:
+        if canon in t:
+            return canon
+    return "outros"
+
+
+def normalizar_lista_temas(raw) -> list[str]:
+    items: list[str] = []
+    if isinstance(raw, str):
+        raw = [x.strip() for x in raw.split(",") if x.strip()]
+    if not isinstance(raw, list):
+        return []
+    seen: set[str] = set()
+    for x in raw:
+        n = normalizar_tema(str(x))
+        if n and n not in seen:
+            seen.add(n)
+            items.append(n)
+        if len(items) >= 5:
+            break
+    return items
+
+
+def montar_checklist_local(pub: dict, ia: dict | None = None) -> dict:
+    """Checklist de transparência (regras + dicas da IA)."""
+    ia = ia or {}
+    numero = pub.get("numero") or ia.get("numero")
+    data = pub.get("data_documento") or ia.get("data_documento")
+    valor = pub.get("valor") or ia.get("valor")
+    orgao = pub.get("orgao") or ia.get("orgao")
+    assunto = pub.get("assunto") or ia.get("assunto") or pub.get("resumo_ia")
+    trecho = (pub.get("trecho") or ia.get("texto_corrigido") or "").casefold()
+    fundamentacao = bool(
+        re.search(r"fundament|base\s+legal|nos termos|lei\s+n", trecho)
+    )
+    chk_ia = ia.get("checklist") if isinstance(ia.get("checklist"), dict) else {}
+    itens = {
+        "tem_numero": bool(numero) or bool(chk_ia.get("tem_numero")),
+        "tem_data": bool(data) or bool(chk_ia.get("tem_data")),
+        "tem_valor": bool(valor) or bool(chk_ia.get("tem_valor")),
+        "tem_orgao": bool(orgao) or bool(chk_ia.get("tem_orgao")),
+        "tem_objeto": bool(assunto) or bool(chk_ia.get("tem_objeto")),
+        "tem_fundamentacao": fundamentacao
+        or bool(chk_ia.get("tem_fundamentacao")),
+    }
+    # Tipos em que valor costuma ser obrigatório
+    tipo_n = _norm(str(pub.get("tipo") or ia.get("tipo") or ""))
+    exige_valor = any(
+        k in tipo_n
+        for k in ("contrato", "dispensa", "homolog", "extrato", "aditivo", "pregao")
+    )
+    faltando = [k.replace("tem_", "") for k, ok in itens.items() if not ok]
+    if not exige_valor and "valor" in faltando:
+        faltando = [f for f in faltando if f != "valor"]
+        itens["tem_valor"] = True  # N/A tratado como ok
+    n_ok = sum(1 for v in itens.values() if v)
+    score = int(round(100 * n_ok / max(1, len(itens))))
+    return {
+        **itens,
+        "faltando": faltando,
+        "score": score,
+        "exige_valor": exige_valor,
+    }
+
+
+def parse_valor_float(valor: str | None) -> float | None:
+    try:
+        from database import parse_valor_monetario
+
+        return parse_valor_monetario(valor)
+    except Exception:
+        return None
+
+
+def _mediana(vals: list[float]) -> float | None:
+    if not vals:
+        return None
+    s = sorted(vals)
+    n = len(s)
+    mid = n // 2
+    if n % 2:
+        return s[mid]
+    return (s[mid - 1] + s[mid]) / 2.0
+
+
+def detectar_anomalia(
+    pub: dict,
+    historico_valores: list[float] | None = None,
+) -> tuple[bool, str]:
+    """Heurística de anomalia (#3). Retorna (é_anomalia, motivo)."""
+    if not getattr(SETTINGS, "ai_anomalia", True):
+        return False, ""
+    valor = parse_valor_float(pub.get("valor"))
+    tipo_n = _norm(str(pub.get("tipo") or ""))
+    motivos: list[str] = []
+
+    if valor is not None and valor >= 100_000:
+        if any(k in tipo_n for k in ("dispensa", "contrato", "homolog", "aditivo")):
+            motivos.append(f"valor alto R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    hist = [v for v in (historico_valores or []) if v and v > 0]
+    # não incluir o próprio valor se for o único
+    if valor is not None and len(hist) >= 5:
+        med = _mediana(hist)
+        if med and med > 0 and valor >= 3.0 * med:
+            motivos.append(
+                f"valor {valor / med:.1f}× a mediana do tipo ({med:,.0f})".replace(",", ".")
+            )
+
+    # importância 5 + valor
+    try:
+        imp = int(pub.get("importancia") or 0)
+    except (TypeError, ValueError):
+        imp = 0
+    if imp >= 5 and valor is not None and valor >= 50_000:
+        motivos.append("importância máxima com valor elevado")
+
+    if not motivos:
+        return False, ""
+    return True, "; ".join(motivos[:3])
+
+
+def eh_radar_lrf(pub: dict) -> bool:
+    blob = _norm(
+        " ".join(
+            str(pub.get(k) or "")
+            for k in ("tipo", "temas", "assunto", "resumo_ia", "trecho")
+        )
+    )
+    keys = (
+        "rgf",
+        "rreo",
+        "lrf",
+        "balanco",
+        "gestao fiscal",
+        "relatorio de gestao",
+        "demonstrativo",
+        "responsabilidade fiscal",
+    )
+    return any(k in blob for k in keys)
+
+
+def query_similares_de_pub(pub: dict) -> str:
+    parts = [
+        pub.get("tipo"),
+        pub.get("orgao"),
+        pub.get("assunto") or pub.get("resumo_ia"),
+        pub.get("temas"),
+    ]
+    return " ".join(str(p) for p in parts if p)
 
 # ---------------------------------------------------------------------------
 # Busca semântica leve (TF ranking, sem embeddings externos)

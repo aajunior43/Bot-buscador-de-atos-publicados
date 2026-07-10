@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Inteligência - Monitor Inajá{% endblock %}
+{% block content %}
+<section class="detail-hero fade-in">
+  <p class="eyebrow">Leitura · IA</p>
+  <h1>Inteligência</h1>
+  <p class="hero-copy">
+    Temas, ranking, radar fiscal (LRF) e anomalias — sem gastar tokens extras no dia a dia.
+  </p>
+</section>
+
+<section class="panel fade-in" style="padding:1rem 1.5rem;">
+  <form method="get" action="/inteligencia" class="dash-search">
+    <div class="search-row" style="flex-wrap:wrap; gap:.5rem;">
+      <label style="display:flex; flex-direction:column; gap:.25rem; font-size:.85rem; color:var(--text-3);">
+        Desde
+        <input type="date" name="desde" value="{{ desde }}" style="min-width:10rem;">
+      </label>
+      <label style="display:flex; flex-direction:column; gap:.25rem; font-size:.85rem; color:var(--text-3);">
+        Até
+        <input type="date" name="ate" value="{{ ate }}" style="min-width:10rem;">
+      </label>
+      <button type="submit" style="align-self:flex-end;">Filtrar</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel fade-in">
+  <div class="panel-head">
+    <h2>Mapa de temas</h2>
+    <span>{{ temas|length }} temas</span>
+  </div>
+  {% if temas %}
+  <div style="padding:1rem 1.5rem; display:flex; flex-wrap:wrap; gap:.5rem;">
+    {% for t in temas %}
+    <span class="badge" style="background:rgba(99,102,241,.12); color:#a5b4fc; border-color:rgba(99,102,241,.3);">
+      #{{ t.tema }} · {{ t.n }}
+    </span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty empty-pad">Ainda sem temas gravados (aparecem após refine com IA).</p>
+  {% endif %}
+</section>
+
+<section class="stats-grid fade-in" style="grid-template-columns:1fr 1fr; gap:1rem;">
+  <article class="panel" style="margin:0;">
+    <div class="panel-head"><h2>Ranking — tipos</h2></div>
+    {% if ranking.tipos %}
+    <ul style="list-style:none; margin:0; padding:0 1.25rem 1.25rem;">
+      {% for r in ranking.tipos %}
+      <li style="display:flex; justify-content:space-between; padding:.4rem 0; border-bottom:1px solid var(--border);">
+        <span>{{ r.chave }}</span><strong>{{ r.n }}</strong>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty empty-pad">Sem dados no período.</p>
+    {% endif %}
+  </article>
+  <article class="panel" style="margin:0;">
+    <div class="panel-head"><h2>Ranking — órgãos</h2></div>
+    {% if ranking.orgaos %}
+    <ul style="list-style:none; margin:0; padding:0 1.25rem 1.25rem;">
+      {% for r in ranking.orgaos %}
+      <li style="display:flex; justify-content:space-between; padding:.4rem 0; border-bottom:1px solid var(--border);">
+        <span>{{ r.chave }}</span><strong>{{ r.n }}</strong>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty empty-pad">Sem dados no período.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="panel fade-in">
+  <div class="panel-head">
+    <h2>Radar LRF / fiscal</h2>
+    <span>{{ lrf|length }}</span>
+  </div>
+  {% if lrf %}
+  <div class="edition-list" style="padding:0 0 1rem;">
+    {% for p in lrf %}
+    <article class="edition-row">
+      <div>
+        <a href="/edicoes/{{ p.edicao_id }}">
+          <strong>{{ p.tipo or "Ato fiscal" }} {% if p.numero %}{{ p.numero }}{% endif %}</strong>
+          <small>{{ p.data_publicacao or "—" }} · {{ p.orgao or "—" }}</small>
+        </a>
+        {% if p.resumo_ia or p.assunto %}
+        <p style="margin:.35rem 0 0; color:var(--text-3); font-size:.88rem;">{{ (p.resumo_ia or p.assunto)[:160] }}</p>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty empty-pad">Nenhum RGF/RREO/balanço detectado ainda.</p>
+  {% endif %}
+</section>
+
+<section class="panel fade-in">
+  <div class="panel-head">
+    <h2>Anomalias recentes</h2>
+    <span>{{ anomalias|length }}</span>
+  </div>
+  {% if anomalias %}
+  <div class="edition-list" style="padding:0 0 1rem;">
+    {% for p in anomalias %}
+    <article class="edition-row">
+      <div>
+        <a href="/edicoes/{{ p.edicao_id }}">
+          <strong>🚨 {{ p.tipo or "Ato" }} {% if p.numero %}{{ p.numero }}{% endif %}</strong>
+          <small>{{ p.valor or "—" }} · {{ p.data_publicacao or "—" }}</small>
+        </a>
+        {% if p.anomalia_motivo %}
+        <p style="margin:.35rem 0 0; color:var(--amber); font-size:.88rem;">{{ p.anomalia_motivo }}</p>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty empty-pad">Nenhuma anomalia marcada. Valores altos ou 3× a mediana do tipo disparam o alerta.</p>
+  {% endif %}
+</section>
+{% endblock %}

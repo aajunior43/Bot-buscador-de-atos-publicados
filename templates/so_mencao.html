@@ -42,22 +42,41 @@
         <p class="so-mencao-termos">{{ e.termos }}</p>
         {% endif %}
         <span class="chip-status">{{ e.revisao_so_mencao or "pendente" }}</span>
-        {% if e.auditoria %}
+        {% if e.auditoria or e.fn %}
+        {% set aud = e.fn or e.auditoria %}
         <p class="so-mencao-termos" style="margin-top:.4rem;">
           <span class="badge" style="background:rgba(99,102,241,.15);color:#a5b4fc;border-color:rgba(99,102,241,.3);">
-            IA: {{ e.auditoria.classificacao or "—" }}
+            IA: {{ aud.classificacao or "—" }}
           </span>
-          {% if e.auditoria.acao_sugerida %}
-          <span class="badge">{{ e.auditoria.acao_sugerida }}</span>
+          {% if aud.acao_sugerida %}
+          <span class="badge">{{ aud.acao_sugerida }}</span>
           {% endif %}
-          {% if e.auditoria.motivo %}
-          <span style="color:var(--text-3); font-size:.85rem;"> — {{ e.auditoria.motivo }}</span>
+          {% if aud.paginas_sugeridas %}
+          <span class="badge" title="Páginas para reprocessar">págs {{ aud.paginas_sugeridas | join(', ') }}</span>
+          {% endif %}
+          {% if aud.motivo %}
+          <span style="color:var(--text-3); font-size:.85rem;"> — {{ aud.motivo }}</span>
           {% endif %}
         </p>
+        {% endif %}
+        {% if e.triagem %}
+        <details style="margin-top:.5rem; font-size:.85rem; color:var(--text-2);">
+          <summary>Triagem em lote ({{ e.triagem|length }} menções)</summary>
+          <ul style="margin:.4rem 0 0; padding-left:1.1rem;">
+            {% for t in e.triagem %}
+            <li>pág.{{ t.pagina }} · <strong>{{ t.classificacao }}</strong>
+              {% if t.motivo %} — {{ t.motivo }}{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
         {% endif %}
       </div>
       <div class="so-mencao-actions">
         <a class="btn btn-secondary btn-small" href="/edicoes/{{ e.id }}">Abrir</a>
+        <form method="post" action="/revisao/so-mencao/{{ e.id }}/triagem" style="margin:0;">
+          <button type="submit" class="btn btn-secondary btn-small" title="Classifica menções em 1 call de IA">🧹 Triagem IA</button>
+        </form>
         <form method="post" action="/revisao/so-mencao/{{ e.id }}">
           <input type="hidden" name="status" value="revisada">
           <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">

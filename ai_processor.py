@@ -117,10 +117,14 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
    - "data_documento": busque datas no texto no formato "DD de MÊS de AAAA" ou "DD/MM/AAAA" e normalize para "DD/MM/AAAA". Toda publicação oficial costuma ter uma data — procure-a ativamente.
    - "valor": busque valores "R$ X.XXX,XX" no texto da publicação. Para tipos "Dispensa", "Contrato", "Termo de Homologação", "Extrato de Contrato", geralmente há um valor. Só retorne null se realmente nenhum valor monetário for citado no texto da publicação. Não confunda valores monetários com números de processo, CPF, CNPJ ou datas.
 4. Nunca retorne valor corrupto ou alucinado: se o texto diz "R$ 19.876,00", NUNCA retorne "R$ 220" nem parte do valor. O valor deve ser o completo, lido diretamente da expressão "R$ ...".
-5. Responda APENAS com um objeto JSON válido. Nunca inclua blocos markdown ```json ... ```, comentários ou explicações extras antes ou depois do JSON.
+5. OCR CONTEXTUAL (texto_corrigido): corrija erros típicos sem inventar fatos —
+   nomes Inajá/Inaja → Inajá; CEP 87670-000; CNPJs 75.771.400/0001-48 e 76.970.318/0001-67;
+   LEINº→LEI Nº; valores R$ com milhar; "Prefeitura Municipal de Inajá".
+   Nunca invente dígitos de valor, número de ato ou nomes de pessoas/empresas ausentes.
+6. Responda APENAS com um objeto JSON válido. Nunca inclua blocos markdown ```json ... ```, comentários ou explicações extras antes ou depois do JSON.
 
 Campos do JSON de retorno:
-- texto_corrigido: string — texto com erros de OCR corrigidos
+- texto_corrigido: string — texto com erros de OCR corrigidos (contextual Inajá)
 - orgao: string ou null — órgão responsável (ex: "Prefeitura Municipal de Inajá", "Câmara Municipal de Inajá", "Município de Inajá")
 - tipo: string ou null — tipo do ato (Decreto, Portaria, Lei, Edital, Aviso, Extrato, Errata, Notificação, Termo Aditivo, Dispensa de Licitação, Demonstrativo, Relatório Fiscal, RGF, RREO, Balanço, etc.)
 - numero: string ou null — número do documento (ex: "042/2026")
@@ -132,11 +136,13 @@ Campos do JSON de retorno:
 - pertence_a_inaja: boolean — se pertence diretamente ao município de Inajá-PR
 - tem_mencao_inaja: boolean — se menciona direta ou indiretamente Inajá-PR
 - tags: array de strings — até 3 marcadores curtos (ex: ["licitação", "obra", "saúde"])
+- temas: array de strings — do vocabulário: licitacao, contrato, obra, saude, educacao, rh, fiscal, assistencia, infraestrutura, meio_ambiente, cultura, transporte, outros
+- partes: objeto — {{"contratada": null|"nome empresa", "beneficiarios": [], "cargo_nomeado": null|"cargo", "publico_afetado": "frase curta"}}
+- checklist: objeto — {{"tem_numero": bool, "tem_data": bool, "tem_valor": bool, "tem_orgao": bool, "tem_fundamentacao": bool, "tem_objeto": bool, "faltando": ["..."]}}
 - importancia: inteiro 1 a 5 — relevância para gestão/transparência de Inajá
   (1=rotina menor, 3=relevante, 5=crítico: valores altos, licitação, nomeação, LRF)
 - importancia_motivo: string curta explicando a nota
 - notificar: boolean — true se vale alerta imediato (Telegram); false se pode só arquivar"""
-
 
 def _prompt_usuario(trecho: str) -> str:
     return f"Texto OCR:\n\n{trecho}\n\nExtraia os dados no JSON conforme solicitado."
@@ -564,13 +570,14 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
             ia = future.result()
             pub = dict(publicacoes[i])
             if ia:
-                # Anti-alucinação: campos devem ancorar no trecho OCR
-                try:
-                    from inteligencia import validar_campos_ia
+                # Anti-alucinação: campos devem ancorar no trecho OCR (#18)
+                if getattr(SETTINGS, "ai_anti_alucinacao", True):
+                    try:
+                        from inteligencia import validar_campos_ia
 
-                    ia = validar_campos_ia(pub, ia)
-                except Exception:
-                    logger.debug("validar_campos_ia falhou", exc_info=True)
+                        ia = validar_campos_ia(pub, ia)
+                    except Exception:
+                        logger.debug("validar_campos_ia falhou", exc_info=True)
                 # Se a IA identificou explicitamente que NÃO pertence a Inajá, descarta
                 if ia.get("pertence_a_inaja") is False:
                     logger.info(
@@ -674,7 +681,54 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
                 tags = ia.get("tags")
                 if isinstance(tags, list) and tags:
                     pub["tags"] = ", ".join(str(t) for t in tags[:3])
+
+                # Pack B: temas, partes, checklist, validação (mesmo JSON)
+                try:
+                    from inteligencia import (
+                        montar_checklist_local,
+                        normalizar_lista_temas,
+                    )
+
+                    if getattr(SETTINGS, "ai_temas", True):
+                        temas = normalizar_lista_temas(
+                            ia.get("temas") or ia.get("tags") or pub.get("tags")
+                        )
+                        if temas:
+                            pub["temas"] = ", ".join(temas)
+                    if getattr(SETTINGS, "ai_partes", True):
+                        partes = ia.get("partes")
+                        if isinstance(partes, dict) and any(partes.values()):
+                            pub["partes_ia"] = partes
+                    if getattr(SETTINGS, "ai_checklist", True):
+                        pub["checklist_ia"] = montar_checklist_local(pub, ia)
+                    if getattr(SETTINGS, "ai_anti_alucinacao", True):
+                        val = ia.get("_validacao") or {
+                            "ok": True,
+                            "flags": [],
+                        }
+                        pub["validacao_ia"] = val
+                except Exception:
+                    logger.debug("pack B pós-refine falhou", exc_info=True)
             refinadas[i] = pub
+
+    # Anomalia (#3) — heurística com histórico por tipo
+    if getattr(SETTINGS, "ai_anomalia", True):
+        try:
+            from inteligencia import detectar_anomalia
+
+            for pub in refinadas:
+                if pub is None:
+                    continue
+                hist = db.historico_valores_por_tipo(pub.get("tipo"), limit=80)
+                is_a, motivo = detectar_anomalia(pub, hist)
+                if is_a:
+                    pub["anomalia"] = 1
+                    pub["anomalia_motivo"] = motivo
+                    # anomalia eleva notificação
+                    if pub.get("notificar_ia") is False:
+                        pub["notificar_ia"] = True
+        except Exception:
+            logger.debug("detecção de anomalia falhou", exc_info=True)
 
     resultado_final = [r for r in refinadas if r is not None]
     logger.info(
@@ -857,14 +911,18 @@ def gerar_resumo_periodo_ia(texto_base: str, *, dia: str) -> str | None:
 
 
 def auditar_so_mencao(trechos: list[dict], *, titulo: str = "") -> dict | None:
-    """Classifica por que há menção a Inajá sem publicação estruturada."""
-    if not getattr(SETTINGS, "ai_auditoria_so_mencao", True) or not ia_disponivel():
+    """Classifica por que há menção a Inajá sem publicação estruturada (#17 FN)."""
+    if not (
+        getattr(SETTINGS, "ai_auditoria_so_mencao", True)
+        or getattr(SETTINGS, "ai_fn_recuperacao", True)
+    ) or not ia_disponivel():
         return None
     if not trechos:
         return {
             "classificacao": "sem_trecho",
             "motivo": "Nenhuma menção bruta gravada",
             "acao_sugerida": "revisar_ocr",
+            "paginas_sugeridas": [],
         }
     blocos = []
     for t in trechos[:8]:
@@ -874,19 +932,177 @@ def auditar_so_mencao(trechos: list[dict], *, titulo: str = "") -> dict | None:
     system = (
         "Você audita detecções do monitor de atos de Inajá-PR no jornal O Regional. "
         "Há menção a Inajá mas o detector não extraiu publicação oficial estruturada. "
-        "Classifique. "
+        "Classifique e, se parecer ato perdido (falso negativo), indique páginas a reprocessar. "
         'JSON: {"classificacao": "ato_perdido"|"materia"|"outro_municipio"|"ruido_ocr"|"outro", '
         '"motivo": "frase", "acao_sugerida": "reprocessar"|"ignorar"|"revisar_manual", '
-        '"confianca": 0.0-1.0}'
+        '"confianca": 0.0-1.0, "paginas_sugeridas": [int], '
+        '"trechos_prioritarios": ["resumo curto do trecho prioritário"]}'
     )
     user = f"Edição: {titulo}\n\nTrechos:\n" + "\n---\n".join(blocos)
     data = _chamar_ia_json(
-        system, user, timeout=max(25, SETTINGS.ai_timeout_seconds), max_tokens=400
+        system, user, timeout=max(25, SETTINGS.ai_timeout_seconds), max_tokens=500
     )
     if not data:
         return None
     data["classificacao"] = str(data.get("classificacao") or "outro").casefold()
+    pags = data.get("paginas_sugeridas") or []
+    if not isinstance(pags, list):
+        pags = []
+    clean_pags = []
+    for p in pags:
+        try:
+            clean_pags.append(int(p))
+        except (TypeError, ValueError):
+            continue
+    if not clean_pags:
+        # fallback: páginas dos trechos
+        for t in trechos[:5]:
+            try:
+                clean_pags.append(int(t.get("pagina")))
+            except (TypeError, ValueError):
+                pass
+    data["paginas_sugeridas"] = clean_pags[:8]
     return data
+
+
+def triar_ruidos_lote(trechos: list[dict], *, titulo: str = "") -> list[dict] | None:
+    """#5 — classifica até 15 menções em 1 call."""
+    if not getattr(SETTINGS, "ai_triagem_lote", True) or not ia_disponivel():
+        return None
+    if not trechos:
+        return []
+    itens = trechos[:15]
+    blocos = []
+    for i, t in enumerate(itens, start=1):
+        blocos.append(
+            f"[{i}] pág={t.get('pagina')} termo={t.get('termo_encontrado') or t.get('termo')}\n"
+            f"{(t.get('trecho') or '')[:350]}"
+        )
+    system = (
+        "Classifique cada trecho do jornal O Regional (foco Inajá-PR). "
+        "classificacao: ato | materia | vizinho | ruido_ocr | outro. "
+        'JSON: {"itens": [{"i": 1, "classificacao": "...", "confianca": 0.0-1.0, "motivo": "frase curta"}]}'
+    )
+    user = f"Edição: {titulo}\n\n" + "\n---\n".join(blocos)
+    data = _chamar_ia_json(
+        system, user, timeout=max(40, SETTINGS.ai_timeout_seconds), max_tokens=900
+    )
+    if not data:
+        return None
+    raw = data.get("itens") or data.get("resultados") or []
+    if not isinstance(raw, list):
+        return None
+    out: list[dict] = []
+    by_i = {}
+    for r in raw:
+        try:
+            by_i[int(r.get("i"))] = r
+        except (TypeError, ValueError):
+            continue
+    for i, t in enumerate(itens, start=1):
+        r = by_i.get(i) or {}
+        out.append(
+            {
+                "pagina": t.get("pagina"),
+                "trecho": (t.get("trecho") or "")[:200],
+                "classificacao": str(r.get("classificacao") or "outro").casefold(),
+                "confianca": r.get("confianca"),
+                "motivo": r.get("motivo") or "",
+            }
+        )
+    return out
+
+
+def narrar_linha_tempo(pubs: list[dict]) -> str | None:
+    """#7 — narra cadeia de atos relacionados."""
+    if not getattr(SETTINGS, "ai_timeline", True) or not ia_disponivel():
+        return None
+    if not pubs:
+        return None
+    linhas = []
+    for i, p in enumerate(pubs[:12], start=1):
+        linhas.append(
+            f"[{i}] {p.get('data_publicacao') or p.get('data_documento') or '?'} | "
+            f"{p.get('tipo')} {p.get('numero') or ''} | {p.get('orgao') or ''} | "
+            f"{p.get('valor') or ''} | {(p.get('resumo_ia') or p.get('assunto') or '')[:120]}"
+        )
+    system = (
+        "Você narra a linha do tempo de atos oficiais de Inajá-PR (contratos/aditivos/homologações). "
+        "Use só os itens listados. Seja objetivo em português. "
+        'JSON: {"narrativa": "3-8 frases ou bullets", "elo": "como se conectam"}'
+    )
+    user = "Atos em ordem:\n" + "\n".join(linhas)
+    data = _chamar_ia_json(
+        system, user, timeout=max(35, SETTINGS.ai_timeout_seconds), max_tokens=700
+    )
+    if not data:
+        return None
+    narr = (data.get("narrativa") or "").strip()
+    elo = (data.get("elo") or "").strip()
+    if elo:
+        narr = f"{narr}\n\nElo: {elo}".strip()
+    return narr or None
+
+
+def comparar_com_similares(alvo: dict, similares: list[dict]) -> dict[str, Any] | None:
+    """#8 — compara ato com candidatos semelhantes."""
+    if not getattr(SETTINGS, "ai_similares", True) or not ia_disponivel():
+        return None
+    if not similares:
+        return {
+            "resumo": "Não há atos similares no acervo para comparar.",
+            "diferencas": [],
+            "citacoes": [],
+        }
+    def _fmt(p: dict, i: int) -> str:
+        return (
+            f"[{i}] id={p.get('id')} {p.get('tipo')} {p.get('numero') or ''} "
+            f"{p.get('orgao') or ''} valor={p.get('valor') or '—'} "
+            f"data={p.get('data_publicacao') or p.get('data_documento') or '?'}\n"
+            f"{(p.get('resumo_ia') or p.get('assunto') or '')[:180]}"
+        )
+
+    system = (
+        "Compare o ato ALVO com atos SIMILARES de Inajá-PR. Não invente. "
+        'JSON: {"resumo": "2-4 frases", "diferencas": ["..."], "citacoes": [1,2]}'
+    )
+    user = (
+        "ALVO:\n"
+        + _fmt(alvo, 0)
+        + "\n\nSIMILARES:\n"
+        + "\n".join(_fmt(s, i) for i, s in enumerate(similares[:6], start=1))
+    )
+    data = _chamar_ia_json(
+        system, user, timeout=max(40, SETTINGS.ai_timeout_seconds), max_tokens=700
+    )
+    if not data:
+        return None
+    cits = data.get("citacoes") or []
+    if not isinstance(cits, list):
+        cits = []
+    citacoes = []
+    for idx in cits:
+        try:
+            i = int(idx) - 1
+            if 0 <= i < len(similares):
+                citacoes.append(
+                    {
+                        "id": similares[i].get("id"),
+                        "edicao_id": similares[i].get("edicao_id"),
+                        "tipo": similares[i].get("tipo"),
+                        "numero": similares[i].get("numero"),
+                    }
+                )
+        except (TypeError, ValueError):
+            continue
+    diffs = data.get("diferencas") or []
+    if not isinstance(diffs, list):
+        diffs = [str(diffs)]
+    return {
+        "resumo": str(data.get("resumo") or "").strip(),
+        "diferencas": [str(d) for d in diffs[:8]],
+        "citacoes": citacoes,
+    }
 
 
 def responder_pergunta_atos(

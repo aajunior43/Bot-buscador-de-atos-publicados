@@ -326,9 +326,12 @@ def _processar_edicao_unlocked(
         else:
             console_ui.phase_set("ALR", "skip")
 
-        # Auditoria IA: tem Inajá mas zero publicações
+        # Auditoria IA / FN (#17): tem Inajá mas zero publicações
         if (
-            getattr(SETTINGS, "ai_auditoria_so_mencao", True)
+            (
+                getattr(SETTINGS, "ai_auditoria_so_mencao", True)
+                or getattr(SETTINGS, "ai_fn_recuperacao", True)
+            )
             and resultado.encontrado
             and not resultado.publicacoes
             and resultado.mencoes_db
@@ -341,10 +344,13 @@ def _processar_edicao_unlocked(
                 )
                 if aud:
                     database.salvar_auditoria_so_mencao(download.edicao_id, aud)
+                    if getattr(SETTINGS, "ai_fn_recuperacao", True):
+                        database.salvar_fn_sugestao(download.edicao_id, aud)
                     logger.info(
-                        "Auditoria só-menção id=%s: %s",
+                        "Auditoria só-menção id=%s: %s pags=%s",
                         download.edicao_id,
                         aud.get("classificacao"),
+                        aud.get("paginas_sugeridas"),
                     )
             except Exception:
                 logger.debug("auditoria so-mencao falhou", exc_info=True)
@@ -907,6 +913,28 @@ def executar_ciclo(
             pass
     except Exception:
         logger.debug("gerar_resumo_diario falhou", exc_info=True)
+    # #17 — recuperação FN em lote (até 3 edições só-menção sem sugestão)
+    if getattr(SETTINGS, "ai_fn_recuperacao", True):
+        try:
+            from ai_processor import auditar_so_mencao, ia_disponivel
+
+            if ia_disponivel():
+                pend_fn = database.listar_edicoes_fn_pendente(limit=3)
+                for ed in pend_fn:
+                    mencoes = database.get_mencoes_edicao(ed["id"], limit=12)
+                    if not mencoes:
+                        continue
+                    aud = auditar_so_mencao(mencoes, titulo=ed.get("titulo") or "")
+                    if aud:
+                        database.salvar_auditoria_so_mencao(ed["id"], aud)
+                        database.salvar_fn_sugestao(ed["id"], aud)
+                        logger.info(
+                            "FN ciclo id=%s class=%s",
+                            ed["id"],
+                            aud.get("classificacao"),
+                        )
+        except Exception:
+            logger.debug("lote FN recuperação falhou", exc_info=True)
     try:
         from ai_processor import ai_calls_no_ciclo
 

@@ -157,6 +157,37 @@ class TestEscapeMarkdownV2:
         assert r"Edicao\_25\.06\-2026" in msg
 
 
+class TestAnomaliaMensagem:
+    def test_prefixo_anomalia_na_mensagem(self, db, mock_settings):
+        import notifier
+
+        object.__setattr__(mock_settings, "ai_importancia", False)
+        object.__setattr__(mock_settings, "telegram_bot_token", "")
+        object.__setattr__(mock_settings, "telegram_chat_id", "")
+        pubs = [
+            {
+                "tipo": "Dispensa",
+                "orgao": "Prefeitura",
+                "pagina": 1,
+                "categoria": "publicacao_oficial",
+                "anomalia": 1,
+                "anomalia_motivo": "valor 3x mediana",
+                "valor": "R$ 200.000,00",
+            }
+        ]
+        resultado = _make_resultado(publicacoes=pubs)
+        with patch("notifier.SETTINGS", mock_settings), \
+             patch("notifier._disparar_webhooks"), \
+             patch("notifier._enviar_email", return_value=False):
+            notifier.notificar(resultado, _make_edicao())
+        # mensagem montada deve incluir anomalia — confere via arquivo salvo
+        import database
+        notifs = database.get_notificacoes()
+        assert notifs
+        conteudo = notifs[0]["conteudo"] or ""
+        assert "ANOMALIA" in conteudo or "anomalia" in conteudo.casefold()
+
+
 class TestFiltroImportancia:
     def test_suprimir_baixa_importancia(self, mock_settings):
         from notifier import _publicacoes_para_alerta

@@ -153,6 +153,14 @@ _MIGRATIONS: list[tuple[int, str]] = [
     (19, "ALTER TABLE publicacoes ADD COLUMN notificar_ia INTEGER DEFAULT 1"),
     (20, "ALTER TABLE publicacoes ADD COLUMN explicacao_ia TEXT"),
     (21, "ALTER TABLE edicoes ADD COLUMN auditoria_so_mencao TEXT"),
+    # Pack B: partes, checklist, temas, validação, anomalia, FN
+    (22, "ALTER TABLE publicacoes ADD COLUMN partes_ia TEXT"),
+    (23, "ALTER TABLE publicacoes ADD COLUMN checklist_ia TEXT"),
+    (24, "ALTER TABLE publicacoes ADD COLUMN temas TEXT"),
+    (25, "ALTER TABLE publicacoes ADD COLUMN validacao_ia TEXT"),
+    (26, "ALTER TABLE publicacoes ADD COLUMN anomalia INTEGER DEFAULT 0"),
+    (27, "ALTER TABLE publicacoes ADD COLUMN anomalia_motivo TEXT"),
+    (28, "ALTER TABLE edicoes ADD COLUMN fn_sugestao TEXT"),
 ]
 
 # Colunas esperadas por migração — usadas para marcar versões já aplicadas
@@ -179,6 +187,13 @@ _MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
     19: ("publicacoes", "notificar_ia"),
     20: ("publicacoes", "explicacao_ia"),
     21: ("edicoes", "auditoria_so_mencao"),
+    22: ("publicacoes", "partes_ia"),
+    23: ("publicacoes", "checklist_ia"),
+    24: ("publicacoes", "temas"),
+    25: ("publicacoes", "validacao_ia"),
+    26: ("publicacoes", "anomalia"),
+    27: ("publicacoes", "anomalia_motivo"),
+    28: ("edicoes", "fn_sugestao"),
 }
 
 
@@ -642,9 +657,10 @@ def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
               edicao_id, pagina, bloco, categoria, orgao, tipo, numero,
               data_documento, assunto, valor, trecho,
               resumo_ia, categoria_ia, texto_corrigido, ia_processado,
-              importancia, importancia_motivo, notificar_ia, explicacao_ia
+              importancia, importancia_motivo, notificar_ia, explicacao_ia,
+              partes_ia, checklist_ia, temas, validacao_ia, anomalia, anomalia_motivo
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -669,6 +685,30 @@ def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
                     if item.get("notificar_ia", True) in (True, 1, "1", "true")
                     else 0,
                     item.get("explicacao_ia"),
+                    item.get("partes_ia")
+                    if isinstance(item.get("partes_ia"), str)
+                    else (
+                        json.dumps(item["partes_ia"], ensure_ascii=False)
+                        if item.get("partes_ia")
+                        else None
+                    ),
+                    item.get("checklist_ia")
+                    if isinstance(item.get("checklist_ia"), str)
+                    else (
+                        json.dumps(item["checklist_ia"], ensure_ascii=False)
+                        if item.get("checklist_ia")
+                        else None
+                    ),
+                    item.get("temas"),
+                    item.get("validacao_ia")
+                    if isinstance(item.get("validacao_ia"), str)
+                    else (
+                        json.dumps(item["validacao_ia"], ensure_ascii=False)
+                        if item.get("validacao_ia")
+                        else None
+                    ),
+                    1 if item.get("anomalia") in (True, 1, "1", "true") else 0,
+                    item.get("anomalia_motivo"),
                 )
                 for item in publicacoes
             ],
@@ -709,6 +749,250 @@ def salvar_auditoria_so_mencao(edicao_id: int, payload: dict | str) -> None:
             "UPDATE edicoes SET auditoria_so_mencao = ? WHERE id = ?",
             (texto, edicao_id),
         )
+
+
+def salvar_fn_sugestao(edicao_id: int, payload: dict | str) -> None:
+    texto = (
+        payload
+        if isinstance(payload, str)
+        else json.dumps(payload, ensure_ascii=False)
+    )
+    with connect() as conn:
+        conn.execute(
+            "UPDATE edicoes SET fn_sugestao = ? WHERE id = ?",
+            (texto, edicao_id),
+        )
+
+
+def historico_valores_por_tipo(tipo: str | None, limit: int = 80) -> list[float]:
+    """Valores numéricos recentes do mesmo tipo (para anomalia)."""
+    if not (tipo or "").strip():
+        return []
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT valor FROM publicacoes
+            WHERE tipo = ? AND valor IS NOT NULL AND valor != ''
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (tipo.strip(), max(1, int(limit))),
+        ).fetchall()
+    vals: list[float] = []
+    for r in rows:
+        v = parse_valor_monetario(r["valor"] if isinstance(r, sqlite3.Row) else r[0])
+        if v is not None and v > 0:
+            vals.append(v)
+    return vals
+
+
+def ranking_publicacoes(
+    *,
+    desde: str | None = None,
+    ate: str | None = None,
+    limit: int = 15,
+) -> dict[str, list[dict]]:
+    """Contagens por tipo e órgão no período (data da edição)."""
+    filtros = ["1=1"]
+    params: list = []
+    if desde:
+        filtros.append("e.data_publicacao >= ?")
+        params.append(desde)
+    if ate:
+        filtros.append("e.data_publicacao <= ?")
+        params.append(ate)
+    where = " AND ".join(filtros)
+    with connect() as conn:
+        tipos = conn.execute(
+            f"""
+            SELECT COALESCE(NULLIF(TRIM(p.tipo), ''), '(sem tipo)') AS chave, COUNT(*) AS n
+            FROM publicacoes p
+            JOIN edicoes e ON e.id = p.edicao_id
+            WHERE {where}
+            GROUP BY chave
+            ORDER BY n DESC
+            LIMIT ?
+            """,
+            (*params, limit),
+        ).fetchall()
+        orgaos = conn.execute(
+            f"""
+            SELECT COALESCE(NULLIF(TRIM(p.orgao), ''), '(sem órgão)') AS chave, COUNT(*) AS n
+            FROM publicacoes p
+            JOIN edicoes e ON e.id = p.edicao_id
+            WHERE {where}
+            GROUP BY chave
+            ORDER BY n DESC
+            LIMIT ?
+            """,
+            (*params, limit),
+        ).fetchall()
+    return {
+        "tipos": [dict(r) for r in tipos],
+        "orgaos": [dict(r) for r in orgaos],
+    }
+
+
+def contar_temas(
+    *,
+    desde: str | None = None,
+    ate: str | None = None,
+    limit: int = 30,
+) -> list[dict]:
+    """Explode CSV de temas e conta ocorrências."""
+    filtros = ["p.temas IS NOT NULL", "p.temas != ''"]
+    params: list = []
+    if desde:
+        filtros.append("e.data_publicacao >= ?")
+        params.append(desde)
+    if ate:
+        filtros.append("e.data_publicacao <= ?")
+        params.append(ate)
+    where = " AND ".join(filtros)
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT p.temas FROM publicacoes p
+            JOIN edicoes e ON e.id = p.edicao_id
+            WHERE {where}
+            """,
+            params,
+        ).fetchall()
+    cont: dict[str, int] = {}
+    for r in rows:
+        raw = r["temas"] if isinstance(r, sqlite3.Row) else r[0]
+        for part in str(raw or "").split(","):
+            t = part.strip().casefold()
+            if t:
+                cont[t] = cont.get(t, 0) + 1
+    ordered = sorted(cont.items(), key=lambda x: (-x[1], x[0]))[:limit]
+    return [{"tema": k, "n": v} for k, v in ordered]
+
+
+def listar_radar_lrf(limit: int = 40) -> list[dict]:
+    """Publicações fiscais (RGF, RREO, LRF, balanço…)."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao, e.url
+            FROM publicacoes p
+            JOIN edicoes e ON e.id = p.edicao_id
+            WHERE
+              LOWER(COALESCE(p.tipo,'')) LIKE '%rgf%'
+              OR LOWER(COALESCE(p.tipo,'')) LIKE '%rreo%'
+              OR LOWER(COALESCE(p.tipo,'')) LIKE '%lrf%'
+              OR LOWER(COALESCE(p.tipo,'')) LIKE '%balanc%'
+              OR LOWER(COALESCE(p.tipo,'')) LIKE '%demonstrat%'
+              OR LOWER(COALESCE(p.tipo,'')) LIKE '%fiscal%'
+              OR LOWER(COALESCE(p.temas,'')) LIKE '%fiscal%'
+              OR LOWER(COALESCE(p.assunto,'')) LIKE '%lrf%'
+              OR LOWER(COALESCE(p.resumo_ia,'')) LIKE '%gestão fiscal%'
+              OR LOWER(COALESCE(p.resumo_ia,'')) LIKE '%gestao fiscal%'
+            ORDER BY e.data_publicacao DESC, p.id DESC
+            LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def listar_anomalias(limit: int = 40) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao, e.url
+            FROM publicacoes p
+            JOIN edicoes e ON e.id = p.edicao_id
+            WHERE p.anomalia = 1
+            ORDER BY p.id DESC
+            LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def buscar_pubs_relacionadas(
+    *,
+    numero: str | None = None,
+    tipo: str | None = None,
+    orgao: str | None = None,
+    excluir_id: int | None = None,
+    limit: int = 12,
+) -> list[dict]:
+    """Candidatos a linha do tempo (mesmo número / tipo contrato)."""
+    clauses: list[str] = ["1=1"]
+    params: list = []
+    if numero and str(numero).strip():
+        clauses.append("p.numero IS NOT NULL AND TRIM(p.numero) != '' AND LOWER(p.numero) = LOWER(?)")
+        params.append(str(numero).strip())
+    elif tipo:
+        # fallback: tipos de cadeia contratual
+        clauses.append(
+            """(
+              LOWER(COALESCE(p.tipo,'')) LIKE '%contrato%'
+              OR LOWER(COALESCE(p.tipo,'')) LIKE '%aditivo%'
+              OR LOWER(COALESCE(p.tipo,'')) LIKE '%dispensa%'
+              OR LOWER(COALESCE(p.tipo,'')) LIKE '%homolog%'
+              OR LOWER(COALESCE(p.tipo,'')) LIKE '%rescis%'
+            )"""
+        )
+        if orgao:
+            clauses.append("LOWER(COALESCE(p.orgao,'')) LIKE ?")
+            params.append(f"%{(orgao or '')[:40].casefold()}%")
+    if excluir_id:
+        clauses.append("p.id != ?")
+        params.append(int(excluir_id))
+    where = " AND ".join(clauses)
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT p.*, e.titulo AS edicao_titulo, e.data_publicacao, e.url
+            FROM publicacoes p
+            JOIN edicoes e ON e.id = p.edicao_id
+            WHERE {where}
+            ORDER BY e.data_publicacao ASC, p.id ASC
+            LIMIT ?
+            """,
+            (*params, max(1, int(limit))),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def listar_edicoes_fn_pendente(limit: int = 10) -> list[dict]:
+    """Só-menção sem fn_sugestao ainda."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.id, e.titulo, e.data_publicacao, e.url, e.fn_sugestao,
+                   e.auditoria_so_mencao,
+                   (SELECT COUNT(*) FROM mencoes m WHERE m.edicao_id = e.id) AS n_mencoes
+            FROM edicoes e
+            WHERE e.tem_inaja = 1
+              AND e.ocr_processado = 1
+              AND NOT EXISTS (SELECT 1 FROM publicacoes p WHERE p.edicao_id = e.id)
+              AND (e.fn_sugestao IS NULL OR e.fn_sugestao = '')
+            ORDER BY e.data_publicacao DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_mencoes_edicao(edicao_id: int, limit: int = 30) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, edicao_id, pagina, trecho, termo_encontrado
+            FROM mencoes
+            WHERE edicao_id = ?
+            ORDER BY pagina ASC, id ASC
+            LIMIT ?
+            """,
+            (edicao_id, max(1, int(limit))),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def listar_edicoes_auditoria_pendente(limit: int = 20) -> list[dict]:
@@ -1600,7 +1884,7 @@ def listar_edicoes_so_mencao(
             conn.execute(
                 f"""
                 SELECT e.id, e.titulo, e.data_publicacao, e.url, e.ocr_processado,
-                       e.revisao_so_mencao, e.auditoria_so_mencao,
+                       e.revisao_so_mencao, e.auditoria_so_mencao, e.fn_sugestao,
                        (SELECT COUNT(*) FROM mencoes m WHERE m.edicao_id = e.id) AS mencoes_count,
                        (SELECT GROUP_CONCAT(DISTINCT m2.termo_encontrado)
                           FROM mencoes m2 WHERE m2.edicao_id = e.id) AS termos

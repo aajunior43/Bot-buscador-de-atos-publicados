@@ -303,6 +303,22 @@ def notificar(resultado: DetectionResult, edicao: Edicao) -> None:
             mensagem = (
                 f"⭐ *Importância* {melhor}/5\n\n" + mensagem
             )
+    # Anomalias (#3)
+    anoms = [
+        p
+        for p in (pubs_alerta or resultado.publicacoes or [])
+        if p.get("anomalia") in (1, True, "1")
+    ]
+    if anoms:
+        motivos = []
+        for p in anoms[:3]:
+            m = (p.get("anomalia_motivo") or "").strip()
+            if m:
+                motivos.append(m)
+        head = "🚨 *ANOMALIA DETECTADA*"
+        if motivos:
+            head += "\n" + "\n".join(f"• {m}" for m in motivos)
+        mensagem = head + "\n\n" + mensagem
 
     canal_usado = "arquivo"
     sucesso = False

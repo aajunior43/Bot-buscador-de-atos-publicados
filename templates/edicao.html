@@ -35,6 +35,9 @@
         {% if item.importancia %}
         <span class="badge" style="background:rgba(99,102,241,.15);color:#a5b4fc;border-color:rgba(99,102,241,.3);" title="{{ item.importancia_motivo or '' }}">★ {{ item.importancia }}/5</span>
         {% endif %}
+        {% if item.anomalia %}
+        <span class="badge" style="background:rgba(248,113,113,.15);color:#fca5a5;border-color:rgba(248,113,113,.35);" title="{{ item.anomalia_motivo or '' }}">🚨 anomalia</span>
+        {% endif %}
         {% if item.valor %}<span class="badge" style="background:rgba(251,191,36,.12);color:#fbbf24;border-color:rgba(251,191,36,.25);">{{ item.valor }}</span>{% endif %}
       </div>
 
@@ -51,11 +54,93 @@
       </div>
       {% endif %}
 
-      {% if item.tags %}
+      {% if item.partes %}
+      <div style="margin:.75rem 0; padding:.75rem 1rem; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface);">
+        <strong style="font-size:.8rem; color:var(--accent-2);">Quem ganha / é afetado</strong>
+        <ul style="margin:.4rem 0 0; padding-left:1.1rem; color:var(--text-2); font-size:.9rem; line-height:1.45;">
+          {% if item.partes.contratada %}<li><strong>Contratada:</strong> {{ item.partes.contratada }}</li>{% endif %}
+          {% if item.partes.cargo_nomeado %}<li><strong>Cargo:</strong> {{ item.partes.cargo_nomeado }}</li>{% endif %}
+          {% if item.partes.beneficiarios %}
+          <li><strong>Beneficiários:</strong> {{ item.partes.beneficiarios | join(', ') if item.partes.beneficiarios is iterable and item.partes.beneficiarios is not string else item.partes.beneficiarios }}</li>
+          {% endif %}
+          {% if item.partes.publico_afetado %}<li><strong>Público:</strong> {{ item.partes.publico_afetado }}</li>{% endif %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if item.checklist %}
+      <div style="margin:.65rem 0; font-size:.85rem;">
+        <strong style="color:var(--text-3);">Transparência {{ item.checklist.score or 0 }}%</strong>
+        <div style="display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.35rem;">
+          {% set chk = item.checklist %}
+          <span class="badge" style="{% if chk.tem_numero %}background:rgba(52,211,153,.12);color:#6ee7b7;{% else %}background:rgba(248,113,113,.1);color:#fca5a5;{% endif %}">{% if chk.tem_numero %}✓{% else %}✗{% endif %} nº</span>
+          <span class="badge" style="{% if chk.tem_data %}background:rgba(52,211,153,.12);color:#6ee7b7;{% else %}background:rgba(248,113,113,.1);color:#fca5a5;{% endif %}">{% if chk.tem_data %}✓{% else %}✗{% endif %} data</span>
+          <span class="badge" style="{% if chk.tem_valor %}background:rgba(52,211,153,.12);color:#6ee7b7;{% else %}background:rgba(248,113,113,.1);color:#fca5a5;{% endif %}">{% if chk.tem_valor %}✓{% else %}✗{% endif %} valor</span>
+          <span class="badge" style="{% if chk.tem_orgao %}background:rgba(52,211,153,.12);color:#6ee7b7;{% else %}background:rgba(248,113,113,.1);color:#fca5a5;{% endif %}">{% if chk.tem_orgao %}✓{% else %}✗{% endif %} órgão</span>
+          <span class="badge" style="{% if chk.tem_objeto %}background:rgba(52,211,153,.12);color:#6ee7b7;{% else %}background:rgba(248,113,113,.1);color:#fca5a5;{% endif %}">{% if chk.tem_objeto %}✓{% else %}✗{% endif %} objeto</span>
+          <span class="badge" style="{% if chk.tem_fundamentacao %}background:rgba(52,211,153,.12);color:#6ee7b7;{% else %}background:rgba(248,113,113,.1);color:#fca5a5;{% endif %}">{% if chk.tem_fundamentacao %}✓{% else %}✗{% endif %} fundamentação</span>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if item.validacao and item.validacao.flags %}
+      <p style="font-size:.82rem; color:var(--amber); margin:.4rem 0;">
+        ⚠ Anti-alucinação removeu: {{ item.validacao.flags | map(attribute='campo') | join(', ') }}
+      </p>
+      {% endif %}
+
+      {% if item.temas %}
+      <div class="ia-tags">
+        {% for tag in item.temas.split(',') %}
+        <span class="ia-tag">#{{ tag.strip() }}</span>
+        {% endfor %}
+      </div>
+      {% elif item.tags %}
       <div class="ia-tags">
         {% for tag in item.tags.split(',') %}
         <span class="ia-tag">#{{ tag.strip() }}</span>
         {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if painel_pub_id == item.id and painel_data %}
+      <div style="margin:1rem 0; padding:1rem; border:1px solid var(--accent); border-radius:var(--radius-sm); background:var(--surface);">
+        {% if painel_tipo == 'similares' %}
+        <strong>Atos similares</strong>
+        {% if painel_data.ia and painel_data.ia.resumo %}
+        <p style="white-space:pre-wrap; margin:.5rem 0; line-height:1.5;">{{ painel_data.ia.resumo }}</p>
+        {% if painel_data.ia.diferencas %}
+        <ul style="margin:.25rem 0 0; padding-left:1.1rem; color:var(--text-2); font-size:.9rem;">
+          {% for d in painel_data.ia.diferencas %}<li>{{ d }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% endif %}
+        {% if painel_data.candidatos %}
+        <ul style="list-style:none; padding:0; margin:.75rem 0 0;">
+          {% for c in painel_data.candidatos %}
+          <li style="padding:.4rem 0; border-top:1px solid var(--border); font-size:.9rem;">
+            <a href="/edicoes/{{ c.edicao_id }}">{{ c.tipo or "Ato" }} {{ c.numero or "" }}</a>
+            <span style="color:var(--text-3);"> · {{ c.orgao or "—" }} · {{ c.valor or "" }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% elif painel_tipo == 'timeline' %}
+        <strong>Linha do tempo</strong>
+        <p style="white-space:pre-wrap; margin:.5rem 0; line-height:1.5;">{{ painel_data.narrativa }}</p>
+        {% if painel_data.itens %}
+        <ol style="margin:.5rem 0 0; padding-left:1.2rem; font-size:.9rem; color:var(--text-2);">
+          {% for c in painel_data.itens %}
+          <li style="margin:.25rem 0;">
+            {% if c.edicao_id %}<a href="/edicoes/{{ c.edicao_id }}">{% endif %}
+            {{ c.data_publicacao or c.data_documento or "?" }} — {{ c.tipo or "Ato" }} {{ c.numero or "" }}
+            {% if c.edicao_id %}</a>{% endif %}
+            {% if c.valor %} · {{ c.valor }}{% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+        {% endif %}
+        {% endif %}
       </div>
       {% endif %}
 
@@ -87,6 +172,12 @@
           <button type="submit" class="btn btn-secondary btn-small">✨ Explicar</button>
         </form>
         {% endif %}
+        <form method="post" action="/publicacoes/{{ item.id }}/similares" style="margin:0;display:inline;">
+          <button type="submit" class="btn btn-secondary btn-small">🔗 Similares</button>
+        </form>
+        <form method="post" action="/publicacoes/{{ item.id }}/timeline" style="margin:0;display:inline;">
+          <button type="submit" class="btn btn-secondary btn-small">📅 Linha do tempo</button>
+        </form>
         <form method="post" action="/publicacoes/{{ item.id }}/feedback" class="feedback-form" style="display:inline-flex;gap:.35rem;margin:0;">
           <input type="hidden" name="next" value="/edicoes/{{ edicao.id }}">
           <button type="submit" name="feedback" value="correto" class="btn btn-secondary btn-small {% if item.feedback == 'correto' %}is-active-ok{% endif %}" title="Marcar como correto">✓ Certo</button>

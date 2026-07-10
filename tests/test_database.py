@@ -120,12 +120,19 @@ class TestInsertPublicacoesIA:
                     "importancia_motivo": "valor e decreto",
                     "notificar_ia": True,
                     "explicacao_ia": "Explica em linguagem simples.",
+                    "temas": "obra, fiscal",
+                    "partes_ia": {"publico_afetado": "servidores", "contratada": None},
+                    "checklist_ia": {"tem_numero": True, "score": 80, "faltando": []},
+                    "validacao_ia": {"ok": True, "flags": []},
+                    "anomalia": True,
+                    "anomalia_motivo": "valor alto",
                 }
             ],
         )
         conn = sqlite3.connect(database.SETTINGS.db_path)
         row = conn.execute(
-            "SELECT importancia, importancia_motivo, notificar_ia, explicacao_ia "
+            "SELECT importancia, importancia_motivo, notificar_ia, explicacao_ia, "
+            "temas, anomalia, anomalia_motivo, partes_ia "
             "FROM publicacoes WHERE edicao_id=?",
             (eid,),
         ).fetchone()
@@ -135,6 +142,43 @@ class TestInsertPublicacoesIA:
         assert "decreto" in (row[1] or "").casefold()
         assert row[2] == 1
         assert "linguagem" in (row[3] or "")
+        assert "obra" in (row[4] or "")
+        assert row[5] == 1
+        assert "alto" in (row[6] or "")
+        assert "servidores" in (row[7] or "")
+
+    def test_ranking_e_temas(self, db):
+        import database
+
+        database.init_db()
+        eid = database.insert_or_get_edicao(
+            "https://example.com/ed-rank.pdf", "Ed Rank", "2026-07-05"
+        )
+        database.insert_publicacoes(
+            eid,
+            [
+                {
+                    "pagina": 1,
+                    "tipo": "Decreto",
+                    "orgao": "Prefeitura",
+                    "temas": "obra, saude",
+                    "trecho": "x",
+                },
+                {
+                    "pagina": 2,
+                    "tipo": "Portaria",
+                    "orgao": "Prefeitura",
+                    "temas": "rh",
+                    "trecho": "y",
+                },
+            ],
+        )
+        rank = database.ranking_publicacoes(desde="2026-01-01", ate="2026-12-31")
+        assert rank["tipos"]
+        assert rank["orgaos"]
+        temas = database.contar_temas(desde="2026-01-01")
+        keys = {t["tema"] for t in temas}
+        assert "obra" in keys or "rh" in keys
 
     def test_salvar_auditoria_so_mencao(self, db):
         import database

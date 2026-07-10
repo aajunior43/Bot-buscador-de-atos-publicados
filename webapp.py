@@ -541,6 +541,87 @@ def explicar_publicacao(
     return RedirectResponse(url=dest, status_code=303)
 
 
+@app.post("/publicacoes/{pub_id}/similares")
+def pub_similares(pub_id: int, next: str = Form("")) -> RedirectResponse:
+    pub = database.get_publicacao_by_id(pub_id)
+    ed_id = pub.get("edicao_id") if pub else None
+    if next.strip().startswith("/"):
+        dest = next.strip()
+    elif ed_id:
+        dest = f"/edicoes/{ed_id}?painel=similares&pub={pub_id}"
+    else:
+        dest = "/"
+    return RedirectResponse(url=dest, status_code=303)
+
+
+@app.post("/publicacoes/{pub_id}/timeline")
+def pub_timeline(pub_id: int, next: str = Form("")) -> RedirectResponse:
+    pub = database.get_publicacao_by_id(pub_id)
+    ed_id = pub.get("edicao_id") if pub else None
+    if next.strip().startswith("/"):
+        dest = next.strip()
+    elif ed_id:
+        dest = f"/edicoes/{ed_id}?painel=timeline&pub={pub_id}"
+    else:
+        dest = "/"
+    return RedirectResponse(url=dest, status_code=303)
+
+
+@app.get("/inteligencia", response_class=HTMLResponse)
+def pagina_inteligencia(
+    request: Request,
+    desde: str = Query(""),
+    ate: str = Query(""),
+) -> HTMLResponse:
+    """Painel #12 temas, #14 ranking, #13 LRF, #3 anomalias."""
+    database.init_db()
+    d = desde.strip() or None
+    a = ate.strip() or None
+    ranking = database.ranking_publicacoes(desde=d, ate=a, limit=12)
+    temas = database.contar_temas(desde=d, ate=a, limit=24)
+    lrf = database.listar_radar_lrf(limit=30)
+    anomalias = database.listar_anomalias(limit=25)
+    return templates.TemplateResponse(
+        request,
+        "inteligencia.html",
+        {
+            "desde": desde.strip(),
+            "ate": ate.strip(),
+            "ranking": ranking,
+            "temas": temas,
+            "lrf": lrf,
+            "anomalias": anomalias,
+        },
+    )
+
+
+@app.post("/revisao/so-mencao/{edicao_id}/triagem")
+def triagem_lote_edicao(edicao_id: int) -> RedirectResponse:
+    """#5 — triagem IA em lote das menções da edição."""
+    from ai_processor import triar_ruidos_lote
+
+    database.init_db()
+    ed = None
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT id, titulo FROM edicoes WHERE id = ?", (edicao_id,)
+        ).fetchone()
+        if row:
+            ed = dict(row)
+    if not ed:
+        return RedirectResponse(url="/revisao/so-mencao", status_code=303)
+    mencoes = database.get_mencoes_edicao(edicao_id, limit=15)
+    result = triar_ruidos_lote(mencoes, titulo=ed.get("titulo") or "")
+    if result is not None:
+        import json as _json
+
+        database.set_setting(
+            f"triagem_lote_{edicao_id}",
+            _json.dumps(result, ensure_ascii=False),
+        )
+    return RedirectResponse(url=f"/revisao/so-mencao?edicao={edicao_id}", status_code=303)
+
+
 @app.get("/perguntar", response_class=HTMLResponse)
 def perguntar_atos(
     request: Request,
@@ -607,26 +688,22 @@ def detecoes_redirect() -> RedirectResponse:
 def revisao_so_mencao(
     request: Request,
     todas: str = Query("", description="1 = inclui revisadas/ignoradas"),
+    edicao: int = Query(0, description="id para destacar triagem"),
 ) -> HTMLResponse:
     """Fila humana: tem_inaja sem publicações."""
     database.init_db()
     incluir = todas.strip() in {"1", "true", "sim", "yes"}
     raw = database.listar_edicoes_so_mencao(incluir_revisadas=incluir)
-    # Enriquece com JSON da auditoria IA (classificação / motivo)
+    # Enriquece com JSON da auditoria IA / FN / triagem
     edicoes = []
     for row in raw:
         item = dict(row)
         aud_raw = item.get("auditoria_so_mencao") or ""
-        item["auditoria"] = None
-        if aud_raw:
-            try:
-                import json as _json
-
-                parsed = _json.loads(aud_raw) if isinstance(aud_raw, str) else aud_raw
-                if isinstance(parsed, dict):
-                    item["auditoria"] = parsed
-            except Exception:
-                item["auditoria"] = {"motivo": str(aud_raw)[:200]}
+        item["auditoria"] = _parse_json_field(aud_raw)
+        fn_raw = item.get("fn_sugestao") or ""
+        item["fn"] = _parse_json_field(fn_raw) or item["auditoria"]
+        tri_raw = database.get_setting(f"triagem_lote_{item['id']}", "")
+        item["triagem"] = _parse_json_field(tri_raw)
         edicoes.append(item)
     # Contagens globais
     with _conn() as conn:
@@ -653,6 +730,7 @@ def revisao_so_mencao(
         {
             "edicoes": edicoes,
             "incluir_revisadas": incluir,
+            "destaque_edicao": int(edicao or 0),
             "stats": {
                 "total": len(edicoes),
                 "pendentes": pendentes,
@@ -832,11 +910,37 @@ def analisar_lote_pendentes(limite: int = Form(5), request: Request = None, form
 # Detalhe de edição
 # ---------------------------------------------------------------------------
 
+def _parse_json_field(raw) -> dict | list | None:
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, (dict, list)):
+        return raw
+    try:
+        import json as _json
+
+        return _json.loads(raw)
+    except Exception:
+        return None
+
+
+def _enrich_publicacao_row(row) -> dict:
+    item = dict(row)
+    item["partes"] = _parse_json_field(item.get("partes_ia"))
+    item["checklist"] = _parse_json_field(item.get("checklist_ia"))
+    item["validacao"] = _parse_json_field(item.get("validacao_ia"))
+    return item
+
+
 @app.get("/edicoes/{edicao_id}", response_class=HTMLResponse)
-def edicao_detail(request: Request, edicao_id: int) -> HTMLResponse:
+def edicao_detail(
+    request: Request,
+    edicao_id: int,
+    painel: str = Query("", description="similares|timeline"),
+    pub: int = Query(0, description="id da publicação do painel"),
+) -> HTMLResponse:
     with _conn() as conn:
         edicao = _row_or_404(conn, "SELECT * FROM edicoes WHERE id = ?", (edicao_id,))
-        publicacoes = conn.execute(
+        publicacoes_raw = conn.execute(
             """
             SELECT *
             FROM publicacoes
@@ -864,6 +968,13 @@ def edicao_detail(request: Request, edicao_id: int) -> HTMLResponse:
             except Exception:
                 logger.debug("Não foi possível abrir PDF para contar páginas: %s", edicao["caminho_local"])
 
+    publicacoes = [_enrich_publicacao_row(r) for r in publicacoes_raw]
+    painel_data = None
+    painel_tipo = (painel or "").strip().casefold()
+    painel_pub_id = int(pub or 0)
+    if painel_tipo in {"similares", "timeline"} and painel_pub_id:
+        painel_data = _build_painel_pub(painel_tipo, painel_pub_id)
+
     return templates.TemplateResponse(
         request,
         "edicao.html",
@@ -872,8 +983,68 @@ def edicao_detail(request: Request, edicao_id: int) -> HTMLResponse:
             "publicacoes": publicacoes,
             "mencoes": mencoes,
             "num_paginas": num_paginas,
+            "painel_tipo": painel_tipo,
+            "painel_pub_id": painel_pub_id,
+            "painel_data": painel_data,
         },
     )
+
+
+def _build_painel_pub(tipo: str, pub_id: int) -> dict | None:
+    """Monta painel de similares (#8) ou timeline (#7)."""
+    pub = database.get_publicacao_by_id(pub_id)
+    if not pub:
+        return None
+    if tipo == "timeline":
+        from ai_processor import narrar_linha_tempo
+
+        rel = database.buscar_pubs_relacionadas(
+            numero=pub.get("numero"),
+            tipo=pub.get("tipo"),
+            orgao=pub.get("orgao"),
+            excluir_id=pub_id,
+            limit=12,
+        )
+        cadeia = [pub] + rel
+        # se só o próprio e sem número, tenta só por tipo contratual
+        if len(cadeia) <= 1 and not (pub.get("numero") or "").strip():
+            rel = database.buscar_pubs_relacionadas(
+                tipo=pub.get("tipo") or "contrato",
+                orgao=pub.get("orgao"),
+                excluir_id=pub_id,
+                limit=8,
+            )
+            cadeia = [pub] + rel
+        narrativa = None
+        if getattr(SETTINGS, "ai_timeline", True) and len(cadeia) >= 1:
+            narrativa = narrar_linha_tempo(cadeia)
+        return {
+            "tipo": "timeline",
+            "itens": cadeia,
+            "narrativa": narrativa
+            or (
+                "Cadeia local (sem narrativa IA)."
+                if len(cadeia) > 1
+                else "Nenhum ato relacionado encontrado no acervo."
+            ),
+        }
+    if tipo == "similares":
+        from ai_processor import comparar_com_similares
+        from inteligencia import query_similares_de_pub, rankear_publicacoes
+
+        base = database.buscar_publicacoes_texto(limit=400)
+        base = [b for b in base if b.get("id") != pub_id]
+        q = query_similares_de_pub(pub)
+        cands = rankear_publicacoes(q, base, limit=6)
+        ia_out = None
+        if getattr(SETTINGS, "ai_similares", True) and cands:
+            ia_out = comparar_com_similares(pub, cands)
+        return {
+            "tipo": "similares",
+            "candidatos": cands,
+            "ia": ia_out,
+        }
+    return None
 
 
 @app.head("/edicoes/{edicao_id}")

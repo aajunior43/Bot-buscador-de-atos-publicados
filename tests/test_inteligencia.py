@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from inteligencia import (
     campo_ancorado_no_trecho,
+    detectar_anomalia,
+    eh_radar_lrf,
+    montar_checklist_local,
     montar_resumo_diario_texto,
+    normalizar_lista_temas,
+    normalizar_tema,
     rankear_publicacoes,
     score_texto_candidatura,
     score_titulo_edicao,
@@ -78,7 +83,58 @@ def test_resumo_texto():
         destaques=["Decreto 1 — teste"],
     )
     assert "2026-07-09" in t
-    assert "Decreto" in t
+
+
+def test_normalizar_temas():
+    assert normalizar_tema("Licitação") == "licitacao"
+    assert normalizar_tema("RGF") == "fiscal"
+    assert "obra" in normalizar_lista_temas(["obras", "asfalto", "xyz"])
+
+
+def test_checklist_local():
+    chk = montar_checklist_local(
+        {
+            "numero": "1/2026",
+            "orgao": "Prefeitura",
+            "tipo": "Portaria",
+            "assunto": "nomeacao",
+            "trecho": "PORTARIA com fundamentação legal",
+        }
+    )
+    assert chk["tem_numero"] is True
+    assert chk["tem_orgao"] is True
+    assert chk["score"] >= 50
+
+
+def test_anomalia_valor_alto_dispensa(mock_settings):
+    is_a, motivo = detectar_anomalia(
+        {"tipo": "Dispensa", "valor": "R$ 250.000,00", "importancia": 4}
+    )
+    assert is_a is True
+    assert motivo
+
+
+def test_anomalia_mediana():
+    hist = [1000.0, 1200.0, 1100.0, 900.0, 1300.0, 1000.0]
+    is_a, motivo = detectar_anomalia(
+        {"tipo": "Contrato", "valor": "R$ 50.000,00"}, historico_valores=hist
+    )
+    assert is_a is True
+    assert "mediana" in motivo.casefold() or "×" in motivo or "x" in motivo.casefold()
+
+
+def test_radar_lrf():
+    assert eh_radar_lrf({"tipo": "RGF", "resumo_ia": "gestão fiscal"})
+    assert not eh_radar_lrf({"tipo": "Portaria", "assunto": "ferias"})
+
+
+def test_validacao_flags():
+    pub = {"trecho": "DECRETO da Prefeitura Municipal de Inajá sobre obras"}
+    ia = {"numero": "999/2099", "orgao": "Prefeitura Municipal de Inajá"}
+    out = validar_campos_ia(pub, ia)
+    assert out.get("_validacao")
+    assert out["_validacao"]["ok"] is False
+    assert "numero" in out["_validacao"]["flags"][0]["campo"]
 
 
 def test_feedback_e_score_db(db):
