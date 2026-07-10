@@ -37,13 +37,35 @@ _TELEGRAM_MAX = 4096
 _MDV2_SPECIAL = re.compile(r"([_*\[\]()~`>#+\-=|{}.!\\])")
 
 
+def _telegram_creds() -> tuple[str, str]:
+    """Token e chat_id: settings DB sobrescreve .env."""
+    try:
+        import database as db
+
+        token = (db.get_setting("telegram_bot_token", "") or "").strip()
+        chat = (db.get_setting("telegram_chat_id", "") or "").strip()
+    except Exception:
+        token, chat = "", ""
+    if not token:
+        token = SETTINGS.telegram_bot_token
+    if not chat:
+        chat = SETTINGS.telegram_chat_id
+    return token, chat
+
+
 def _get_bot() -> Bot:
     """Retorna instância singleton do Bot, reutilizando a sessão HTTP."""
     global _bot_instance
+    token, _ = _telegram_creds()
     with _bot_lock:
+        # Se a chave mudou no Admin, recria o bot
+        cur = getattr(_get_bot, "_token_used", None)
+        if _bot_instance is None or cur != token:
+            _bot_instance = Bot(token=token) if token else None
+            _get_bot._token_used = token  # type: ignore[attr-defined]
         if _bot_instance is None:
-            _bot_instance = Bot(token=SETTINGS.telegram_bot_token)
-    return _bot_instance
+            raise RuntimeError("TELEGRAM_BOT_TOKEN vazio")
+        return _bot_instance
 
 
 def _escape_mdv2(texto: str) -> str:
@@ -151,8 +173,11 @@ def montar_mensagem(resultado: DetectionResult, edicao: Edicao) -> str:
 
 async def _enviar_telegram(mensagem: str) -> None:
     bot = _get_bot()
+    _, chat_id = _telegram_creds()
+    if not chat_id:
+        raise RuntimeError("TELEGRAM_CHAT_ID vazio")
     await bot.send_message(
-        chat_id=SETTINGS.telegram_chat_id,
+        chat_id=chat_id,
         text=_truncar_mensagem(mensagem),
         parse_mode="MarkdownV2",
         disable_web_page_preview=False,
@@ -325,7 +350,8 @@ def notificar(resultado: DetectionResult, edicao: Edicao) -> None:
     erro_str = None
 
     # 1. Telegram com retry (até 2 tentativas, intervalo de 3s)
-    if SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id:
+    tg_token, tg_chat = _telegram_creds()
+    if tg_token and tg_chat:
         try:
             _enviar_telegram_com_retry(mensagem)
             database.mark_notified(resultado.edicao_id)
@@ -335,12 +361,12 @@ def notificar(resultado: DetectionResult, edicao: Edicao) -> None:
         except Exception as exc:
             erro_str = str(exc)
             logger.error("Telegram falhou após 2 tentativas; tentando fallback.")
-    elif SETTINGS.telegram_bot_token and not SETTINGS.telegram_chat_id:
+    elif tg_token and not tg_chat:
         logger.warning(
             "TELEGRAM_BOT_TOKEN definido, mas TELEGRAM_CHAT_ID está vazio — "
-            "alertas irão para e-mail/arquivo. Configure o chat.id no .env."
+            "alertas irão para e-mail/arquivo. Configure o chat.id no .env ou Admin."
         )
-    elif not SETTINGS.telegram_bot_token:
+    elif not tg_token:
         logger.debug("Telegram não configurado (sem TELEGRAM_BOT_TOKEN).")
 
     # 2. E-mail: como fallback OU como cópia simultânea se notify_email_always=True
@@ -414,7 +440,8 @@ def verificar_ausencia_publicacao() -> None:
     )
 
 
-def enviar_teste() -> None:
+def enviar_teste() -> dict:
+    """Envia notificação de teste. Retorna dict com canal e status."""
     resultado = DetectionResult(
         encontrado=True,
         edicao_id=0,
@@ -430,4 +457,33 @@ def enviar_teste() -> None:
         titulo="Mensagem de teste",
         data_publicacao=datetime.now().date().isoformat(),
     )
+    token, chat = _telegram_creds()
     notificar(resultado, edicao)
+    # Inferir canal pelo estado das credenciais + arquivo
+    if token and chat:
+        canal = "telegram"
+        detalhe = "Tentativa via Telegram (verifique o chat)."
+    elif token and not chat:
+        canal = "arquivo"
+        detalhe = "Token ok, mas CHAT_ID vazio — gravou em alertas/."
+    else:
+        canal = "arquivo"
+        detalhe = "Telegram não configurado — gravou em alertas/."
+    return {
+        "ok": True,
+        "canal": canal,
+        "detalhe": detalhe,
+        "token_presente": bool(token),
+        "chat_id_presente": bool(chat),
+    }
+
+
+def status_telegram() -> dict:
+    token, chat = _telegram_creds()
+    return {
+        "token_presente": bool(token),
+        "chat_id_presente": bool(chat),
+        "pronto": bool(token and chat),
+        "token_masked": ("…" + token[-6:]) if token and len(token) > 6 else ("***" if token else ""),
+        "chat_id": chat if chat else "",
+    }

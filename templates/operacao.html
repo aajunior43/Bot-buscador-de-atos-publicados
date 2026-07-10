@@ -3,15 +3,13 @@
 {% block content %}
 
 <section class="detail-hero fade-in">
-  <p class="eyebrow">Operação · Oficina do bot</p>
+  <p class="eyebrow">Operação · Cockpit unificado</p>
   <h1>Painel operacional</h1>
   <p class="hero-copy">
-    <strong>Ciclo único:</strong> a interface (WEB) só detecta e cadastra edições;
-    o rastreador (BOT) processa OCR, IA e notificações sozinho.
-    Use esta área para acompanhar o ciclo ou forçar ações manuais.
+    Automação (WEB + BOT) e fila de jobs na mesma tela.
+    WEB cadastra edições; BOT faz OCR, IA e alertas.
   </p>
   <div class="pg-nav-row" style="margin-top:.75rem;">
-    <a class="btn btn-secondary" href="/status">Fila de jobs →</a>
     <a class="btn btn-secondary" href="/edicoes-detectadas">Edições →</a>
     <a class="btn btn-secondary" href="/admin">Admin / Agente →</a>
     <a class="btn btn-secondary" href="/revisao/so-mencao">Revisão →</a>
@@ -37,10 +35,89 @@
   </article>
 </section>
 
+<nav class="tabs-nav fade-in" id="ops-tabs" role="tablist" style="margin:1rem 0;">
+  <a class="tab-btn {% if tab != 'fila' %}active{% endif %}" href="/operacao?tab=automacao" role="tab">Automação</a>
+  <a class="tab-btn {% if tab == 'fila' %}active{% endif %}" href="/operacao?tab=fila" role="tab">Fila de jobs</a>
+</nav>
+
+{% if tab == 'fila' %}
+{# ---- ABA FILA (conteúdo completo) ---- #}
+<section class="stats-grid fade-in">
+  <article id="stat-rodando"><strong>{{ resumo.rodando or 0 }}</strong><span>Rodando</span></article>
+  <article id="stat-avisos"><strong>{{ resumo.avisos or 0 }}</strong><span>Avisos</span></article>
+  <article id="stat-erros"><strong>{{ resumo.erros or 0 }}</strong><span>Erros</span></article>
+  <article id="stat-concluidos"><strong>{{ resumo.concluidos or 0 }}</strong><span>Concluídos</span></article>
+</section>
+
+<section class="panel fade-in">
+  <div class="panel-head">
+    <div>
+      <h2>Histórico operacional</h2>
+      <span>agrupado por edição (últimos 200) · SSE</span>
+    </div>
+    <form action="/status/limpar" method="post" onsubmit="return confirm('Limpar histórico de jobs finalizados?');" style="margin:0;">
+      <button type="submit" class="btn btn-secondary" style="padding:.4rem .8rem;font-size:.8rem;">Limpar histórico</button>
+    </form>
+  </div>
+  <div class="live-strip" style="margin:0 1.5rem;">
+    <span class="live-dot"></span>
+    <span>Atualização automática</span>
+    <span id="last-refresh">carregado agora</span>
+  </div>
+  <div class="filter-bar status-filter-bar" style="margin:1rem 1.5rem 0;">
+    <button type="button" class="filter-btn active" data-status-filter="all">Todos</button>
+    <button type="button" class="filter-btn" data-status-filter="erro">Erros</button>
+    <button type="button" class="filter-btn" data-status-filter="aviso">Avisos</button>
+    <button type="button" class="filter-btn" data-status-filter="concluido">Concluídos</button>
+    <button type="button" class="filter-btn" data-status-filter="rodando">Rodando</button>
+  </div>
+  <div class="status-groups" id="status-groups">
+    {% for grupo in grupos %}
+    <article class="status-group status-{{ grupo.status }}">
+      <header class="status-group-head">
+        <div class="status-main">
+          <span class="status-dot"></span>
+          <div>
+            <strong>{{ grupo.titulo }}</strong>
+            <small>
+              {% if grupo.data_publicacao %}{{ grupo.data_publicacao }}{% else %}sem data{% endif %}
+              · {{ grupo.jobs|length }} etapa(s)
+              · {{ grupo.atualizado_em }}
+            </small>
+          </div>
+        </div>
+        <div>
+          <span class="status-pill">{{ grupo.status }}</span>
+          {% if grupo.edicao_id %}
+          <a class="status-link" href="/edicoes/{{ grupo.edicao_id }}">Abrir edição ↗</a>
+          {% endif %}
+        </div>
+      </header>
+      <ol class="timeline">
+        {% for job in grupo.jobs|reverse %}
+        <li class="timeline-item status-{{ job.status }}">
+          <span class="timeline-marker"></span>
+          <div>
+            <strong>{{ job.etapa }}</strong>
+            <small>{{ job.status }} · {{ job.atualizado_em }}</small>
+            {% if job.mensagem %}<p>{{ job.mensagem }}</p>{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </article>
+    {% else %}
+    <p class="empty" style="padding:1.5rem;">Nenhum evento ainda. Rode o BOT ou processe uma edição.</p>
+    {% endfor %}
+  </div>
+</section>
+
+{% else %}
+{# ---- ABA AUTOMAÇÃO ---- #}
 <section class="panel fade-in" style="margin-bottom:1.25rem;">
   <div class="panel-head">
-    <h2>Fila de jobs (resumo)</h2>
-    <a href="/status">Ver fila completa →</a>
+    <h2>Fila (preview)</h2>
+    <a href="/operacao?tab=fila">Abrir aba Fila completa →</a>
   </div>
   <div class="stats-grid stats-grid-compact" style="padding:1rem 1.5rem;">
     <article {% if fila_resumo and fila_resumo.rodando %}class="stat-alert"{% endif %}>
@@ -60,20 +137,15 @@
   <div style="padding:0 1.5rem 1.25rem;overflow-x:auto;">
     <table class="status-table">
       <thead>
-        <tr><th>Quando</th><th>Status</th><th>Etapa</th><th>Edição</th><th>Msg</th></tr>
+        <tr><th>Quando</th><th>Status</th><th>Etapa</th><th>Edição</th></tr>
       </thead>
       <tbody>
-        {% for j in jobs_recentes %}
+        {% for j in jobs_recentes[:8] %}
         <tr>
           <td>{{ j.atualizado_em or '—' }}</td>
           <td>{{ j.status }}</td>
           <td>{{ j.etapa }}</td>
-          <td>
-            {% if j.edicao_id %}
-            <a href="/edicoes/{{ j.edicao_id }}">{{ j.data_publicacao or j.edicao_id }}</a>
-            {% else %}—{% endif %}
-          </td>
-          <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ (j.mensagem or '')[:80] }}</td>
+          <td>{% if j.edicao_id %}<a href="/edicoes/{{ j.edicao_id }}">{{ j.data_publicacao or j.edicao_id }}</a>{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -395,9 +467,69 @@
   </div>
 </section>
 
+{% endif %}{# tab automacao vs fila #}
+
 {% endblock %}
 
 {% block scripts %}
+{% if tab == 'fila' %}
+<script>
+const refreshEl = document.getElementById('last-refresh');
+let isRunning = {{ resumo.rodando or 0 }} > 0;
+function atualizarResumo() {
+  fetch('/api/status', {cache: 'no-store'}).then(r => r.json()).then(jobs => {
+    const c = {rodando:0, aviso:0, erro:0, concluido:0};
+    jobs.forEach(j => {
+      if (j.status === 'concluido') c.concluido++;
+      else if (j.status === 'aviso') c.aviso++;
+      else if (j.status === 'erro') c.erro++;
+      else if (j.status === 'rodando') c.rodando++;
+    });
+    const set = (id, v) => { const el = document.querySelector(id + ' strong'); if (el) el.textContent = v; };
+    set('#stat-rodando', c.rodando);
+    set('#stat-avisos', c.aviso);
+    set('#stat-erros', c.erro);
+    set('#stat-concluidos', c.concluido);
+    if (refreshEl) refreshEl.textContent = 'última atualização: ' + new Date().toLocaleTimeString('pt-BR');
+    if (c.rodando > 0 && !isRunning) { isRunning = true; setTimeout(() => location.reload(), 3000); }
+  }).catch(() => {});
+}
+if (window.EventSource) {
+  const source = new EventSource('/api/eventos');
+  source.onmessage = function(event) {
+    try {
+      const data = JSON.parse(event.data);
+      const n = data.rodando ? data.rodando.length : 0;
+      if (n > 0 || isRunning) {
+        atualizarResumo();
+        if (n === 0 && isRunning) { isRunning = false; setTimeout(() => location.reload(), 2000); }
+        else if (n > 0 && !isRunning) { isRunning = true; setTimeout(() => location.reload(), 2000); }
+      }
+    } catch(e) {}
+  };
+} else { setInterval(atualizarResumo, 10000); }
+atualizarResumo();
+document.querySelectorAll('.status-filter-bar .filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.status-filter-bar .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filter = btn.dataset.statusFilter;
+    document.querySelectorAll('#status-groups .status-group').forEach(group => {
+      if (filter === 'all') { group.style.display = ''; return; }
+      const groupMatches = group.classList.contains('status-' + filter);
+      let any = false;
+      group.querySelectorAll('.timeline-item').forEach(item => {
+        const m = item.classList.contains('status-' + filter);
+        item.style.display = m ? '' : 'none';
+        if (m) any = true;
+      });
+      group.style.display = (groupMatches || any) ? '' : 'none';
+    });
+  });
+});
+</script>
+{% else %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="/static/operacao.js"></script>
+{% endif %}
 {% endblock %}

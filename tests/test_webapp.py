@@ -75,6 +75,27 @@ def test_operacao_hub(db):
     assert "BOT · processamento" in response.text
     assert "Avançado" in response.text
     assert "Heartbeat" in response.text or "BOT online" in response.text or "BOT offline" in response.text
+    assert "tab=automacao" in response.text or "Automação" in response.text
+    assert "tab=fila" in response.text or "Fila de jobs" in response.text
+
+
+def test_operacao_aba_fila(db):
+    """Aba Fila do cockpit unificado lista histórico de jobs."""
+    database.start_job("ocr", titulo="Ed Teste Fila", edicao_id=None, mensagem="ok")
+    client = TestClient(app)
+    r = client.get("/operacao?tab=fila")
+    assert r.status_code == 200
+    assert "Histórico operacional" in r.text
+    assert "Rodando" in r.text or "Concluídos" in r.text
+    assert "Ed Teste Fila" in r.text or "ocr" in r.text
+
+
+def test_status_redireciona_para_operacao_fila(db):
+    client = TestClient(app)
+    r = client.get("/status", follow_redirects=False)
+    assert r.status_code in (301, 302, 303, 307, 308)
+    assert "/operacao" in r.headers.get("location", "")
+    assert "fila" in r.headers.get("location", "")
 
 
 def test_api_automacao(db):

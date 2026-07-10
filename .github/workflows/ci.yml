@@ -28,10 +28,20 @@ jobs:
         env:
           AI_REFINE_PUBLICATIONS: "false"
           OPENCODE_API_KEY: ""
-        run: pytest tests/ -q --tb=short
+          ADMIN_GATE_PASSWORD: "1999"
+        run: |
+          python -m pytest tests/ -q --tb=short --junitxml=pytest-report.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: pytest-report.xml
+          if-no-files-found: ignore
 
       - name: Ruff check (non-blocking soft)
         continue-on-error: true
         run: |
           pip install ruff
-          ruff check . --exclude scripts --exclude edicoes
+          ruff check . --exclude scripts --exclude edicoes --exclude __pycache__

@@ -59,7 +59,7 @@
             <span class="nav-group-label">Operar</span>
             <a href="/operacao" {% if p == '/operacao' %}class="active"{% endif %} title="Painel (g p)">Painel</a>
             <a href="/edicoes-detectadas" {% if p.startswith('/edicoes') %}class="active"{% endif %} title="Edições (g d)">Edições</a>
-            <a href="/status" {% if p == '/status' %}class="active"{% endif %} title="Fila de jobs (g f)">Fila</a>
+            <a href="/operacao?tab=fila" {% if p == '/status' or (p == '/operacao' and request.query_params.get('tab') == 'fila') %}class="active"{% endif %} title="Fila de jobs (g f)">Fila</a>
             <a href="/revisao/so-mencao" class="nav-hide-md{% if p.startswith('/revisao') %} active{% endif %}" title="Revisão (g r)">Revisão</a>
             <a href="/notificacoes" class="nav-hide-md{% if p == '/notificacoes' %} active{% endif %}" title="Alertas (g l)">Alertas</a>
           </div>

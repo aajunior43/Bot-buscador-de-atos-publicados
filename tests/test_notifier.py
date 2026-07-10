@@ -135,6 +135,42 @@ class TestNotificar:
             mock_post.assert_called()
 
 
+class TestTelegramStatusETeste:
+    def test_status_telegram_sem_creds(self, db, mock_settings):
+        from notifier import status_telegram
+
+        with patch("notifier.SETTINGS", mock_settings):
+            st = status_telegram()
+        assert st["token_presente"] is False
+        assert st["chat_id_presente"] is False
+        assert st["pronto"] is False
+        assert st["chat_id"] == ""
+
+    def test_status_telegram_db_override(self, db, mock_settings):
+        import database
+        from notifier import status_telegram
+
+        database.set_setting("telegram_bot_token", "123456:ABCDEFtoken")
+        database.set_setting("telegram_chat_id", "-100999")
+        with patch("notifier.SETTINGS", mock_settings):
+            st = status_telegram()
+        assert st["token_presente"] is True
+        assert st["chat_id_presente"] is True
+        assert st["pronto"] is True
+        assert st["chat_id"] == "-100999"
+        assert st["token_masked"].startswith("…") or st["token_masked"] == "***"
+
+    def test_enviar_teste_retorna_dict_arquivo(self, db, mock_settings):
+        from notifier import enviar_teste
+
+        with patch("notifier.SETTINGS", mock_settings), \
+             patch("notifier._disparar_webhooks"):
+            info = enviar_teste()
+        assert info["ok"] is True
+        assert info["canal"] == "arquivo"
+        assert "token_presente" in info
+
+
 class TestEscapeMarkdownV2:
     def test_escapa_caracteres_especiais(self):
         from notifier import _escape_mdv2

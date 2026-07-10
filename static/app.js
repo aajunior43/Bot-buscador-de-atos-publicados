@@ -456,7 +456,7 @@
       e: "/exportar",
       p: "/operacao",
       d: "/edicoes-detectadas",
-      f: "/status",
+      f: "/operacao?tab=fila",
       r: "/revisao/so-mencao",
       l: "/notificacoes",
       m: "/admin",

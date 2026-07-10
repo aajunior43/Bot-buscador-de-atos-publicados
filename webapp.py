@@ -485,12 +485,17 @@ def atos_alias(
 
 
 @app.get("/operacao", response_class=HTMLResponse)
-def operacao(request: Request) -> HTMLResponse:
-    """Hub operacional: ciclo automático, fila ao vivo, saúde e gráficos."""
+def operacao(
+    request: Request,
+    tab: str = Query("automacao", description="automacao | fila"),
+) -> HTMLResponse:
+    """Hub operacional: abas Automação + Fila (cockpit unificado)."""
+    tab_n = (tab or "automacao").strip().casefold()
+    if tab_n not in {"automacao", "fila"}:
+        tab_n = "automacao"
     with _conn() as conn:
         stats = _stats_basicos(conn)
         atividade = _atividade_atual(conn)
-        # Resumo compacto da fila de jobs (cockpit unificado)
         fila_resumo = {
             "rodando": conn.execute(
                 "SELECT COUNT(*) FROM jobs WHERE status='rodando'"
@@ -500,6 +505,9 @@ def operacao(request: Request) -> HTMLResponse:
             ).fetchone()[0],
             "concluido": conn.execute(
                 "SELECT COUNT(*) FROM jobs WHERE status='concluido'"
+            ).fetchone()[0],
+            "aviso": conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status='aviso'"
             ).fetchone()[0],
         }
         jobs_recentes = [
@@ -518,6 +526,18 @@ def operacao(request: Request) -> HTMLResponse:
     metricas = database.get_metricas_qualidade()
     automacao = database.get_status_automacao()
     resumo = database.get_resumo_diario()
+    fila_full = (
+        _dados_fila_jobs()
+        if tab_n == "fila"
+        else {"resumo": None, "grupos": []}
+    )
+    resumo_fila = fila_full.get("resumo") or {
+        "rodando": fila_resumo["rodando"],
+        "avisos": fila_resumo["aviso"],
+        "erros": fila_resumo["erro"],
+        "concluidos": fila_resumo["concluido"],
+        "total": 0,
+    }
     return templates.TemplateResponse(
         request,
         "operacao.html",
@@ -530,6 +550,9 @@ def operacao(request: Request) -> HTMLResponse:
             "resumo_diario": resumo,
             "fila_resumo": fila_resumo,
             "jobs_recentes": jobs_recentes,
+            "tab": tab_n,
+            "resumo": resumo_fila,
+            "grupos": fila_full.get("grupos") or [],
         },
     )
 
@@ -1092,13 +1115,13 @@ def edicao_detail_head(edicao_id: int) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Status
+# Status / Fila (unificado no Painel)
 # ---------------------------------------------------------------------------
 
-@app.get("/status", response_class=HTMLResponse)
-def status_page(request: Request) -> HTMLResponse:
+def _dados_fila_jobs() -> dict:
+    """Resumo + grupos de jobs para o cockpit /status e /operacao?tab=fila."""
     with _conn() as conn:
-        resumo = conn.execute(
+        row = conn.execute(
             """
             SELECT
               SUM(CASE WHEN status = 'rodando' THEN 1 ELSE 0 END) AS rodando,
@@ -1109,6 +1132,13 @@ def status_page(request: Request) -> HTMLResponse:
             FROM jobs
             """
         ).fetchone()
+        resumo = {
+            "rodando": int(row["rodando"] or 0) if row else 0,
+            "avisos": int(row["avisos"] or 0) if row else 0,
+            "erros": int(row["erros"] or 0) if row else 0,
+            "concluidos": int(row["concluidos"] or 0) if row else 0,
+            "total": int(row["total"] or 0) if row else 0,
+        }
         jobs = conn.execute(
             """
             SELECT j.*, e.data_publicacao, e.url
@@ -1151,22 +1181,27 @@ def status_page(request: Request) -> HTMLResponse:
             grupo["status"] = "rodando"
         elif job["status"] == "aviso" and grupo["status"] not in {"erro", "rodando"}:
             grupo["status"] = "aviso"
-        if job["atualizado_em"] > grupo["atualizado_em"]:
+        if job["atualizado_em"] and (
+            not grupo["atualizado_em"] or job["atualizado_em"] > grupo["atualizado_em"]
+        ):
             grupo["atualizado_em"] = job["atualizado_em"]
 
-    grupos = sorted(grupos, key=lambda grupo: grupo["atualizado_em"], reverse=True)
-
-    return templates.TemplateResponse(
-        request,
-        "status.html",
-        {"resumo": resumo, "jobs": jobs, "grupos": grupos},
+    grupos = sorted(
+        grupos, key=lambda g: g["atualizado_em"] or "", reverse=True
     )
+    return {"resumo": resumo, "jobs": jobs, "grupos": grupos}
+
+
+@app.get("/status", response_class=HTMLResponse)
+def status_page(request: Request) -> RedirectResponse:
+    """Compat: Fila passa a viver no Painel (aba Fila)."""
+    return RedirectResponse("/operacao?tab=fila", status_code=302)
 
 
 @app.post("/status/limpar")
 def limpar_status_jobs() -> RedirectResponse:
     database.clear_jobs_history()
-    return RedirectResponse("/status", status_code=303)
+    return RedirectResponse("/operacao?tab=fila", status_code=303)
 
 
 
@@ -1345,6 +1380,21 @@ def _admin_bool_setting(chave: str, fallback: bool) -> bool:
     return raw in {"1", "true", "yes", "on", "sim"}
 
 
+def _telegram_status_admin() -> dict:
+    try:
+        from notifier import status_telegram
+
+        return status_telegram()
+    except Exception:
+        return {
+            "token_presente": bool(SETTINGS.telegram_bot_token),
+            "chat_id_presente": bool(SETTINGS.telegram_chat_id),
+            "pronto": bool(SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id),
+            "token_masked": "",
+            "chat_id": SETTINGS.telegram_chat_id or "",
+        }
+
+
 def _admin_ctx(msg: str = "", teste_resultado: str | None = None) -> dict:
     api_key = database.get_setting("opencode_api_key", "") or SETTINGS.opencode_api_key
     model = database.get_setting("opencode_model", "") or SETTINGS.opencode_model
@@ -1386,6 +1436,7 @@ def _admin_ctx(msg: str = "", teste_resultado: str | None = None) -> dict:
         "msg": msg,
         "teste_resultado": teste_resultado,
         "agente": agente_st,
+        "telegram": _telegram_status_admin(),
         "agente_env": {
             "pulse_s": SETTINGS.agente_pulse_segundos,
             "cerebro_min": SETTINGS.agente_cerebro_minutos,
@@ -1512,10 +1563,23 @@ async def admin_salvar(request: Request) -> RedirectResponse:
         "smtp_from": str(form.get("smtp_from", "")),
         "webhook_url": str(form.get("webhook_url", "")),
         "absence_alert_days": str(form.get("absence_alert_days", "30")),
+        "telegram_bot_token": str(form.get("telegram_bot_token", "")),
+        "telegram_chat_id": str(form.get("telegram_chat_id", "")),
     }
     for chave, valor in fields.items():
         if valor.strip():
             database.set_setting(chave, valor.strip())
+            # Reflete em memória para notifier/BOT sem reiniciar
+            if chave == "telegram_bot_token":
+                try:
+                    object.__setattr__(SETTINGS, "telegram_bot_token", valor.strip())
+                except Exception:
+                    pass
+            if chave == "telegram_chat_id":
+                try:
+                    object.__setattr__(SETTINGS, "telegram_chat_id", valor.strip())
+                except Exception:
+                    pass
     # Toggle AI refine (hidden false + checkbox true)
     try:
         vals = [str(v).strip().lower() for v in form.getlist("ai_refine_publications")]
@@ -1855,6 +1919,23 @@ def admin_api_qualidade(request: Request, modo: str = "tudo") -> JSONResponse:
     finally:
         sys.argv = old
     return JSONResponse({"ok": True, "texto": buf.getvalue()})
+
+
+@app.post("/admin/api/telegram/testar")
+def admin_api_telegram_testar(request: Request) -> JSONResponse:
+    """Envia notificação de teste e devolve canal usado."""
+    _admin_require(request)
+    from notifier import enviar_teste, status_telegram
+
+    try:
+        info = enviar_teste()
+    except Exception as exc:
+        return JSONResponse(
+            {"ok": False, "erro": str(exc)[:200], "status": status_telegram()},
+            status_code=500,
+        )
+    info["status"] = status_telegram()
+    return JSONResponse(info)
 
 
 @app.post("/admin/api/ferramenta/{nome}")

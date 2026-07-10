@@ -86,6 +86,34 @@ def test_admin_form_post_redirects_when_locked(db, mock_settings, monkeypatch):
     assert r.headers.get("location", "").startswith("/admin")
 
 
+def test_admin_api_telegram_testar_requer_login(db, mock_settings, monkeypatch):
+    client = _client(db, mock_settings, monkeypatch)
+    r = client.post("/admin/api/telegram/testar")
+    assert r.status_code == 401
+
+
+def test_admin_api_telegram_testar_logado(db, mock_settings, monkeypatch):
+    client = _client(db, mock_settings, monkeypatch)
+    _login(client)
+    r = client.post("/admin/api/telegram/testar")
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("ok") is True
+    assert "canal" in data
+    assert "status" in data
+    assert "token_presente" in data["status"]
+
+
+def test_admin_login_mostra_campos_telegram(db, mock_settings, monkeypatch):
+    client = _client(db, mock_settings, monkeypatch)
+    _login(client)
+    r = client.get("/admin")
+    assert r.status_code == 200
+    assert "telegram_bot_token" in r.text
+    assert "telegram_chat_id" in r.text
+    assert "btn-tg-test" in r.text
+
+
 def test_admin_api_agent_controls_require_gate(db, mock_settings, monkeypatch):
     client = _client(db, mock_settings, monkeypatch)
     for path in (
