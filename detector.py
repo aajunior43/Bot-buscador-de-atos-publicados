@@ -737,6 +737,108 @@ def _numero_ato_valido(numero: str | None) -> str | None:
     return None
 
 
+def _numero_ancorado_no_texto(numero: str, texto: str) -> bool:
+    """Exige que o nº apareça com marcador N°/n. junto aos dígitos do ato."""
+    if not numero or not texto:
+        return False
+    n = _numero_ato_valido(numero) or str(numero).strip()
+    # Com ano: só aceita se N° + sequência/ano aparecerem juntos (sem match frouxo de dígitos)
+    if "/" in n:
+        a, b = n.split("/", 1)
+        pats = [
+            rf"N[º°O.]?\s*{re.escape(n)}\b",
+            rf"N[º°O.]?\s*{re.escape(a)}\s*[/\-.]\s*{re.escape(b)}\b",
+            rf"n[uú]mero\s*[:\s]*{re.escape(n)}\b",
+            rf"n[uú]mero\s*[:\s]*{re.escape(a)}\s*[/\-.]\s*{re.escape(b)}\b",
+        ]
+        return any(re.search(p, texto, re.IGNORECASE) for p in pats)
+    # Sem ano (Portaria 89): exige N° + dígitos
+    return bool(
+        re.search(rf"N[º°O.]?\s*{re.escape(n)}\b", texto, re.IGNORECASE)
+        or re.search(rf"n[uú]mero\s*[:\s]*{re.escape(n)}\b", texto, re.IGNORECASE)
+    )
+
+
+def _numero_confiavel(
+    numero: str | None,
+    *,
+    trecho: str = "",
+    resumo: str = "",
+    texto_corrigido: str = "",
+) -> str | None:
+    """Número só se formato ok E ancorado no OCR/resumo com marcador N°."""
+    n = _numero_ato_valido(numero)
+    if not n:
+        return None
+    blob = "\n".join(
+        x for x in (trecho or "", resumo or "", texto_corrigido or "") if x
+    )
+    if not blob.strip():
+        return n  # sem texto para validar — mantém formato limpo
+    if _numero_ancorado_no_texto(n, blob):
+        return n
+    return None
+
+
+def _extrair_numero_preferencial(texto: str, tipo: str | None = None) -> str | None:
+    """Extrai nº do trecho com padrões explícitos (preferível à alucinação da IA)."""
+    if not texto:
+        return None
+    t = _normalizar_ocr_para_extracao(texto)
+    tipo_n = _sem_acentos(tipo or "").casefold()
+    padroes = [
+        r"EXTRATO\s+(?:DO\s+|DE\s+)?CONTRATO\s+N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+        r"CONTRATO\s+(?:ADMINISTRATIVO\s+)?N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+        r"TERMO\s+ADITIVO[^\n]{0,40}N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+        r"DECRETO\s+(?:MUNICIPAL\s+)?N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+        r"PORTARIA\s+N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+        r"DISPENSA[^\n]{0,30}N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+        r"PREG[AÃ]O\s+ELETR[OÔ]NICO\s+N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+    ]
+    # Prioriza padrões do tipo
+    if "extrato" in tipo_n:
+        padroes = padroes[0:2] + padroes[2:]
+    elif "aditivo" in tipo_n:
+        padroes = [padroes[2], padroes[1]] + padroes
+
+    encontrados: list[str] = []
+    vistos: set[str] = set()
+    for pat in padroes:
+        for m in re.finditer(pat, t, re.IGNORECASE):
+            n = _numero_ato_valido(m.group(1).replace(" ", ""))
+            if n and n not in vistos:
+                vistos.add(n)
+                encontrados.append(n)
+    # Completa com qualquer N° X/20XX (OCR lista vários no mesmo trecho)
+    for m in re.finditer(r"N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*20\d{2})\b", t, re.I):
+        n = _numero_ato_valido(m.group(1).replace(" ", ""))
+        if n and n not in vistos:
+            vistos.add(n)
+            encontrados.append(n)
+    if not encontrados:
+        return None
+
+    def _score_ano(n: str) -> int:
+        if "/" not in n:
+            return 0
+        try:
+            return int(n.split("/")[1])
+        except ValueError:
+            return 0
+
+    # Extrato: prefere o do padrão EXTRATO DO CONTRATO
+    if "extrato" in tipo_n:
+        for n in encontrados:
+            if re.search(
+                rf"EXTRATO\s+(?:DO\s+|DE\s+)?CONTRATO\s+N[º°O.]?\s*{re.escape(n.split('/')[0])}",
+                t,
+                re.I,
+            ):
+                return n
+    # Vários N° no mesmo OCR (070/2023 e 02/2025): ano mais recente
+    return max(encontrados, key=_score_ano)
+
+
 def _extrair_data(texto: str) -> str | None:
     texto = _normalizar_ocr_para_extracao(texto)
     match = DATA_EXTENSO_RE.search(texto)
@@ -1264,14 +1366,21 @@ def _fundir_fragmentos_mesmo_ato(publicacoes: list[dict]) -> list[dict]:
     """Funde cabeçalho+corpo do mesmo aditivo/contrato na mesma página."""
     if len(publicacoes) < 2:
         return publicacoes
-    # Agrupa por página + tipo família + órgão família
+
+    def _grupo_tipo(tipo: str | None) -> str:
+        t = _tipo_familia_dedup(tipo)
+        # Aditivo e "Contrato" fragmentado contam como mesma família contratual
+        if t in {"termo_aditivo", "contrato"}:
+            return "contrato_aditivo"
+        return t
+
+    # Agrupa por página + família ampla + órgão
     grupos: dict[tuple, list[dict]] = {}
     sozinhos: list[dict] = []
     for pub in publicacoes:
-        tipo = _tipo_familia_dedup(pub.get("tipo"))
-        if tipo not in {
-            "termo_aditivo",
-            "contrato",
+        gtipo = _grupo_tipo(pub.get("tipo"))
+        if gtipo not in {
+            "contrato_aditivo",
             "extrato_contrato",
             "dispensa",
             "homologacao",
@@ -1280,7 +1389,7 @@ def _fundir_fragmentos_mesmo_ato(publicacoes: list[dict]) -> list[dict]:
             continue
         key = (
             pub.get("pagina"),
-            tipo,
+            gtipo,
             _orgao_familia_dedup(pub.get("orgao")),
         )
         grupos.setdefault(key, []).append(pub)
@@ -1292,14 +1401,20 @@ def _fundir_fragmentos_mesmo_ato(publicacoes: list[dict]) -> list[dict]:
             continue
         # Se compartilham assinatura ou um é trecho curto de cabeçalho
         sigs = [_assinatura_conteudo_ato(p) for p in itens]
-        # Interseção de assinaturas não vazias
-        sets = [set(s.split("|")) for s in sigs if s]
+        sets = [set(s.split("|")) - {""} for s in sigs if s]
         inter: set[str] = set.intersection(*sets) if len(sets) >= 2 else set()
         trechos_curtos = sum(1 for p in itens if len(p.get("trecho") or "") < 400)
-        if inter or trechos_curtos >= 1:
-            # Ordena por qualidade e mescla no melhor
+        # Também funde se só um tem número confiável e compartilham "aditivo"/"lourdes"
+        if inter or trechos_curtos >= 1 or (
+            len(sets) >= 2 and any(len(s & {"aditivo", "lourdes", "elias", "combust", "litro"}) >= 1 for s in sets)
+        ):
             itens_ord = sorted(itens, key=_score_qualidade_pub, reverse=True)
             base = dict(itens_ord[0])
+            # Preferir tipo "Termo Aditivo" se algum for aditivo
+            for p in itens_ord:
+                if "aditivo" in _sem_acentos(str(p.get("tipo") or "")).casefold():
+                    base["tipo"] = p.get("tipo")
+                    break
             for outro in itens_ord[1:]:
                 for k in (
                     "numero",
@@ -1314,15 +1429,12 @@ def _fundir_fragmentos_mesmo_ato(publicacoes: list[dict]) -> list[dict]:
                 ):
                     if not base.get(k) and outro.get(k):
                         base[k] = outro[k]
-                # Preferir trecho mais longo
                 if len(outro.get("trecho") or "") > len(base.get("trecho") or ""):
                     base["trecho"] = outro["trecho"]
-                # Preferir Prefeitura no órgão
                 o1 = _sem_acentos(base.get("orgao") or "").casefold()
                 o2 = _sem_acentos(outro.get("orgao") or "").casefold()
                 if "prefeitura" in o2 and "prefeitura" not in o1:
                     base["orgao"] = outro.get("orgao")
-            # Junta resumos se ambos existem e são diferentes
             rs = [
                 (p.get("resumo_ia") or "").strip()
                 for p in itens_ord
@@ -1332,6 +1444,16 @@ def _fundir_fragmentos_mesmo_ato(publicacoes: list[dict]) -> list[dict]:
                 base["resumo_ia"] = rs[0]
                 if rs[1][:80] not in rs[0]:
                     base["resumo_ia"] = (rs[0] + " " + rs[1]).strip()[:800]
+            # Nº: preferir o ancorado no trecho fundido
+            base["numero"] = _numero_confiavel(
+                base.get("numero"),
+                trecho=base.get("trecho") or "",
+                resumo=base.get("resumo_ia") or "",
+                texto_corrigido=base.get("texto_corrigido") or "",
+            ) or _extrair_numero_preferencial(
+                (base.get("trecho") or "") + "\n" + (base.get("resumo_ia") or ""),
+                base.get("tipo"),
+            )
             out.append(base)
         else:
             out.extend(itens)

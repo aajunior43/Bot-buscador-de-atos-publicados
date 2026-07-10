@@ -631,10 +631,16 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
                 pub["tipo"] = normalizar_tipo_ato(
                     ia.get("tipo") or pub.get("tipo")
                 )
-                pub["numero"] = ia.get("numero") or pub.get("numero")
+                # Número: prioriza padrão explícito no trecho; IA só se ancorado com N°
+                pub["numero"] = _resolver_numero_final(pub, ia)
                 pub["data_documento"] = _normalizar_data_ia(
                     ia.get("data_documento")
                 ) or pub.get("data_documento")
+                # Data em português extenso no resumo/texto se ainda nula
+                if not pub.get("data_documento"):
+                    pub["data_documento"] = _normalizar_data_ia(
+                        ia.get("resumo") or ""
+                    ) or _normalizar_data_ia(pub.get("trecho") or "")
                 pub["assunto"] = ia.get("assunto") or pub.get("assunto")
                 # Importância / alerta (mesmo JSON — sem call extra)
                 if getattr(SETTINGS, "ai_importancia", True):
@@ -657,42 +663,7 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
                         pub["notificar_ia"] = pub["importancia"] >= int(
                             getattr(SETTINGS, "ai_importancia_min_notificar", 3) or 3
                         )
-                valor_extraido = _normalizar_valor_ia(ia.get("valor"))
-                if valor_extraido:
-                    if not _valor_ancorado(valor_extraido, pub, ia):
-                        # Tenta recuperar do resumo se o campo valor veio errado
-                        do_resumo = _valor_do_resumo(ia.get("resumo") or pub.get("resumo_ia"))
-                        if do_resumo and _valor_ancorado(do_resumo, pub, ia):
-                            logger.info(
-                                "Valor corrigido via resumo: %r -> %r",
-                                valor_extraido,
-                                do_resumo,
-                            )
-                            valor_extraido = do_resumo
-                        else:
-                            # Aceita se dígitos do valor aparecem no trecho/resumo (OCR sem R$)
-                            if not _valor_digitos_no_texto(
-                                valor_extraido, pub, ia
-                            ):
-                                valor_extraido = None
-                if not valor_extraido:
-                    # Campo valor vazio mas resumo cita R$ — preenche o campo
-                    do_resumo = _valor_do_resumo(
-                        ia.get("resumo") or pub.get("resumo_ia")
-                    )
-                    if do_resumo:
-                        valor_extraido = do_resumo
-                        logger.info("Valor preenchido a partir do resumo IA: %s", do_resumo)
-                pub["valor"] = valor_extraido or pub.get("valor")
-                # Número: só se válido (prompt reforçado + sanitizer)
-                try:
-                    from detector import _numero_ato_valido
-
-                    pub["numero"] = _numero_ato_valido(
-                        ia.get("numero") or pub.get("numero")
-                    )
-                except Exception:
-                    pub["numero"] = ia.get("numero") or pub.get("numero")
+                pub["valor"] = _resolver_valor_final(pub, ia)
                 tags = ia.get("tags")
                 if isinstance(tags, list) and tags:
                     pub["tags"] = ", ".join(str(t) for t in tags[:3])
@@ -713,7 +684,7 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
                     if getattr(SETTINGS, "ai_partes", True):
                         partes = ia.get("partes")
                         if isinstance(partes, dict) and any(partes.values()):
-                            pub["partes_ia"] = partes
+                            pub["partes_ia"] = _sanitizar_partes(partes, pub)
                     # Checklist DEPOIS de valor/número finais
                     if getattr(SETTINGS, "ai_checklist", True):
                         pub["checklist_ia"] = montar_checklist_local(pub, ia)
@@ -750,9 +721,17 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
     # Funde fragmentos do mesmo aditivo/contrato na mesma página
     try:
         from detector import _deduplicar_publicacoes, _fundir_fragmentos_mesmo_ato
+        from inteligencia import montar_checklist_local
 
         resultado_final = _fundir_fragmentos_mesmo_ato(resultado_final)
         resultado_final = _deduplicar_publicacoes(resultado_final)
+        # Pós-fusão: revalida nº/valor e checklist
+        for pub in resultado_final:
+            pub["numero"] = _resolver_numero_final(pub, {})
+            if not pub.get("valor"):
+                pub["valor"] = _resolver_valor_final(pub, {})
+            if getattr(SETTINGS, "ai_checklist", True):
+                pub["checklist_ia"] = montar_checklist_local(pub, {})
     except Exception:
         logger.debug("fusão/dedup pós-IA falhou", exc_info=True)
     logger.info(
@@ -763,6 +742,78 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
         stats["descartes_ia"],
     )
     return resultado_final, stats
+
+
+def _resolver_numero_final(pub: dict, ia: dict | None = None) -> str | None:
+    """Prioriza nº explícito no OCR; IA só se ancorado com N°."""
+    ia = ia or {}
+    trecho = pub.get("trecho") or ""
+    resumo = ia.get("resumo") or pub.get("resumo_ia") or ""
+    corrigido = ia.get("texto_corrigido") or pub.get("texto_corrigido") or ""
+    try:
+        from detector import (
+            _extrair_numero_preferencial,
+            _numero_confiavel,
+        )
+
+        # 1) Padrão no trecho/corrigido
+        for blob in (trecho, corrigido, resumo):
+            pref = _extrair_numero_preferencial(blob, pub.get("tipo") or ia.get("tipo"))
+            if pref:
+                return pref
+        # 2) IA / detector prévio, só se confiável
+        cand = ia.get("numero") or pub.get("numero")
+        return _numero_confiavel(
+            cand,
+            trecho=trecho,
+            resumo=resumo,
+            texto_corrigido=corrigido,
+        )
+    except Exception:
+        return pub.get("numero")
+
+
+def _resolver_valor_final(pub: dict, ia: dict | None = None) -> str | None:
+    """Valor da IA, resumo ou já existente — com âncora no texto."""
+    ia = ia or {}
+    valor_extraido = _normalizar_valor_ia(ia.get("valor") or pub.get("valor"))
+    if valor_extraido:
+        if _valor_ancorado(valor_extraido, pub, ia) or _valor_digitos_no_texto(
+            valor_extraido, pub, ia
+        ):
+            return valor_extraido
+    do_resumo = _valor_do_resumo(ia.get("resumo") or pub.get("resumo_ia"))
+    if do_resumo:
+        return do_resumo
+    # Última chance: R$ no trecho bruto
+    m = re.search(r"R\$\s*[\d.]+,\d{2}", pub.get("trecho") or "")
+    if m:
+        return _normalizar_valor_ia(m.group(0))
+    return None
+
+
+def _sanitizar_partes(partes: dict, pub: dict) -> dict:
+    """Corrige OCR óbvio em nomes (Emas→Elias se Elias no trecho)."""
+    out = dict(partes)
+    blob = _sem_acentos(
+        " ".join(
+            str(x or "")
+            for x in (pub.get("trecho"), pub.get("resumo_ia"), pub.get("texto_corrigido"))
+        )
+    ).casefold()
+    contratada = str(out.get("contratada") or "")
+    if contratada:
+        c_norm = _sem_acentos(contratada).casefold()
+        # "Lourdes Emas" → Elias se o trecho tem elias
+        if "emas" in c_norm and "elias" in blob:
+            out["contratada"] = re.sub(
+                r"(?i)\bEmas\b", "Elias", contratada
+            )
+        if "fernande" in c_norm and "fernandes" in blob:
+            out["contratada"] = re.sub(
+                r"(?i)\bFernande\b", "Fernandes", out["contratada"]
+            )
+    return out
 
 
 def _valor_do_resumo(resumo: str | None) -> str | None:

@@ -18,6 +18,8 @@ from detector import (
     _orgao_de_outro_municipio,
     _mencao_generica_sem_palavra_isolada,
     _numero_ato_valido,
+    _numero_confiavel,
+    _extrair_numero_preferencial,
     _deduplicar_publicacoes,
     _deduplicar_mencoes,
     _chave_pub_dedup,
@@ -161,6 +163,19 @@ class TestNumeroAtoValido:
 
     def test_curto_ok(self):
         assert _numero_ato_valido("89") == "89"
+
+    def test_confiavel_exige_marcador(self):
+        trecho = "EXTRATO DO CONTRATO Nº 04/2026 decorrente do pregão"
+        assert _numero_confiavel("04/2026", trecho=trecho) == "04/2026"
+        # inventado sem N° no texto
+        assert (
+            _numero_confiavel("070/2023", trecho="aditivo de combustivel sem numero")
+            is None
+        )
+
+    def test_extrair_preferencial_contrato(self):
+        t = "PREFEITURA\nEXTRATO DO CONTRATO Nº 04/2026\nProcesso..."
+        assert _extrair_numero_preferencial(t, "Extrato de Contrato") == "04/2026"
 
 
 class TestDedupPublicacoes:
