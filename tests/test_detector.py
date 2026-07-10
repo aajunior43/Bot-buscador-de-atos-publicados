@@ -22,6 +22,7 @@ from detector import (
     _deduplicar_mencoes,
     _chave_pub_dedup,
     _contexto_marca_comercial,
+    _fundir_fragmentos_mesmo_ato,
     _termos,
     detectar,
 )
@@ -216,7 +217,38 @@ class TestDedupPublicacoes:
         assert out[0].get("numero") is None
 
 
+class TestFundirFragmentos:
+    def test_funde_aditivo_cabecalho_e_corpo(self):
+        pubs = [
+            {
+                "pagina": 6,
+                "tipo": "Termo Aditivo",
+                "numero": None,
+                "orgao": "Prefeitura Municipal de Inajá",
+                "trecho": "PREFEITURA QUINTO TERMO ADITIVO LOURDES ELIAS " * 5,
+                "resumo_ia": "Cabeçalho do quinto termo aditivo",
+            },
+            {
+                "pagina": 6,
+                "tipo": "Termo Aditivo",
+                "numero": None,
+                "orgao": "Município de Inajá",
+                "trecho": (
+                    "Município de Inajá aditivo 25% 25000 litros combustivel "
+                    "Lourdes Elias Fernandes contrato 02/2025 " * 8
+                ),
+                "resumo_ia": "Acréscimo de 25.000 litros de combustível",
+                "valor": None,
+            },
+        ]
+        out = _fundir_fragmentos_mesmo_ato(pubs)
+        assert len(out) == 1
+        assert "Prefeitura" in (out[0].get("orgao") or "")
+        assert out[0].get("resumo_ia")
+
+
 class TestDedupMencoes:
+
     def test_mesmo_trecho_fica_termo_especifico(self):
         trecho = "...PREFEITURA MUNICIPAL DE INAJÁ ESTADO DO PARANÁ..."
         mencoes = [

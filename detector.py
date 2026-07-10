@@ -1205,6 +1205,41 @@ def _orgao_familia_dedup(orgao: str | None) -> str:
     return o[:30] or "sem_orgao"
 
 
+def _assinatura_conteudo_ato(pub: dict) -> str:
+    """Assinatura semântica para fundir fragmentos (aditivo cabeçalho+corpo)."""
+    blob = _sem_acentos(
+        " ".join(
+            str(pub.get(k) or "")
+            for k in ("tipo", "assunto", "resumo_ia", "trecho", "partes_ia")
+        )
+    ).casefold()
+    blob = re.sub(r"\s+", " ", blob)
+    tokens = set(re.findall(r"[a-z0-9]{4,}", blob))
+    # Tokens fortes de identidade do ato
+    chaves = []
+    for kw in (
+        "lourdes",
+        "elias",
+        "fernandes",
+        "combust",
+        "litro",
+        "aditivo",
+        "quinto",
+        "elite",
+        "veiculo",
+        "picape",
+        "pickup",
+        "pregao",
+        "homolog",
+    ):
+        if any(kw in t for t in tokens) or kw in blob:
+            chaves.append(kw)
+    # Quantidades típicas
+    for m in re.finditer(r"\b(25\.?000|104\.?000|255\.?800)\b", blob):
+        chaves.append(m.group(1).replace(".", ""))
+    return "|".join(sorted(set(chaves))[:8])
+
+
 def _chave_pub_dedup(pub: dict) -> str:
     """Chave para evitar duplicar o mesmo ato (blocks + fallback + órgãos sinônimos)."""
     tipo = _tipo_familia_dedup(pub.get("tipo"))
@@ -1216,11 +1251,91 @@ def _chave_pub_dedup(pub: dict) -> str:
         # Mesmo nº + tipo + família de órgão (+ página se houver)
         # Prefeitura vs Município no mesmo extrato colapsam
         return f"{pag}|{tipo}|{num}|{fam}"
-    # Sem número: trecho normalizado (evita colapsar atos distintos)
+    # Sem número: mesma página + tipo + assinatura de conteúdo (funde aditivo partido)
+    sig = _assinatura_conteudo_ato(pub)
+    if sig and tipo in {"termo_aditivo", "contrato", "extrato_contrato", "dispensa"}:
+        return f"{pag}|{tipo}|{fam}|sig:{sig}"
     trecho = _sem_acentos(str(pub.get("trecho") or "")[:200]).casefold()
     trecho = re.sub(r"\s+", " ", trecho)
-    # Prefixo estável do corpo (ignora cabeçalho curto variável)
     return f"{pag}|{tipo}|{fam}|{trecho[40:120] if len(trecho) > 80 else trecho[:80]}"
+
+
+def _fundir_fragmentos_mesmo_ato(publicacoes: list[dict]) -> list[dict]:
+    """Funde cabeçalho+corpo do mesmo aditivo/contrato na mesma página."""
+    if len(publicacoes) < 2:
+        return publicacoes
+    # Agrupa por página + tipo família + órgão família
+    grupos: dict[tuple, list[dict]] = {}
+    sozinhos: list[dict] = []
+    for pub in publicacoes:
+        tipo = _tipo_familia_dedup(pub.get("tipo"))
+        if tipo not in {
+            "termo_aditivo",
+            "contrato",
+            "extrato_contrato",
+            "dispensa",
+            "homologacao",
+        }:
+            sozinhos.append(pub)
+            continue
+        key = (
+            pub.get("pagina"),
+            tipo,
+            _orgao_familia_dedup(pub.get("orgao")),
+        )
+        grupos.setdefault(key, []).append(pub)
+
+    out: list[dict] = list(sozinhos)
+    for _key, itens in grupos.items():
+        if len(itens) == 1:
+            out.append(itens[0])
+            continue
+        # Se compartilham assinatura ou um é trecho curto de cabeçalho
+        sigs = [_assinatura_conteudo_ato(p) for p in itens]
+        # Interseção de assinaturas não vazias
+        sets = [set(s.split("|")) for s in sigs if s]
+        inter: set[str] = set.intersection(*sets) if len(sets) >= 2 else set()
+        trechos_curtos = sum(1 for p in itens if len(p.get("trecho") or "") < 400)
+        if inter or trechos_curtos >= 1:
+            # Ordena por qualidade e mescla no melhor
+            itens_ord = sorted(itens, key=_score_qualidade_pub, reverse=True)
+            base = dict(itens_ord[0])
+            for outro in itens_ord[1:]:
+                for k in (
+                    "numero",
+                    "valor",
+                    "resumo_ia",
+                    "assunto",
+                    "data_documento",
+                    "texto_corrigido",
+                    "partes_ia",
+                    "temas",
+                    "explicacao_ia",
+                ):
+                    if not base.get(k) and outro.get(k):
+                        base[k] = outro[k]
+                # Preferir trecho mais longo
+                if len(outro.get("trecho") or "") > len(base.get("trecho") or ""):
+                    base["trecho"] = outro["trecho"]
+                # Preferir Prefeitura no órgão
+                o1 = _sem_acentos(base.get("orgao") or "").casefold()
+                o2 = _sem_acentos(outro.get("orgao") or "").casefold()
+                if "prefeitura" in o2 and "prefeitura" not in o1:
+                    base["orgao"] = outro.get("orgao")
+            # Junta resumos se ambos existem e são diferentes
+            rs = [
+                (p.get("resumo_ia") or "").strip()
+                for p in itens_ord
+                if (p.get("resumo_ia") or "").strip()
+            ]
+            if len(rs) >= 2 and rs[0] != rs[1]:
+                base["resumo_ia"] = rs[0]
+                if rs[1][:80] not in rs[0]:
+                    base["resumo_ia"] = (rs[0] + " " + rs[1]).strip()[:800]
+            out.append(base)
+        else:
+            out.extend(itens)
+    return out
 
 
 def _score_qualidade_pub(pub: dict) -> float:

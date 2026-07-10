@@ -113,10 +113,15 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
 1. Analise apenas a publicação principal do trecho. Se houver duas publicações misturadas, extraia apenas a primeira/mais proeminente e ignore o restante no resumo.
 2. O campo "pertence_a_inaja" deve ser true APENAS se o órgão for da Prefeitura/Câmara/Município de Inajá. Se o texto mencionar outra cidade como órgão (ex: "Prefeitura Municipal de Cruzeiro do Sul"), retorne false.
 3. EXTRAÇÃO DE CAMPOS OBRIGATÓRIOS:
-   - "numero": busque "Nº", "nº", "N.", "n." seguido de dígitos (ex: "Decreto Nº 042/2026" → numero="042/2026"). Mesmo em "Lei nº 19" ou "Portaria n. 865/2026". Não invente números.
-   - "data_documento": busque datas no texto no formato "DD de MÊS de AAAA" ou "DD/MM/AAAA" e normalize para "DD/MM/AAAA". Toda publicação oficial costuma ter uma data — procure-a ativamente.
-   - "valor": busque valores "R$ X.XXX,XX" no texto da publicação. Para tipos "Dispensa", "Contrato", "Termo de Homologação", "Extrato de Contrato", geralmente há um valor. Só retorne null se realmente nenhum valor monetário for citado no texto da publicação. Não confunda valores monetários com números de processo, CPF, CNPJ ou datas.
-4. Nunca retorne valor corrupto ou alucinado: se o texto diz "R$ 19.876,00", NUNCA retorne "R$ 220" nem parte do valor. O valor deve ser o completo, lido diretamente da expressão "R$ ...".
+   - "numero": SOMENTE se o trecho tiver explicitamente "Nº"/"nº"/"N."/"n." (ou "Nº." OCR) + dígitos do ATO
+     (ex: "Decreto Nº 042/2026", "Contrato nº 04/2026", "Portaria n. 865/2026").
+     Se NÃO houver marcador de número de ato → numero=null. NUNCA invente, NUNCA use RG/CPF/processo/CNPJ/CEP/ano isolado.
+   - "data_documento": busque datas no texto no formato "DD de MÊS de AAAA" ou "DD/MM/AAAA" e normalize para "DD/MM/AAAA".
+     Só se a data aparecer no trecho; senão null.
+   - "valor": busque "R$ X.XXX,XX" no trecho. Para Dispensa/Contrato/Homologação/Extrato, em geral há valor.
+     Só null se realmente não houver. Não confunda com processo, CPF, CNPJ ou datas.
+4. Nunca retorne valor corrupto ou alucinado: se o texto diz "R$ 19.876,00", NUNCA retorne "R$ 220" nem parte do valor.
+   O valor deve ser o completo, lido da expressão "R$ ...". Se o OCR estiver ilegível, prefira null a inventar.
 5. OCR CONTEXTUAL (texto_corrigido): corrija erros típicos sem inventar fatos —
    nomes Inajá/Inaja → Inajá; CEP 87670-000; CNPJs 75.771.400/0001-48 e 76.970.318/0001-67;
    LEINº→LEI Nº; valores R$ com milhar; "Prefeitura Municipal de Inajá".
@@ -654,30 +659,40 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
                         )
                 valor_extraido = _normalizar_valor_ia(ia.get("valor"))
                 if valor_extraido:
-                    valor_norm = (
-                        _sem_acentos(valor_extraido)
-                        .casefold()
-                        .replace(" ", "")
-                        .replace("r$", "")
-                    )
-                    trecho_norm = _sem_acentos(pub.get("trecho", "")).casefold()
-                    resumo_norm = _sem_acentos(ia.get("resumo", "") or "").casefold()
-                    no_texto = (
-                        valor_norm in trecho_norm.replace(" ", "")
-                        or valor_norm in resumo_norm.replace(" ", "")
-                    )
-                    if not no_texto:
-                        match_resumo = re.search(
-                            r"R\$\s*[\d.,]+", ia.get("resumo", "") or ""
-                        )
-                        if match_resumo:
-                            valor_extraido = _normalizar_valor_ia(match_resumo.group(0))
+                    if not _valor_ancorado(valor_extraido, pub, ia):
+                        # Tenta recuperar do resumo se o campo valor veio errado
+                        do_resumo = _valor_do_resumo(ia.get("resumo") or pub.get("resumo_ia"))
+                        if do_resumo and _valor_ancorado(do_resumo, pub, ia):
                             logger.info(
-                                "Valor corrigido via sanity check: %r -> %r",
-                                ia.get("valor"),
+                                "Valor corrigido via resumo: %r -> %r",
                                 valor_extraido,
+                                do_resumo,
                             )
+                            valor_extraido = do_resumo
+                        else:
+                            # Aceita se dígitos do valor aparecem no trecho/resumo (OCR sem R$)
+                            if not _valor_digitos_no_texto(
+                                valor_extraido, pub, ia
+                            ):
+                                valor_extraido = None
+                if not valor_extraido:
+                    # Campo valor vazio mas resumo cita R$ — preenche o campo
+                    do_resumo = _valor_do_resumo(
+                        ia.get("resumo") or pub.get("resumo_ia")
+                    )
+                    if do_resumo:
+                        valor_extraido = do_resumo
+                        logger.info("Valor preenchido a partir do resumo IA: %s", do_resumo)
                 pub["valor"] = valor_extraido or pub.get("valor")
+                # Número: só se válido (prompt reforçado + sanitizer)
+                try:
+                    from detector import _numero_ato_valido
+
+                    pub["numero"] = _numero_ato_valido(
+                        ia.get("numero") or pub.get("numero")
+                    )
+                except Exception:
+                    pub["numero"] = ia.get("numero") or pub.get("numero")
                 tags = ia.get("tags")
                 if isinstance(tags, list) and tags:
                     pub["tags"] = ", ".join(str(t) for t in tags[:3])
@@ -699,6 +714,7 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
                         partes = ia.get("partes")
                         if isinstance(partes, dict) and any(partes.values()):
                             pub["partes_ia"] = partes
+                    # Checklist DEPOIS de valor/número finais
                     if getattr(SETTINGS, "ai_checklist", True):
                         pub["checklist_ia"] = montar_checklist_local(pub, ia)
                     if getattr(SETTINGS, "ai_anti_alucinacao", True):
@@ -731,6 +747,14 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
             logger.debug("detecção de anomalia falhou", exc_info=True)
 
     resultado_final = [r for r in refinadas if r is not None]
+    # Funde fragmentos do mesmo aditivo/contrato na mesma página
+    try:
+        from detector import _deduplicar_publicacoes, _fundir_fragmentos_mesmo_ato
+
+        resultado_final = _fundir_fragmentos_mesmo_ato(resultado_final)
+        resultado_final = _deduplicar_publicacoes(resultado_final)
+    except Exception:
+        logger.debug("fusão/dedup pós-IA falhou", exc_info=True)
     logger.info(
         "IA refinou %s de %s publicações (mantidas: %s, descartes_ia=%s)",
         sum(1 for r in resultado_final if r.get("resumo_ia")),
@@ -739,6 +763,65 @@ def refinar_publicacoes(publicacoes: list[dict]) -> tuple[list[dict], dict[str, 
         stats["descartes_ia"],
     )
     return resultado_final, stats
+
+
+def _valor_do_resumo(resumo: str | None) -> str | None:
+    if not resumo:
+        return None
+    m = re.search(r"R\$\s*[\d.]+,\d{2}", resumo)
+    if not m:
+        m = re.search(r"R\$\s*[\d.,]+", resumo)
+    if not m:
+        return None
+    return _normalizar_valor_ia(m.group(0))
+
+
+def _valor_ancorado(valor: str, pub: dict, ia: dict | None = None) -> bool:
+    """True se o valor (ou dígitos) aparece no trecho/resumo."""
+    ia = ia or {}
+    valor_norm = (
+        _sem_acentos(valor).casefold().replace(" ", "").replace("r$", "")
+    )
+    trecho_norm = _sem_acentos(pub.get("trecho", "")).casefold().replace(" ", "")
+    resumo_norm = (
+        _sem_acentos(ia.get("resumo") or pub.get("resumo_ia") or "")
+        .casefold()
+        .replace(" ", "")
+    )
+    if valor_norm and (
+        valor_norm in trecho_norm or valor_norm in resumo_norm
+    ):
+        return True
+    return _valor_digitos_no_texto(valor, pub, ia)
+
+
+def _valor_digitos_candidatos(valor: str) -> list[str]:
+    """Gera variantes de dígitos (com/sem centavos) para match em OCR sujo."""
+    digs = re.sub(r"\D", "", valor or "")
+    if len(digs) < 3:
+        return []
+    out = [digs]
+    # R$ 255.800,00 → digs=25580000; OCR pode ter só 255800
+    if len(digs) > 3 and digs.endswith("00"):
+        out.append(digs[:-2])
+    return out
+
+
+def _valor_digitos_no_texto(valor: str, pub: dict, ia: dict | None = None) -> bool:
+    """Aceita valor se a sequência de dígitos (sem formatação) está no OCR/resumo."""
+    candidatos = _valor_digitos_candidatos(valor)
+    if not candidatos:
+        return False
+    ia = ia or {}
+    blobs = [
+        re.sub(r"\D", "", pub.get("trecho") or ""),
+        re.sub(r"\D", "", ia.get("resumo") or pub.get("resumo_ia") or ""),
+        re.sub(r"\D", "", ia.get("texto_corrigido") or pub.get("texto_corrigido") or ""),
+    ]
+    for digs in candidatos:
+        if any(digs in b for b in blobs if b):
+            return True
+    return False
 
 
 def retry_pending_ia() -> int:

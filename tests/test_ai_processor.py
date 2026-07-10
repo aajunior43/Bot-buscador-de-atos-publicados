@@ -11,6 +11,8 @@ from ai_processor import (
     _normalizar_valor_ia,
     _normalizar_data_ia,
     _normalizar_orgao_ia,
+    _valor_do_resumo,
+    _valor_digitos_no_texto,
     normalizar_tipo_ato,
 )
 
@@ -135,7 +137,24 @@ class TestNormalizarTipo:
         assert normalizar_tipo_ato("") is None
 
 
+class TestValorDoResumo:
+    def test_extrai_reais(self):
+        assert _valor_do_resumo(
+            "Contrato no valor de R$ 255.800,00 para aquisição"
+        ) == "R$ 255.800,00"
+
+    def test_vazio(self):
+        assert _valor_do_resumo(None) is None
+        assert _valor_do_resumo("sem valor monetario") is None
+
+    def test_digitos_no_texto(self):
+        pub = {"trecho": "valor total 255800 reais estimado"}
+        assert _valor_digitos_no_texto("R$ 255.800,00", pub, {}) is True
+        assert _valor_digitos_no_texto("R$ 999.999,00", pub, {}) is False
+
+
 class TestHeuristicaImportancia:
+
     def test_licitacao_alta(self):
         assert _heuristica_importancia({"tipo": "Dispensa de Licitação"}) >= 4
 
