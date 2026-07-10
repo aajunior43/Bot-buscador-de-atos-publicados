@@ -5,6 +5,7 @@ __pycache__/
 edicoes/
 atos/
 alertas/
+exportacoes/
 logs/
 jornal_monitor.db
 jornal_monitor.db-shm
