@@ -14,11 +14,13 @@
   <form method="post" action="/admin/login" class="admin-form">
     {% if login_erro %}
     <div class="alert alert-error" style="margin-bottom:1rem;">{{ login_erro }}</div>
+    {% elif msg %}
+    <div class="alert alert-error" style="margin-bottom:1rem;">{{ msg }}</div>
     {% endif %}
     <div class="field">
       <label for="senha">Senha</label>
       <input type="password" id="senha" name="senha" placeholder="••••" autocomplete="current-password" autofocus required>
-      <small>Senha da porta Admin (padrão do sistema: <code>1999</code>).</small>
+      <small>Senha da porta Admin (variável <code>ADMIN_GATE_PASSWORD</code>).</small>
     </div>
     <button type="submit" class="btn" style="width:100%;margin-top:.75rem;">Entrar no Admin</button>
   </form>
@@ -191,7 +193,7 @@
         </div>
         <div class="field">
           <label for="absence_alert_days">Dias sem publicação para alerta</label>
-          <input type="number" id="absence_alert_days" name="absence_alert_days" value="30" min="1" max="365" style="max-width:120px;">
+          <input type="number" id="absence_alert_days" name="absence_alert_days" value="{{ absence_alert_days }}" min="1" max="365" style="max-width:120px;">
         </div>
       </div>
     </div>
@@ -225,7 +227,7 @@
           </div>
           <div class="field">
             <label for="smtp_from">Remetente</label>
-            <input type="text" id="smtp_from" name="smtp_from" value="{{ smtp_user }}">
+            <input type="text" id="smtp_from" name="smtp_from" value="{{ smtp_from }}">
           </div>
         </div>
       </div>
@@ -368,6 +370,15 @@
   const out = document.getElementById('ag-output');
   function setOut(t) { if (out) out.textContent = t || ''; }
 
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function fillStatus(st) {
     if (!st) return;
     const $ = id => document.getElementById(id);
@@ -387,23 +398,32 @@
         tbody.innerHTML = '<tr><td colspan="5">Sem registros.</td></tr>';
       } else {
         tbody.innerHTML = rows.map(r =>
-          '<tr><td>' + (r.criado_em||'') + '</td><td>' + (r.ciclo||'') +
-          '</td><td>' + (r.modo||'') + '</td><td>' + (r.acao||'') +
-          '</td><td>' + ((r.detalhe||'').slice(0,80)) + '</td></tr>'
+          '<tr><td>' + esc(r.criado_em) + '</td><td>' + esc(r.ciclo) +
+          '</td><td>' + esc(r.modo) + '</td><td>' + esc(r.acao) +
+          '</td><td>' + esc(String(r.detalhe || '').slice(0, 80)) + '</td></tr>'
         ).join('');
       }
     }
   }
 
+  function detailMsg(j, fallback) {
+    const d = j && j.detail;
+    if (typeof d === 'string') return d;
+    if (Array.isArray(d)) {
+      return d.map(x => (x && (x.msg || x.message)) || JSON.stringify(x)).join('; ');
+    }
+    return fallback || 'Erro';
+  }
+
   async function api(url, opts) {
     const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
     if (r.status === 401) {
-      alert('Sessão admin expirou. Recarregue e entre com a senha 1999.');
+      alert('Sessão admin expirou. Recarregue a página e entre novamente.');
       location.reload();
       throw new Error('401');
     }
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.detail || r.statusText);
+    if (!r.ok) throw new Error(detailMsg(j, r.statusText));
     return j;
   }
 

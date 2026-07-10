@@ -29,33 +29,47 @@
         {% set p = request.url.path %}
 
         <nav class="main-nav" id="main-nav" aria-label="Principal">
-          {# --- CONSULTAR: resultado final (atos, busca, análises, export) --- #}
+          {# --- CONSULTAR: núcleo --- #}
           <div class="nav-group" data-zone="consultar">
             <span class="nav-group-label">Consultar</span>
-            <a href="/" {% if p == '/' or p == '/atos' %}class="active"{% endif %} title="Publicações oficiais detectadas">Atos</a>
-            <a href="/perguntar" {% if p == '/perguntar' %}class="active"{% endif %} title="Pergunte à IA sobre os atos">Chat IA</a>
-            <a href="/inteligencia" {% if p == '/inteligencia' %}class="active"{% endif %} title="Gráficos, temas e anomalias">Análises</a>
-            <a href="/exportar" {% if p == '/exportar' %}class="active"{% endif %} title="CSV / JSON">Exportar</a>
+            <a href="/" {% if p == '/' or p == '/atos' %}class="active"{% endif %} title="Atos (g a)">Atos</a>
+            <a href="/perguntar" class="nav-hide-md{% if p == '/perguntar' %} active{% endif %}" title="Chat IA (g c)">Chat IA</a>
+            {# Secundários: dropdown "Mais" em ≥901px; links diretos no menu mobile #}
+            {% set mais_active = p == '/perguntar' or p == '/inteligencia' or p == '/exportar' or p == '/notificacoes' or p.startswith('/revisao') %}
+            <div class="nav-more{% if mais_active %} is-current{% endif %}" id="nav-more">
+              <button type="button" class="nav-more-btn" id="nav-more-btn" aria-expanded="false" aria-haspopup="menu" aria-controls="nav-more-menu" title="Mais páginas">
+                Mais ▾
+              </button>
+              <div class="nav-more-menu" id="nav-more-menu" role="menu" hidden>
+                <a href="/perguntar" role="menuitem" {% if p == '/perguntar' %}class="active"{% endif %}>Chat IA</a>
+                <a href="/inteligencia" role="menuitem" {% if p == '/inteligencia' %}class="active"{% endif %}>Análises</a>
+                <a href="/exportar" role="menuitem" {% if p == '/exportar' %}class="active"{% endif %}>Exportar</a>
+                <a href="/notificacoes" role="menuitem" {% if p == '/notificacoes' %}class="active"{% endif %}>Alertas</a>
+                <a href="/revisao/so-mencao" role="menuitem" {% if p.startswith('/revisao') %}class="active"{% endif %}>Revisão</a>
+              </div>
+            </div>
+            <a href="/inteligencia" class="nav-show-narrow{% if p == '/inteligencia' %} active{% endif %}" title="Análises (g n)">Análises</a>
+            <a href="/exportar" class="nav-show-narrow{% if p == '/exportar' %} active{% endif %}" title="Exportar (g e)">Exportar</a>
           </div>
 
           <div class="nav-divider" aria-hidden="true"></div>
 
-          {# --- OPERAR: trabalho diário do operador --- #}
+          {# --- OPERAR: diário --- #}
           <div class="nav-group" data-zone="operar">
             <span class="nav-group-label">Operar</span>
-            <a href="/operacao" {% if p == '/operacao' %}class="active"{% endif %} title="Cockpit: automação e resumo">Painel</a>
-            <a href="/edicoes-detectadas" {% if p.startswith('/edicoes') %}class="active"{% endif %} title="Edições do jornal e detecção">Edições</a>
-            <a href="/status" {% if p == '/status' %}class="active"{% endif %} title="Fila de OCR e jobs">Fila</a>
-            <a href="/revisao/so-mencao" {% if p.startswith('/revisao') %}class="active"{% endif %} title="Inajá sem ato completo — revisar">Revisão</a>
-            <a href="/notificacoes" {% if p == '/notificacoes' %}class="active"{% endif %} title="Histórico de alertas">Alertas</a>
+            <a href="/operacao" {% if p == '/operacao' %}class="active"{% endif %} title="Painel (g p)">Painel</a>
+            <a href="/edicoes-detectadas" {% if p.startswith('/edicoes') %}class="active"{% endif %} title="Edições (g d)">Edições</a>
+            <a href="/status" {% if p == '/status' %}class="active"{% endif %} title="Fila de jobs (g f)">Fila</a>
+            <a href="/revisao/so-mencao" class="nav-hide-md{% if p.startswith('/revisao') %} active{% endif %}" title="Revisão (g r)">Revisão</a>
+            <a href="/notificacoes" class="nav-hide-md{% if p == '/notificacoes' %} active{% endif %}" title="Alertas (g l)">Alertas</a>
           </div>
 
           <div class="nav-divider nav-divider-sys" aria-hidden="true"></div>
 
-          {# --- SISTEMA: admin e status ao vivo --- #}
+          {# --- SISTEMA --- #}
           <div class="nav-group nav-group-sys" data-zone="sistema">
             <span class="nav-group-label">Sistema</span>
-            <a href="/admin" class="nav-admin{% if p.startswith('/admin') %} active{% endif %}" title="Agente, IA, senha 1999">Admin</a>
+            <a href="/admin" class="nav-admin{% if p.startswith('/admin') %} active{% endif %}" title="Admin (g m)">Admin</a>
             <a href="/status" id="global-processing" class="global-processing" style="display:none;" title="Há jobs em execução">
               <span class="processing-dot"></span>Processando
             </a>

@@ -1199,15 +1199,33 @@ def imagem_pagina(edicao_id: int, pagina: int) -> FileResponse:
 
 
 # ---------------------------------------------------------------------------
-# Admin (senha de porta 1999 — cookie de sessão da aba Admin)
+# Admin (senha de porta — cookie de sessão da aba Admin)
 # ---------------------------------------------------------------------------
 
 import hashlib
 import os as _os
+import secrets as _secrets
+from urllib.parse import quote as _url_quote
 
 # Senha da porta Admin (sobrescrevível por ADMIN_GATE_PASSWORD no .env)
 ADMIN_GATE_PASSWORD = (_os.getenv("ADMIN_GATE_PASSWORD", "1999") or "1999").strip()
 ADMIN_GATE_COOKIE = "monitor_admin_gate"
+_ADMIN_LOCKED_DETAIL = "Admin bloqueado. Faça login na área Admin."
+
+
+class AdminGateError(Exception):
+    """Sessão admin ausente/expirada — API → 401 JSON; forms → redirect /admin."""
+
+
+@app.exception_handler(AdminGateError)
+async def _admin_gate_error_handler(request: Request, exc: AdminGateError) -> Response:
+    if request.url.path.startswith("/admin/api/"):
+        return JSONResponse(status_code=401, content={"detail": _ADMIN_LOCKED_DETAIL})
+    # Form POST/navegação: volta à tela de senha (evita página JSON crua).
+    return RedirectResponse(
+        "/admin?msg=" + _url_quote("Sessão admin expirada. Entre novamente."),
+        status_code=303,
+    )
 
 
 def _admin_gate_token() -> str:
@@ -1215,12 +1233,29 @@ def _admin_gate_token() -> str:
 
 
 def _admin_unlocked(request: Request) -> bool:
-    return request.cookies.get(ADMIN_GATE_COOKIE) == _admin_gate_token()
+    cookie = request.cookies.get(ADMIN_GATE_COOKIE) or ""
+    token = _admin_gate_token()
+    if not cookie or len(cookie) != len(token):
+        return False
+    return _secrets.compare_digest(cookie, token)
 
 
 def _admin_require(request: Request) -> None:
     if not _admin_unlocked(request):
-        raise HTTPException(status_code=401, detail="Admin bloqueado. Informe a senha 1999.")
+        raise AdminGateError()
+
+
+def _admin_cookie_secure(request: Request) -> bool:
+    if request.url.scheme == "https":
+        return True
+    return request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower() == "https"
+
+
+def _admin_bool_setting(chave: str, fallback: bool) -> bool:
+    raw = (database.get_setting(chave, "") or "").strip().lower()
+    if not raw:
+        return fallback
+    return raw in {"1", "true", "yes", "on", "sim"}
 
 
 def _admin_ctx(msg: str = "", teste_resultado: str | None = None) -> dict:
@@ -1229,25 +1264,35 @@ def _admin_ctx(msg: str = "", teste_resultado: str | None = None) -> dict:
     api_key_masked = (
         f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else ("***" if api_key else "")
     )
+    ai_refine = _admin_bool_setting("ai_refine_publications", SETTINGS.ai_refine_publications)
+    absence_raw = database.get_setting("absence_alert_days", "")
+    try:
+        absence_days = int(absence_raw) if absence_raw.strip() else int(SETTINGS.absence_alert_days)
+    except (TypeError, ValueError):
+        absence_days = int(SETTINGS.absence_alert_days)
     try:
         from agente import status_agente
 
         agente_st = status_agente()
     except Exception:
         agente_st = {}
+    smtp_user = database.get_setting("smtp_user", "") or SETTINGS.smtp_user
+    smtp_from = database.get_setting("smtp_from", "") or SETTINGS.smtp_from or smtp_user
     return {
         "api_key_configured": bool(api_key),
         "api_key_masked": api_key_masked,
         "model": model or "deepseek-v4-flash",
-        "ai_ativo": bool(api_key) and SETTINGS.ai_refine_publications,
-        "ai_refine": SETTINGS.ai_refine_publications,
+        "ai_ativo": bool(api_key) and ai_refine,
+        "ai_refine": ai_refine,
         "extra_terms": database.get_setting("extra_terms", "")
         or ",".join(SETTINGS.extra_terms),
         "ignore_terms": database.get_setting("ignore_terms", "")
         or ",".join(SETTINGS.ignore_context_terms),
+        "absence_alert_days": absence_days,
         "smtp_host": database.get_setting("smtp_host", "") or SETTINGS.smtp_host,
         "smtp_port": database.get_setting("smtp_port", "") or str(SETTINGS.smtp_port),
-        "smtp_user": database.get_setting("smtp_user", "") or SETTINGS.smtp_user,
+        "smtp_user": smtp_user,
+        "smtp_from": smtp_from,
         "smtp_to": database.get_setting("smtp_to", "") or SETTINGS.smtp_to,
         "webhook_url": database.get_setting("webhook_url", "") or SETTINGS.webhook_url,
         "webhooks": database.get_webhooks(),
@@ -1286,7 +1331,9 @@ def admin_page(request: Request, msg: str = "") -> HTMLResponse:
 async def admin_login(request: Request) -> Response:
     form = await request.form()
     senha = str(form.get("senha", "")).strip()
-    if senha != ADMIN_GATE_PASSWORD:
+    # compare_digest exige mesmo comprimento; fallback evita exceção em senha vazia
+    expected = ADMIN_GATE_PASSWORD
+    if not senha or len(senha) != len(expected) or not _secrets.compare_digest(senha, expected):
         return templates.TemplateResponse(
             request,
             "admin.html",
@@ -1297,12 +1344,16 @@ async def admin_login(request: Request) -> Response:
             },
             status_code=401,
         )
-    resp = RedirectResponse("/admin?msg=Admin+desbloqueado", status_code=303)
+    resp = RedirectResponse(
+        "/admin?msg=" + _url_quote("Admin desbloqueado"),
+        status_code=303,
+    )
     resp.set_cookie(
         ADMIN_GATE_COOKIE,
         _admin_gate_token(),
         httponly=True,
         samesite="lax",
+        secure=_admin_cookie_secure(request),
         max_age=60 * 60 * 12,  # 12h
         path="/",
     )
@@ -1324,7 +1375,7 @@ def admin_backup(request: Request) -> RedirectResponse:
         msg = f"Backup criado: {path.name}"
     except Exception as exc:
         msg = f"Falha no backup: {exc}"
-    return RedirectResponse(f"/admin?msg={msg}", status_code=303)
+    return RedirectResponse(f"/admin?msg={_url_quote(msg)}", status_code=303)
 
 
 @app.post("/admin/limpar-edicoes-antigas")
@@ -1332,7 +1383,7 @@ def limpar_edicoes_antigas(request: Request) -> RedirectResponse:
     _admin_require(request)
     database.delete_hnetsistemas_edicoes()
     return RedirectResponse(
-        "/admin?msg=Edições de sistema antigo removidas com sucesso!",
+        "/admin?msg=" + _url_quote("Edições de sistema antigo removidas com sucesso!"),
         status_code=303,
     )
 
@@ -1370,11 +1421,20 @@ async def admin_salvar(request: Request) -> RedirectResponse:
             object.__setattr__(SETTINGS, "ai_refine_publications", ai_on)
         except Exception:
             pass
+    absence_raw = fields.get("absence_alert_days", "").strip()
+    if absence_raw:
+        try:
+            object.__setattr__(SETTINGS, "absence_alert_days", max(1, min(365, int(absence_raw))))
+        except (TypeError, ValueError, Exception):
+            pass
     if fields.get("opencode_api_key", "").strip():
         from ai_processor import reset_auth_circuit
 
         reset_auth_circuit()
-    return RedirectResponse("/admin?msg=Configurações salvas com sucesso!", status_code=303)
+    return RedirectResponse(
+        "/admin?msg=" + _url_quote("Configurações salvas com sucesso!"),
+        status_code=303,
+    )
 
 
 @app.post("/admin/testar")
@@ -1462,10 +1522,15 @@ async def admin_api_agente_modo(request: Request) -> JSONResponse:
     _admin_require(request)
     from agente import MODOS, set_agente_modo, status_agente
 
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido. Envie {\"modo\": \"...\"}.")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="JSON inválido. Envie {\"modo\": \"...\"}.")
     modo = str(body.get("modo", "auto")).strip().casefold()
     if modo not in MODOS:
-        raise HTTPException(400, f"Modo inválido. Use: {', '.join(MODOS)}")
+        raise HTTPException(status_code=400, detail=f"Modo inválido. Use: {', '.join(MODOS)}")
     set_agente_modo(modo)
     return JSONResponse({"ok": True, "status": status_agente()})
 
@@ -1612,7 +1677,7 @@ def admin_api_ferramenta(request: Request, nome: str) -> JSONResponse:
         finally:
             sys.argv = old
         return JSONResponse({"ok": True, "msg": buf.getvalue()})
-    raise HTTPException(400, f"Ferramenta desconhecida: {nome}")
+    raise HTTPException(status_code=400, detail=f"Ferramenta desconhecida: {nome}")
 
 
 # ---------------------------------------------------------------------------
@@ -1692,6 +1757,26 @@ def api_atividade() -> dict:
 def api_automacao() -> dict:
     """Última/próxima varredura WEB, ciclo BOT e fila de OCR."""
     return database.get_status_automacao()
+
+
+@app.get("/api/agente/resumo")
+def api_agente_resumo() -> dict:
+    """Resumo público do agente (sem segredos) — chips do menu superior."""
+    try:
+        from agente import agente_esta_ativo, modo_efetivo, resolver_modo_auto
+
+        database.init_db()
+        modo = modo_efetivo()
+        efetivo = resolver_modo_auto() if modo == "auto" else modo
+        return {
+            "ativo": agente_esta_ativo(),
+            "modo": modo,
+            "modo_efetivo": efetivo,
+            "ultimo_pulse": database.get_setting("agente_ultimo_pulse", ""),
+            "ultimo_cerebro": database.get_setting("agente_ultimo_cerebro", ""),
+        }
+    except Exception as exc:
+        return {"ativo": False, "erro": str(exc)[:120]}
 
 
 @app.get("/api/buscar")

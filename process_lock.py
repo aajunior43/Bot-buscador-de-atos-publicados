@@ -7,7 +7,7 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 from config import SETTINGS
 
@@ -18,6 +18,86 @@ DEFAULT_LOCK = Path(os.getenv("PROCESS_LOCK_PATH", str(SETTINGS.log_dir / "proce
 
 class ProcessLockError(RuntimeError):
     """Não foi possível adquirir o lock a tempo."""
+
+
+def lock_age_minutes(path: Path | None = None) -> float | None:
+    """Idade do arquivo de lock em minutos (mtime), ou None se não existir."""
+    lock_path = path or DEFAULT_LOCK
+    if not lock_path.exists():
+        return None
+    try:
+        mtime = lock_path.stat().st_mtime
+        return max(0.0, (time.time() - mtime) / 60.0)
+    except OSError:
+        return 0.0
+
+
+def lock_holder_text(path: Path | None = None) -> str:
+    """Conteúdo textual do lock (``pid:label``), se legível."""
+    lock_path = path or DEFAULT_LOCK
+    if not lock_path.exists():
+        return ""
+    try:
+        raw = lock_path.read_text(encoding="utf-8", errors="replace").strip()
+        return raw.splitlines()[0].strip() if raw else ""
+    except OSError:
+        return ""
+
+
+def is_lock_held(path: Path | None = None) -> bool:
+    """True se outro processo/handle detém o lock OS (não apenas se o arquivo existe).
+
+    O arquivo ``processamento.lock`` permanece no disco após o unlock; usar
+    ``exists()`` sozinho gera falso positivo. Esta função faz probe non-blocking.
+    """
+    lock_path = path or DEFAULT_LOCK
+    if not lock_path.exists():
+        return False
+    try:
+        fh = open(lock_path, "r+b")
+    except OSError:
+        # Sem permissão / race de remoção — trate como não bloqueante
+        return False
+    try:
+        try:
+            fh.seek(0)
+            if fh.read(1) == b"":
+                # Arquivo vazio residual: não está em uso
+                return False
+            fh.seek(0)
+            if sys.platform == "win32":
+                import msvcrt
+
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            return False
+        except OSError:
+            return True
+    finally:
+        try:
+            fh.close()
+        except OSError:
+            pass
+
+
+def lock_status(path: Path | None = None) -> dict[str, Any]:
+    """Resumo para logs/UI: held, age, holder."""
+    lock_path = path or DEFAULT_LOCK
+    age = lock_age_minutes(lock_path)
+    holder = lock_holder_text(lock_path)
+    held = is_lock_held(lock_path)
+    return {
+        "path": str(lock_path),
+        "exists": lock_path.exists(),
+        "held": held,
+        "age_min": age,
+        "holder": holder,
+    }
 
 
 @contextmanager

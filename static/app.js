@@ -291,17 +291,37 @@
     } catch (e) {}
   }
 
+  function setMobileNavOpen(open) {
+    var toggle = document.getElementById("nav-toggle");
+    var nav = document.getElementById("main-nav");
+    if (!toggle || !nav) return;
+    nav.classList.toggle("is-open", !!open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    toggle.setAttribute("aria-label", open ? "Fechar menu" : "Abrir menu");
+  }
+
   function initMobileNav() {
     var toggle = document.getElementById("nav-toggle");
     var nav = document.getElementById("main-nav");
     if (!toggle || !nav) return;
-    toggle.addEventListener("click", function () {
-      var open = nav.classList.toggle("is-open");
-      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    toggle.addEventListener("click", function (e) {
+      e.stopPropagation();
+      setMobileNavOpen(!nav.classList.contains("is-open"));
+    });
+    document.addEventListener("click", function (e) {
+      if (!nav.classList.contains("is-open")) return;
+      if (nav.contains(e.target) || toggle.contains(e.target)) return;
+      setMobileNavOpen(false);
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && nav.classList.contains("is-open")) {
+        setMobileNavOpen(false);
+        toggle.focus();
+      }
     });
   }
 
-  /** Chips leves no topo: BOT vivo + fila pendente (sem poluir o menu). */
+  /** Chips leves no topo: BOT + AGENTE + fila. */
   function initNavLiveChips() {
     var host = document.getElementById("nav-live-chips");
     if (!host || !window.fetch) return;
@@ -319,18 +339,31 @@
     }
 
     function refresh() {
-      fetch("/api/automacao", { headers: { Accept: "application/json" } })
-        .then(function (r) {
-          return r.ok ? r.json() : null;
-        })
-        .then(function (st) {
-          if (!st) return;
-          var parts = [];
+      Promise.all([
+        fetch("/api/automacao", { headers: { Accept: "application/json" } })
+          .then(function (r) {
+            return r.ok ? r.json() : null;
+          })
+          .catch(function () {
+            return null;
+          }),
+        fetch("/api/agente/resumo", { headers: { Accept: "application/json" } })
+          .then(function (r) {
+            return r.ok ? r.json() : null;
+          })
+          .catch(function () {
+            return null;
+          }),
+      ]).then(function (pair) {
+        var st = pair[0];
+        var ag = pair[1];
+        var parts = [];
+        if (st) {
           if (st.bot_vivo) {
             parts.push(chip("BOT", "is-on", "Bot de processamento ativo"));
           } else {
             parts.push(
-              chip("BOT off", "is-off", "Bot parado — use o menu [1] ou [3]")
+              chip("BOT off", "is-off", "Bot parado — iniciar.bat [1] ou [3]")
             );
           }
           var pend = st.pendentes_ocr;
@@ -343,19 +376,157 @@
               )
             );
           }
-          host.innerHTML = parts.join("");
-        })
-        .catch(function () {});
+        }
+        if (ag && !ag.erro) {
+          if (ag.ativo) {
+            parts.push(
+              chip(
+                "AG " + (ag.modo_efetivo || ag.modo || ""),
+                "is-on",
+                "Agente vigilante · modo " +
+                  (ag.modo_efetivo || ag.modo) +
+                  " · Admin para controlar"
+              )
+            );
+          } else {
+            parts.push(chip("AG off", "is-off", "Agente desligado"));
+          }
+        }
+        host.innerHTML = parts.join("");
+      });
     }
 
     refresh();
-    setInterval(refresh, 60000);
+    setInterval(refresh, 45000);
+  }
+
+  function closeNavMore() {
+    var wrap = document.getElementById("nav-more");
+    var btn = document.getElementById("nav-more-btn");
+    var menu = document.getElementById("nav-more-menu");
+    if (!wrap || !btn || !menu) return;
+    wrap.classList.remove("is-open");
+    btn.setAttribute("aria-expanded", "false");
+    menu.setAttribute("hidden", "");
+  }
+
+  function initNavMore() {
+    var wrap = document.getElementById("nav-more");
+    var btn = document.getElementById("nav-more-btn");
+    var menu = document.getElementById("nav-more-menu");
+    if (!wrap || !btn || !menu) return;
+
+    function setOpen(open) {
+      wrap.classList.toggle("is-open", !!open);
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) menu.removeAttribute("hidden");
+      else menu.setAttribute("hidden", "");
+    }
+
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      setOpen(!wrap.classList.contains("is-open"));
+    });
+    document.addEventListener("click", function (e) {
+      if (!wrap.classList.contains("is-open")) return;
+      if (wrap.contains(e.target)) return;
+      setOpen(false);
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Escape" || !wrap.classList.contains("is-open")) return;
+      setOpen(false);
+      btn.focus();
+    });
+    /* Allow link navigation without needing document click to close first */
+    menu.addEventListener("click", function (e) {
+      if (e.target && e.target.closest && e.target.closest("a")) {
+        setOpen(false);
+      }
+    });
+  }
+
+  /** Atalhos estilo GitHub: g depois tecla (g a = Atos, g p = Painel…). ? = ajuda */
+  function initKeymap() {
+    var pending = false;
+    var timer = null;
+    var map = {
+      a: "/",
+      c: "/perguntar",
+      n: "/inteligencia",
+      e: "/exportar",
+      p: "/operacao",
+      d: "/edicoes-detectadas",
+      f: "/status",
+      r: "/revisao/so-mencao",
+      l: "/notificacoes",
+      m: "/admin",
+    };
+
+    function hintEl() {
+      var el = document.getElementById("nav-keymap-hint");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "nav-keymap-hint";
+        el.className = "nav-keymap-hint";
+        el.innerHTML =
+          "<strong>Atalhos</strong> (pressione <kbd>g</kbd> e depois)<br>" +
+          "<kbd>a</kbd> Atos · <kbd>p</kbd> Painel · <kbd>d</kbd> Edições<br>" +
+          "<kbd>f</kbd> Fila · <kbd>r</kbd> Revisão · <kbd>c</kbd> Chat IA<br>" +
+          "<kbd>n</kbd> Análises · <kbd>e</kbd> Exportar · <kbd>l</kbd> Alertas<br>" +
+          "<kbd>m</kbd> Admin · <kbd>?</kbd> esta dica · <kbd>Esc</kbd> fecha";
+        document.body.appendChild(el);
+      }
+      return el;
+    }
+
+    document.addEventListener("keydown", function (ev) {
+      var tag = (ev.target && ev.target.tagName) || "";
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        ev.target.isContentEditable
+      ) {
+        return;
+      }
+      if (ev.key === "?" || (ev.shiftKey && ev.key === "/")) {
+        ev.preventDefault();
+        hintEl().classList.toggle("is-visible");
+        return;
+      }
+      if (ev.key === "Escape") {
+        hintEl().classList.remove("is-visible");
+        pending = false;
+        if (typeof closeNavMore === "function") closeNavMore();
+        return;
+      }
+      if (pending) {
+        var path = map[ev.key.toLowerCase()];
+        pending = false;
+        if (timer) clearTimeout(timer);
+        if (path) {
+          ev.preventDefault();
+          window.location.href = path;
+        }
+        return;
+      }
+      if (ev.key === "g" || ev.key === "G") {
+        if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        pending = true;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+          pending = false;
+        }, 1200);
+      }
+    });
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     initGlobalActivity();
     initMobileNav();
     initNavLiveChips();
+    initNavMore();
+    initKeymap();
   });
 })();
 

@@ -18,7 +18,13 @@ from typing import Any
 
 from config import SETTINGS
 import database
-from process_lock import DEFAULT_LOCK
+from process_lock import (
+    DEFAULT_LOCK,
+    is_lock_held,
+    lock_age_minutes,
+    lock_holder_text,
+    lock_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -231,13 +237,18 @@ def _notificar(titulo: str, corpo: str) -> None:
 
 
 def _lock_age_minutes() -> float | None:
-    if not DEFAULT_LOCK.exists():
-        return None
-    try:
-        mtime = DEFAULT_LOCK.stat().st_mtime
-        return max(0.0, (time.time() - mtime) / 60.0)
-    except OSError:
-        return 0.0
+    """Compat: idade do arquivo de lock (não implica held)."""
+    return lock_age_minutes()
+
+
+def _lock_desc() -> str:
+    """Texto curto para logs (held/holder/idade)."""
+    st = lock_status()
+    age = st.get("age_min")
+    age_s = f"{age:.0f}min" if age is not None else "?"
+    holder = st.get("holder") or "—"
+    estado = "em uso" if st.get("held") else "livre"
+    return f"{estado} holder={holder} idade≈{age_s}"
 
 
 def _ia_calls_hora() -> int:
@@ -301,10 +312,47 @@ def run_pulse(*, force: bool = False) -> CicloResultado:
         except Exception as exc:
             res.add("limpar_jobs", False, str(exc), "erro")
 
-    # Lock velho
+    # Lock: distingue arquivo residual vs OS lock realmente em uso
     age = _lock_age_minutes()
-    if age is not None:
-        res.add("lock_presente", True, f"idade≈{age:.0f} min", "warn")
+    held = False
+    try:
+        held = is_lock_held()
+    except Exception:
+        # fallback conservador: arquivo recente ≈ possivelmente em uso
+        held = age is not None and age < 5
+
+    if held:
+        res.add(
+            "lock_presente",
+            True,
+            f"em uso ({_lock_desc()})",
+            "warn",
+        )
+        # Nunca apagar arquivo enquanto o OS lock estiver held (OCR longo legítimo)
+        if age is not None and age >= SETTINGS.agente_lock_max_minutos:
+            res.add(
+                "lock_longo",
+                True,
+                f"lock ativo há ≈{age:.0f} min — não removido (processo vivo)",
+                "warn",
+            )
+            log_acao(
+                ciclo="pulse",
+                modo=modo,
+                acao="lock_longo",
+                detalhe=_lock_desc(),
+                nivel="warn",
+            )
+            if _alerta_permitido("lock_longo"):
+                _notificar(
+                    "Lock ativo há muito tempo",
+                    f"processamento.lock em uso há ≈{age:.0f} min ({lock_holder_text() or 'sem label'}). "
+                    "OCR pode estar lento; não foi removido automaticamente.",
+                )
+                _marcar_alerta("lock_longo")
+    elif age is not None:
+        # Arquivo residual (process_lock não apaga o arquivo ao liberar)
+        res.add("lock_arquivo", True, f"residual livre idade≈{age:.0f} min", "info")
         if (
             SETTINGS.agente_auto_limpar_lock
             and not only_observe
@@ -312,22 +360,29 @@ def run_pulse(*, force: bool = False) -> CicloResultado:
         ):
             try:
                 DEFAULT_LOCK.unlink(missing_ok=True)  # type: ignore[call-arg]
-                # py3.8 compat
             except TypeError:
                 if DEFAULT_LOCK.exists():
                     DEFAULT_LOCK.unlink()
             except Exception as exc:
                 res.add("remover_lock", False, str(exc), "erro")
             else:
-                res.add("remover_lock", True, f"lock morto removido ({age:.0f} min)", "acao")
+                res.add(
+                    "remover_lock",
+                    True,
+                    f"arquivo residual removido ({age:.0f} min)",
+                    "acao",
+                )
                 log_acao(
                     ciclo="pulse",
                     modo=modo,
                     acao="remover_lock",
-                    detalhe=f"age_min={age:.0f}",
+                    detalhe=f"age_min={age:.0f} residual",
                 )
                 if _alerta_permitido("lock"):
-                    _notificar("Lock removido", f"processamento.lock com {age:.0f} min sem update.")
+                    _notificar(
+                        "Lock residual removido",
+                        f"processamento.lock órfão com {age:.0f} min (não estava em uso).",
+                    )
                     _marcar_alerta("lock")
 
     # Contadores
@@ -461,10 +516,19 @@ def run_cerebro(*, force: bool = False) -> CicloResultado:
         database.set_setting(_K_CEREBRO, _now().isoformat(timespec="seconds"))
         return res
 
-    # Lock ocupado → não OCR
-    if DEFAULT_LOCK.exists() and (_lock_age_minutes() or 0) < 5:
-        res.add("skip_ocr", True, "lock ativo (outro processo)", "warn")
-        # ainda pode re-IA
+    # OCR só se o lock estiver livre — evita espera de até 600s e OCR em duplicata
+    # com BOT contínuo / webapp. (re-IA e subdetectado ainda podem rodar)
+    skip_ocr_motivo = _motivo_pular_ocr_cerebro(force=force)
+    if skip_ocr_motivo:
+        res.add("skip_ocr", True, skip_ocr_motivo, "warn")
+        log_acao(
+            ciclo="cerebro",
+            modo=modo,
+            acao="skip_ocr",
+            detalhe=skip_ocr_motivo,
+            nivel="warn",
+        )
+        logger.info("[agente/cerebro] OCR adiado: %s", skip_ocr_motivo)
     else:
         max_ocr = SETTINGS.agente_max_ocr_por_ciclo
         if modo == "formiga":
@@ -478,6 +542,18 @@ def run_cerebro(*, force: bool = False) -> CicloResultado:
                 res.add("fila", True, "nenhuma pendente prioritária")
             for row in picks:
                 eid = int(row["id"])
+                # Re-checa lock entre edições (BOT pode ter iniciado OCR)
+                if is_lock_held():
+                    det = f"lock adquirido por outro processo antes de id={eid}"
+                    res.add("skip_ocr", True, det, "warn")
+                    log_acao(
+                        ciclo="cerebro",
+                        modo=modo,
+                        acao="skip_ocr",
+                        detalhe=det,
+                        nivel="warn",
+                    )
+                    break
                 try:
                     from pipeline import processar_edicao_por_id
 
@@ -585,6 +661,41 @@ def deve_rodar_cerebro() -> bool:
     return (_now() - last).total_seconds() >= SETTINGS.agente_cerebro_minutos * 60
 
 
+def _motivo_pular_ocr_cerebro(*, force: bool = False) -> str:
+    """Se OCR do cérebro deve ser adiado, retorna motivo; senão string vazia.
+
+    ``force=True`` (admin/once) ainda respeita lock OS em uso — evita hang de 600s.
+    Cede prioridade ao BOT contínuo quando ele está vivo e tem fila na janela.
+    """
+    try:
+        if is_lock_held():
+            return f"lock em uso ({_lock_desc()})"
+    except Exception as exc:
+        # Probe falhou: se arquivo é muito recente, seja conservador
+        age = _lock_age_minutes()
+        if age is not None and age < 5:
+            return f"lock incerto (probe falhou: {exc}; idade≈{age:.0f}min)"
+
+    # BOT contínuo na mesma máquina: não compete pela mesma fila de pendentes
+    if force:
+        return ""
+    try:
+        if not (SETTINGS.auto_process and SETTINGS.auto_process_continuo):
+            return ""
+        st = database.get_status_automacao()
+        if not st.get("bot_vivo"):
+            return ""
+        fila = int(st.get("fila_proximo_ciclo") or 0)
+        if fila > 0:
+            return (
+                f"BOT contínuo vivo com fila={fila} — cede prioridade "
+                "(evita OCR duplicado)"
+            )
+    except Exception:
+        pass
+    return ""
+
+
 def tick_from_bot() -> None:
     """Chamado no idle do main.py — não bloqueia muito se não for hora."""
     if not SETTINGS.agente_no_bot or not agente_esta_ativo():
@@ -592,14 +703,44 @@ def tick_from_bot() -> None:
     try:
         if deve_rodar_pulse():
             r = run_pulse()
-            logger.debug("agente pulse: %s ações", len(r.acoes))
+            warns = [a for a in r.acoes if a.nivel in {"warn", "erro", "acao"}]
+            if warns:
+                logger.info(
+                    "agente pulse (%s): %s",
+                    r.modo,
+                    "; ".join(f"{a.acao}={a.detalhe}" for a in warns[:5]),
+                )
+            else:
+                logger.debug("agente pulse: %s ações", len(r.acoes))
         if deve_rodar_cerebro():
-            r = run_cerebro()
-            logger.info(
-                "agente cérebro (%s): %s",
-                r.modo,
-                "; ".join(f"{a.acao}={a.detalhe}" for a in r.acoes[:5]),
-            )
+            # Atalho barato: se lock held, nem entra no cérebro caro.
+            # Não avança _K_CEREBRO → retenta no próximo tick (~pulse).
+            try:
+                held = is_lock_held()
+            except Exception:
+                held = False
+            if held:
+                logger.info(
+                    "agente cérebro adiado no idle do BOT — %s",
+                    _lock_desc(),
+                )
+                try:
+                    log_acao(
+                        ciclo="cerebro",
+                        modo=modo_efetivo(),
+                        acao="skip_lock",
+                        detalhe=_lock_desc(),
+                        nivel="warn",
+                    )
+                except Exception:
+                    pass
+            else:
+                r = run_cerebro()
+                logger.info(
+                    "agente cérebro (%s): %s",
+                    r.modo,
+                    "; ".join(f"{a.acao}={a.detalhe}" for a in r.acoes[:5]),
+                )
     except Exception:
         logger.exception("agente tick falhou")
 
@@ -632,8 +773,23 @@ def loop_daemon(once: bool = False) -> None:
                     r = run_pulse(force=True)
                     print(format_ciclo(r))
                 if deve_rodar_cerebro() or once:
-                    r = run_cerebro(force=True)
-                    print(format_ciclo(r))
+                    # Em loop contínuo, se lock held: não marca cérebro como "feito"
+                    # (evita adiar 30min o OCR). Em --once sempre roda (re-IA etc.).
+                    held = False
+                    if not once:
+                        try:
+                            held = is_lock_held()
+                        except Exception:
+                            held = False
+                    if held:
+                        logger.info(
+                            "agente daemon: cérebro adiado — %s",
+                            _lock_desc(),
+                        )
+                        print(f"  cérebro adiado (lock): {_lock_desc()}")
+                    else:
+                        r = run_cerebro(force=True)
+                        print(format_ciclo(r))
             else:
                 logger.debug("agente desligado — aguardando")
         except KeyboardInterrupt:

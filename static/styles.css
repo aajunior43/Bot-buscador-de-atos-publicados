@@ -212,13 +212,24 @@ main {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
+  color: var(--text-2);
   cursor: pointer;
   padding: 8px;
+  /* Reset global `button` accent styles */
+  box-shadow: none;
+  transform: none;
+}
+.nav-toggle:hover,
+.nav-toggle:active {
+  background: var(--surface-2);
+  color: var(--text-1);
+  box-shadow: none;
+  transform: none;
 }
 .nav-toggle span {
   display: block;
   height: 2px;
-  background: var(--text-2);
+  background: currentColor;
   border-radius: 1px;
 }
 
@@ -2543,12 +2554,119 @@ details[open] summary::before { transform: rotate(90deg); }
   .nav-divider { display: none; }
   .main-nav a { display: block; }
   .nav-live-chips { margin: .35rem 0 0; flex-wrap: wrap; }
+  .nav-more { display: none !important; }
+  .nav-show-narrow { display: block !important; }
+  .nav-hide-md { display: block !important; }
 }
 
-/* Telas médias: esconde rótulos de grupo para caber numa linha */
+/* Dropdown "Mais" — desktop / tablet landscape (≥901px) */
+.nav-more {
+  position: relative;
+  display: none;
+}
+.nav-more-btn {
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 500;
+  padding: .35rem .65rem;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  /* Reset global `button` accent styles */
+  box-shadow: none;
+  transform: none;
+}
+.nav-more-btn:hover,
+.nav-more-btn:active,
+.nav-more.is-open .nav-more-btn {
+  color: var(--text-1);
+  border-color: var(--border-2, var(--border));
+  background: rgba(255,255,255,.04);
+  box-shadow: none;
+  transform: none;
+}
+.nav-more.is-current .nav-more-btn {
+  color: var(--text-1);
+  background: var(--surface-2);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.nav-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 160px;
+  padding: .4rem;
+  /* Solid surface — var(--surface) is nearly transparent glass */
+  background: var(--bg-2, #13161e);
+  border: 1px solid var(--border-2, var(--border));
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.45);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+.nav-more-menu[hidden] { display: none !important; }
+.nav-more-menu a {
+  display: block !important;
+  padding: .45rem .65rem !important;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.nav-more-menu a:focus-visible,
+.main-nav a:focus-visible,
+.nav-more-btn:focus-visible,
+.nav-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * Desktop / tablet (≥901px): secondary items live in "Mais".
+ * Previously 901–1180 hid both Mais and nav-hide-md, leaving Chat IA /
+ * Alertas / Revisão unreachable (only Análises + Exportar via nav-show-narrow).
+ */
+@media (min-width: 901px) {
+  .nav-more { display: inline-flex; }
+  .nav-show-narrow { display: none !important; }
+  .nav-hide-md { display: none !important; }
+}
+
+/* Medium widths: hide zone labels to save horizontal space */
 @media (min-width: 901px) and (max-width: 1180px) {
   .nav-group-label { display: none; }
   .main-nav { gap: .25rem .45rem; }
+  .topbar nav a,
+  .main-nav a { padding: .4rem .65rem; }
+}
+
+/* Atalhos: dica flutuante */
+.nav-keymap-hint {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 300;
+  max-width: 280px;
+  padding: .85rem 1rem;
+  background: rgba(13,15,20,.95);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: .78rem;
+  color: var(--text-2);
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
+  display: none;
+}
+.nav-keymap-hint.is-visible { display: block; }
+.nav-keymap-hint kbd {
+  display: inline-block;
+  padding: .05rem .35rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.05);
+  font-size: .72rem;
+  margin-right: .15rem;
 }
 
 
