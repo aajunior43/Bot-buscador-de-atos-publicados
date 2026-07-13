@@ -181,7 +181,13 @@ class Settings:
     agente_no_bot: bool = _bool_env("AGENTE_NO_BOT", True)
     # Cooldown de alerta repetido (minutos)
     agente_alerta_cooldown_min: int = _int_env("AGENTE_ALERTA_COOLDOWN_MIN", 60)
-
+    # --- Qualidade (PR1+) ---
+    quality_fix_numero_ano: bool = _bool_env("QUALITY_FIX_NUMERO_ANO", True)
+    quality_ano_max_futuro: int = _int_env("QUALITY_ANO_MAX_FUTURO", 1)
+    quality_confianca: bool = _bool_env("QUALITY_CONFIANCA", True)
+    # Thresholds rigorosos (decisão de design rev. 4)
+    quality_confianca_alta_min: int = _int_env("QUALITY_CONFIANCA_ALTA_MIN", 85)
+    quality_confianca_media_min: int = _int_env("QUALITY_CONFIANCA_MEDIA_MIN", 55)
 
     def __post_init__(self) -> None:
         # Campos de lista lidos do ambiente (default_factory já garante [] se não chamado)

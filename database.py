@@ -189,6 +189,16 @@ _MIGRATIONS: list[tuple[int, str]] = [
         """,
     ),
     (30, "CREATE INDEX IF NOT EXISTS idx_agente_log_criado ON agente_log(criado_em)"),
+    # Qualidade PR1: flags de pós-processamento (JSON lista de strings)
+    (31, "ALTER TABLE publicacoes ADD COLUMN flags_qualidade TEXT"),
+    # Qualidade PR2: score de confiança
+    (32, "ALTER TABLE publicacoes ADD COLUMN confianca INTEGER"),
+    (33, "ALTER TABLE publicacoes ADD COLUMN confianca_nivel TEXT"),
+    (34, "ALTER TABLE publicacoes ADD COLUMN confianca_detalhe TEXT"),
+    (
+        35,
+        "CREATE INDEX IF NOT EXISTS idx_pub_confianca_nivel ON publicacoes(confianca_nivel)",
+    ),
 ]
 
 # Colunas esperadas por migração — usadas para marcar versões já aplicadas
@@ -223,6 +233,10 @@ _MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
     27: ("publicacoes", "anomalia_motivo"),
     28: ("edicoes", "fn_sugestao"),
     # 29 = CREATE TABLE agente_log — sem marker de coluna; reaplicável com IF NOT EXISTS
+    31: ("publicacoes", "flags_qualidade"),
+    32: ("publicacoes", "confianca"),
+    33: ("publicacoes", "confianca_nivel"),
+    34: ("publicacoes", "confianca_detalhe"),
 }
 
 
@@ -690,9 +704,10 @@ def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
               data_documento, assunto, valor, trecho,
               resumo_ia, categoria_ia, texto_corrigido, ia_processado,
               importancia, importancia_motivo, notificar_ia, explicacao_ia,
-              partes_ia, checklist_ia, temas, validacao_ia, anomalia, anomalia_motivo
+              partes_ia, checklist_ia, temas, validacao_ia, anomalia, anomalia_motivo,
+              flags_qualidade, confianca, confianca_nivel, confianca_detalhe
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -741,6 +756,26 @@ def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
                     ),
                     1 if item.get("anomalia") in (True, 1, "1", "true") else 0,
                     item.get("anomalia_motivo"),
+                    (
+                        item.get("flags_qualidade")
+                        if isinstance(item.get("flags_qualidade"), str)
+                        else (
+                            json.dumps(item["flags_qualidade"], ensure_ascii=False)
+                            if item.get("flags_qualidade")
+                            else None
+                        )
+                    ),
+                    item.get("confianca"),
+                    item.get("confianca_nivel"),
+                    (
+                        item.get("confianca_detalhe")
+                        if isinstance(item.get("confianca_detalhe"), str)
+                        else (
+                            json.dumps(item["confianca_detalhe"], ensure_ascii=False)
+                            if item.get("confianca_detalhe")
+                            else None
+                        )
+                    ),
                 )
                 for item in publicacoes
             ],

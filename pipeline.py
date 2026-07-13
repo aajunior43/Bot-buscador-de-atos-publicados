@@ -6,6 +6,7 @@ para evitar divergência de flags e de etapas entre as duas entradas.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 import console_ui
@@ -20,6 +21,33 @@ from process_lock import ProcessLockError, process_lock
 from scraper import Edicao, listar_edicoes
 
 logger = logging.getLogger(__name__)
+
+
+def _aplicar_qualidade_pos_deteccao(
+    resultado: DetectionResult,
+    data_publicacao: str | None,
+) -> DetectionResult:
+    """Pós-processa pubs (correção de ano OCR etc.) após detectar, com data da edição.
+
+    Não altera a assinatura de ``detector.detectar``.
+    """
+    if not resultado.publicacoes:
+        return resultado
+    fix = bool(getattr(SETTINGS, "quality_fix_numero_ano", True))
+    conf = bool(getattr(SETTINGS, "quality_confianca", False))
+    if not fix and not conf:
+        return resultado
+    try:
+        import qualidade
+
+        pubs = qualidade.pos_processar_publicacoes(
+            list(resultado.publicacoes),
+            data_edicao=data_publicacao,
+        )
+        return replace(resultado, publicacoes=pubs)
+    except Exception:
+        logger.debug("qualidade pos-detecção falhou", exc_info=True)
+        return resultado
 
 
 def _ocr_mensagem_modo(force_ocr: bool, fast_ocr: bool) -> str:
@@ -228,6 +256,9 @@ def _processar_edicao_unlocked(
             progress_total=100,
         )
         resultado = detectar(download.edicao_id, edicao.titulo, ocr.paginas)
+        resultado = _aplicar_qualidade_pos_deteccao(
+            resultado, edicao.data_publicacao
+        )
         database.update_job(
             detectar_job,
             "rodando",
@@ -460,10 +491,9 @@ def reprocessar_deteccao_de_cache(
         pubs_anteriores = _publicacoes_existentes(edicao_id)
 
         resultado = detectar(edicao_id, titulo, ocr.paginas)
+        resultado = _aplicar_qualidade_pos_deteccao(resultado, data_pub)
         pubs = _mesclar_ia_anterior(resultado.publicacoes, pubs_anteriores)
         # Reconstroi resultado com pubs mescladas (dataclass frozen)
-        from dataclasses import replace
-
         resultado = replace(resultado, publicacoes=pubs)
 
         database.insert_mencoes(edicao_id, resultado.mencoes_db)
