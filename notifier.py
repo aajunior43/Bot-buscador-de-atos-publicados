@@ -203,10 +203,25 @@ def notificar(resultado: DetectionResult, edicao: Edicao) -> None:
         "edicao_titulo": resultado.edicao_titulo,
         "paginas": resultado.paginas_com_mencao,
         "termos": resultado.termos_encontrados,
-        "publicacoes": len(resultado.publicacoes),
+        "publicacoes": len(resultado.publicacoes),  # INT — não mudar para lista
         "mencoes": len(resultado.mencoes_db),
         "url": edicao.url,
     }
+    if bool(getattr(SETTINGS, "quality_webhook_enrich", True)):
+        resumo = []
+        for p in (resultado.publicacoes or [])[:10]:
+            resumo.append(
+                {
+                    "id": p.get("id"),
+                    "tipo": p.get("tipo"),
+                    "numero": p.get("numero"),
+                    "importancia": p.get("importancia"),
+                    "confianca": p.get("confianca"),
+                    "confianca_nivel": p.get("confianca_nivel"),
+                    "flags_qualidade": p.get("flags_qualidade"),
+                }
+            )
+        payload["publicacoes_resumo"] = resumo
     _disparar_webhooks(payload)
 
 

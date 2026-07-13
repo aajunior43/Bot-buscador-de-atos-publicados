@@ -35,6 +35,9 @@
         {% if item.importancia %}
         <span class="badge" style="background:rgba(99,102,241,.15);color:#a5b4fc;border-color:rgba(99,102,241,.3);" title="{{ item.importancia_motivo or '' }}">★ {{ item.importancia }}/5</span>
         {% endif %}
+        {% if item.confianca_nivel %}
+        <span class="badge badge-conf-{{ item.confianca_nivel }}" title="{{ item.confianca or '?' }}/100">Confiança {{ item.confianca_nivel }}</span>
+        {% endif %}
         {% if item.anomalia %}
         <span class="badge" style="background:rgba(248,113,113,.15);color:#fca5a5;border-color:rgba(248,113,113,.35);" title="{{ item.anomalia_motivo or '' }}">🚨 anomalia</span>
         {% endif %}

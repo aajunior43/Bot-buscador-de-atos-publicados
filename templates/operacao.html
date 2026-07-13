@@ -36,11 +36,55 @@
 </section>
 
 <nav class="tabs-nav fade-in" id="ops-tabs" role="tablist" style="margin:1rem 0;">
-  <a class="tab-btn {% if tab != 'fila' %}active{% endif %}" href="/operacao?tab=automacao" role="tab">Automação</a>
+  <a class="tab-btn {% if tab == 'automacao' or not tab %}active{% endif %}" href="/operacao?tab=automacao" role="tab">Automação</a>
   <a class="tab-btn {% if tab == 'fila' %}active{% endif %}" href="/operacao?tab=fila" role="tab">Fila de jobs</a>
+  <a class="tab-btn {% if tab == 'qualidade' %}active{% endif %}" href="/operacao?tab=qualidade" role="tab">Qualidade</a>
 </nav>
 
-{% if tab == 'fila' %}
+{% if tab == 'qualidade' %}
+<section class="stats-grid fade-in">
+  <article><strong>{{ qualidade_resumo.confianca_alta or 0 }}</strong><span>Conf. alta</span></article>
+  <article><strong>{{ qualidade_resumo.confianca_media or 0 }}</strong><span>Conf. média</span></article>
+  <article><strong>{{ qualidade_resumo.confianca_revisar or 0 }}</strong><span>Revisar</span></article>
+  <article><strong>{{ qualidade_resumo.fila_re_ia or 0 }}</strong><span>Fila re-IA</span></article>
+  <article><strong>{{ qualidade_resumo.gaps_pendentes or 0 }}</strong><span>Gaps</span></article>
+  <article><strong>{{ qualidade_resumo.fn_so_mencao or 0 }}</strong><span>Só-menção FN</span></article>
+  <article><strong>{{ qualidade_resumo.anomalias or 0 }}</strong><span>Anomalias</span></article>
+  <article><strong>{{ qualidade_resumo.correcoes_ano or 0 }}</strong><span>Ano OCR corrigido</span></article>
+</section>
+<section class="panel fade-in" style="margin-top:1rem;">
+  <div class="panel-head">
+    <h2>Qualidade</h2>
+    <span>contadores determinísticos · sem IA</span>
+  </div>
+  <div class="admin-form" style="display:flex;flex-wrap:wrap;gap:.6rem;padding:1rem 1.5rem;">
+    <a class="btn btn-secondary" href="/?confianca=revisar">Ver pubs a revisar</a>
+    <a class="btn btn-secondary" href="/revisao/so-mencao">Só-menção</a>
+    <form method="post" action="/operacao/digest-qualidade" style="margin:0;">
+      <button type="submit" class="btn">Gravar DIGEST-QUALIDADE</button>
+    </form>
+    <form method="post" action="/operacao/resumo-diario" style="margin:0;">
+      <button type="submit" class="btn btn-secondary">Resumo diário IA</button>
+    </form>
+  </div>
+  {% if gaps %}
+  <div style="padding:0 1.5rem 1.25rem;">
+    <strong style="font-size:.85rem;color:var(--text-3);">Gaps pendentes</strong>
+    <ul style="margin:.5rem 0 0;padding-left:1.1rem;font-size:.85rem;">
+      {% for g in gaps %}
+      <li>
+        <a href="/edicoes/{{ g.id }}">{{ g.data_publicacao or '—' }} · {{ g.titulo or g.id }}</a>
+        — {{ g.gap_severidade }} · hits={{ g.gap_hits }} · {{ g.gap_acao }}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% else %}
+  <p style="padding:0 1.5rem 1.25rem;color:var(--text-3);font-size:.9rem;">Nenhum gap pendente no banco.</p>
+  {% endif %}
+</section>
+
+{% elif tab == 'fila' %}
 {# ---- ABA FILA (conteúdo completo) ---- #}
 <section class="stats-grid fade-in">
   <article id="stat-rodando"><strong>{{ resumo.rodando or 0 }}</strong><span>Rodando</span></article>

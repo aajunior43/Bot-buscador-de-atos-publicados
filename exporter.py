@@ -29,6 +29,10 @@ _CAMPOS_CSV = [
     "assunto",
     "valor",
     "resumo_ia",
+    "importancia",
+    "confianca",
+    "confianca_nivel",
+    "flags_qualidade",
     "criado_em",
 ]
 

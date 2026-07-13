@@ -79,6 +79,22 @@ def test_operacao_hub(db):
     assert "Heartbeat" in response.text or "BOT online" in response.text or "BOT offline" in response.text
     assert "tab=automacao" in response.text or "Automação" in response.text
     assert "tab=fila" in response.text or "Fila de jobs" in response.text
+    assert "tab=qualidade" in response.text or "Qualidade" in response.text
+
+
+def test_operacao_aba_qualidade(db):
+    client = TestClient(app)
+    r = client.get("/operacao?tab=qualidade")
+    assert r.status_code == 200
+    assert "Fila re-IA" in r.text or "Gaps" in r.text or "DIGEST" in r.text or "revisar" in r.text.casefold()
+
+
+def test_api_qualidade_resumo(db):
+    client = TestClient(app)
+    r = client.get("/api/qualidade/resumo")
+    assert r.status_code == 200
+    data = r.json()
+    assert "fila_re_ia" in data
 
 
 def test_operacao_aba_fila(db):

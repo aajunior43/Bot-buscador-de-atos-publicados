@@ -20,7 +20,14 @@
         smart
       </label>
       {% if tipo %}<input type="hidden" name="tipo" value="{{ tipo }}">{% endif %}
+      {% if confianca %}<input type="hidden" name="confianca" value="{{ confianca }}">{% endif %}
       <button type="submit">Buscar</button>
+    </div>
+    <div class="filter-chips" style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.4rem;">
+      <a class="chip {% if not confianca %}active{% endif %}" href="/?{% if mes %}mes={{ mes }}&{% endif %}{% if tipo %}tipo={{ tipo }}&{% endif %}{% if q %}q={{ q }}&{% endif %}">Todas conf.</a>
+      <a class="chip {% if confianca == 'alta' %}active{% endif %}" href="/?confianca=alta{% if mes %}&mes={{ mes }}{% endif %}{% if tipo %}&tipo={{ tipo }}{% endif %}">Alta</a>
+      <a class="chip {% if confianca == 'media' %}active{% endif %}" href="/?confianca=media{% if mes %}&mes={{ mes }}{% endif %}{% if tipo %}&tipo={{ tipo }}{% endif %}">Média</a>
+      <a class="chip {% if confianca == 'revisar' %}active{% endif %}" href="/?confianca=revisar{% if mes %}&mes={{ mes }}{% endif %}{% if tipo %}&tipo={{ tipo }}{% endif %}">Revisar</a>
     </div>
   </form>
 </section>
@@ -102,6 +109,7 @@
       <div class="pub-row-body">
         <div class="pub-row-top">
           <span class="pub-tipo">{{ item.tipo or "Ato" }}{% if item.numero %} <strong>{{ item.numero }}</strong>{% endif %}</span>
+          {% if item.confianca_nivel %}<span class="badge badge-conf-{{ item.confianca_nivel }}" title="{{ item.confianca or '?' }}/100">{{ item.confianca_nivel }}</span>{% endif %}
           <span class="pub-date">{{ item.data_publicacao or "sem data" }}</span>
         </div>
         <div class="pub-row-middle">

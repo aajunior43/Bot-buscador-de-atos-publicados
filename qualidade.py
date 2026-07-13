@@ -748,3 +748,15 @@ def aplicar_pos_re_ia(pub: dict, *, data_edicao: str | None) -> dict:
     if bool(getattr(SETTINGS, "quality_confianca", True)):
         p = aplicar_confianca_pub(p, data_edicao=data_edicao)
     return p
+
+
+# PR4/PR5b reexports
+from qualidade_gap import (  # noqa: E402
+    aplicar_merge_reprocess,
+    avaliar_e_persistir_gap,
+    diagnosticar_gap_edicao,
+    gravar_digest_qualidade,
+    listar_gaps_pendentes,
+    montar_digest_qualidade,
+    resumo_operacional,
+)

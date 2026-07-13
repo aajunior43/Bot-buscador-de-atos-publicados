@@ -358,12 +358,16 @@ def dashboard(
     q: str = Query("", description="Busca por título, data, órgão, tipo ou assunto"),
     mes: str = Query("", description="Filtro mês YYYY-MM"),
     tipo: str = Query("", description="Filtro tipo de ato (ex.: Decreto)"),
+    confianca: str = Query("", description="alta|media|revisar"),
     modo: str = Query("", description="semantico = ranking inteligente"),
 ) -> HTMLResponse:
     """Home de leitura: busca + KPIs leigos + lista de atos."""
     termo = f"%{q.strip()}%"
     mes_f = mes.strip()
     tipo_f = tipo.strip()
+    conf_f = confianca.strip().casefold()
+    if conf_f not in {"alta", "media", "revisar", ""}:
+        conf_f = ""
     modo_sem = modo.strip().casefold() in {"semantico", "smart", "1", "ia"}
     with _conn() as conn:
         stats = _stats_basicos(conn)
@@ -381,6 +385,9 @@ def dashboard(
         if tipo_f:
             filtros.append("LOWER(COALESCE(p.tipo, '')) = LOWER(?)")
             params.append(tipo_f)
+        if conf_f:
+            filtros.append("LOWER(COALESCE(p.confianca_nivel, '')) = ?")
+            params.append(conf_f)
         where = ("WHERE " + " AND ".join(filtros)) if filtros else ""
         publicacoes = conn.execute(
             f"""
@@ -459,6 +466,7 @@ def dashboard(
             "q": q,
             "mes": mes_f[:7] if mes_f else "",
             "tipo": tipo_f,
+            "confianca": conf_f,
             "modo": "semantico" if modo_sem else "",
             "meses": meses,
             "tipos": tipos,
@@ -485,11 +493,11 @@ def atos_alias(
 @app.get("/operacao", response_class=HTMLResponse)
 def operacao(
     request: Request,
-    tab: str = Query("automacao", description="automacao | fila"),
+    tab: str = Query("automacao", description="automacao | fila | qualidade"),
 ) -> HTMLResponse:
-    """Hub operacional: abas Automação + Fila (cockpit unificado)."""
+    """Hub operacional: abas Automação + Fila + Qualidade."""
     tab_n = (tab or "automacao").strip().casefold()
-    if tab_n not in {"automacao", "fila"}:
+    if tab_n not in {"automacao", "fila", "qualidade"}:
         tab_n = "automacao"
     with _conn() as conn:
         stats = _stats_basicos(conn)
@@ -536,6 +544,17 @@ def operacao(
         "concluidos": fila_resumo["concluido"],
         "total": 0,
     }
+    qualidade_resumo = {}
+    gaps = []
+    if tab_n == "qualidade":
+        try:
+            import qualidade
+
+            qualidade_resumo = qualidade.resumo_operacional()
+            gaps = qualidade.listar_gaps_pendentes(20)
+        except Exception:
+            qualidade_resumo = {}
+            gaps = []
     return templates.TemplateResponse(
         request,
         "operacao.html",
@@ -551,9 +570,10 @@ def operacao(
             "tab": tab_n,
             "resumo": resumo_fila,
             "grupos": fila_full.get("grupos") or [],
+            "qualidade_resumo": qualidade_resumo,
+            "gaps": gaps,
         },
     )
-
 
 @app.post("/operacao/resumo-diario")
 def gerar_resumo_diario_agora() -> RedirectResponse:
@@ -564,15 +584,58 @@ def gerar_resumo_diario_agora() -> RedirectResponse:
     return RedirectResponse(url="/operacao", status_code=303)
 
 
+@app.post("/operacao/digest-qualidade")
+def gerar_digest_qualidade_agora() -> RedirectResponse:
+    database.init_db()
+    try:
+        import qualidade
+
+        qualidade.gravar_digest_qualidade()
+    except Exception:
+        logger.exception("digest qualidade falhou")
+    return RedirectResponse(url="/operacao?tab=qualidade", status_code=303)
+
+
+@app.get("/api/qualidade/resumo")
+def api_qualidade_resumo() -> JSONResponse:
+    database.init_db()
+    try:
+        import qualidade
+
+        return JSONResponse(qualidade.resumo_operacional())
+    except Exception as exc:
+        return JSONResponse({"erro": str(exc)[:200]}, status_code=500)
+
+
 @app.post("/publicacoes/{pub_id}/feedback")
 def feedback_publicacao(
     pub_id: int,
     feedback: str = Form(""),
     next: str = Form("/"),
 ) -> RedirectResponse:
-    """Feedback humano: correto | errado (treina confiança futura)."""
+    """Feedback humano: correto | errado (recalcula confiança)."""
     database.init_db()
     database.set_feedback_publicacao(pub_id, feedback)
+    try:
+        import qualidade
+
+        pub = database.get_publicacao_by_id(pub_id)
+        if pub:
+            p = qualidade.aplicar_confianca_pub(
+                dict(pub), data_edicao=pub.get("data_publicacao")
+            )
+            database.update_publicacao_ia(
+                {
+                    "id": pub_id,
+                    "confianca": p.get("confianca"),
+                    "confianca_nivel": p.get("confianca_nivel"),
+                    "confianca_detalhe": p.get("confianca_detalhe"),
+                    "feedback": feedback,
+                },
+                registrar_tentativa=False,
+            )
+    except Exception:
+        logger.debug("recalc confiança pós-feedback falhou", exc_info=True)
     dest = next.strip() or "/"
     if not dest.startswith("/"):
         dest = "/"

@@ -206,6 +206,19 @@ _MIGRATIONS: list[tuple[int, str]] = [
         38,
         "CREATE INDEX IF NOT EXISTS idx_pub_ia_status ON publicacoes(ia_status)",
     ),
+    # Qualidade PR4: gaps em edições
+    (39, "ALTER TABLE edicoes ADD COLUMN gap_severidade TEXT"),
+    (40, "ALTER TABLE edicoes ADD COLUMN gap_score INTEGER"),
+    (41, "ALTER TABLE edicoes ADD COLUMN gap_hits INTEGER"),
+    (42, "ALTER TABLE edicoes ADD COLUMN gap_headers INTEGER"),
+    (43, "ALTER TABLE edicoes ADD COLUMN gap_acao TEXT"),
+    (44, "ALTER TABLE edicoes ADD COLUMN gap_status TEXT"),
+    (45, "ALTER TABLE edicoes ADD COLUMN gap_avaliado_em TEXT"),
+    (46, "ALTER TABLE edicoes ADD COLUMN gap_detalhe TEXT"),
+    (
+        47,
+        "CREATE INDEX IF NOT EXISTS idx_edicoes_gap_status ON edicoes(gap_status)",
+    ),
 ]
 
 # Colunas esperadas por migração — usadas para marcar versões já aplicadas
@@ -246,6 +259,14 @@ _MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
     34: ("publicacoes", "confianca_detalhe"),
     36: ("publicacoes", "ia_tentativas"),
     37: ("publicacoes", "ia_status"),
+    39: ("edicoes", "gap_severidade"),
+    40: ("edicoes", "gap_score"),
+    41: ("edicoes", "gap_hits"),
+    42: ("edicoes", "gap_headers"),
+    43: ("edicoes", "gap_acao"),
+    44: ("edicoes", "gap_status"),
+    45: ("edicoes", "gap_avaliado_em"),
+    46: ("edicoes", "gap_detalhe"),
 }
 
 
@@ -714,9 +735,10 @@ def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
               resumo_ia, categoria_ia, texto_corrigido, ia_processado,
               importancia, importancia_motivo, notificar_ia, explicacao_ia,
               partes_ia, checklist_ia, temas, validacao_ia, anomalia, anomalia_motivo,
-              flags_qualidade, confianca, confianca_nivel, confianca_detalhe
+              flags_qualidade, confianca, confianca_nivel, confianca_detalhe,
+              feedback, feedback_em, ia_tentativas, ia_status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -785,6 +807,10 @@ def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
                             else None
                         )
                     ),
+                    item.get("feedback"),
+                    item.get("feedback_em"),
+                    item.get("ia_tentativas"),
+                    item.get("ia_status"),
                 )
                 for item in publicacoes
             ],

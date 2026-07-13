@@ -283,6 +283,12 @@ def _processar_edicao_unlocked(
 
         database.insert_mencoes(download.edicao_id, resultado.mencoes_db)
         database.insert_publicacoes(download.edicao_id, resultado.publicacoes)
+        try:
+            import qualidade
+
+            qualidade.avaliar_e_persistir_gap(download.edicao_id)
+        except Exception:
+            logger.debug("gap pós-insert falhou", exc_info=True)
         database.salvar_arquivos_atos_locais(ocr.texto_path, resultado.publicacoes)
         try:
             import atos_arquivo
@@ -487,17 +493,22 @@ def reprocessar_deteccao_de_cache(
         mensagem="Reprocessando detecção a partir do .ocr.json",
     )
     try:
-        # Preserva campos de IA já gravados (se a API estiver fora, não apaga resumos).
+        # Snapshot + merge multi-key (PR4) preserva feedback/IA/tentativas
         pubs_anteriores = _publicacoes_existentes(edicao_id)
 
         resultado = detectar(edicao_id, titulo, ocr.paginas)
         resultado = _aplicar_qualidade_pos_deteccao(resultado, data_pub)
         pubs = _mesclar_ia_anterior(resultado.publicacoes, pubs_anteriores)
-        # Reconstroi resultado com pubs mescladas (dataclass frozen)
         resultado = replace(resultado, publicacoes=pubs)
 
         database.insert_mencoes(edicao_id, resultado.mencoes_db)
         database.insert_publicacoes(edicao_id, resultado.publicacoes)
+        try:
+            import qualidade
+
+            qualidade.avaliar_e_persistir_gap(edicao_id)
+        except Exception:
+            logger.debug("gap pós-redetect falhou", exc_info=True)
         database.salvar_arquivos_atos_locais(
             ocr.texto_path if ocr.texto_path else pdf_path.with_suffix(".txt"),
             resultado.publicacoes,
@@ -552,54 +563,27 @@ def _publicacoes_existentes(edicao_id: int) -> list[dict]:
 def _mesclar_ia_anterior(
     novas: list[dict], anteriores: list[dict]
 ) -> list[dict]:
-    """Copia resumo_ia/campos refinados de publicações anteriores parecidas.
-
-    Chave: página + tipo normalizado + número (quando houver).
-    """
+    """Delega ao merge multi-key PR4 (K1–K4, feedback, tentativas)."""
     if not anteriores:
         return novas
+    try:
+        import qualidade
+        import database
 
-    def chave(p: dict) -> str:
-        return "|".join(
-            [
-                str(p.get("pagina") or ""),
-                (p.get("tipo") or "").strip().casefold(),
-                (p.get("numero") or "").strip().casefold(),
-            ]
+        cols: set[str] | None = None
+        try:
+            with database.connect() as c:
+                cols = {
+                    r[1] for r in c.execute("PRAGMA table_info(publicacoes)").fetchall()
+                }
+        except Exception:
+            cols = None
+        return qualidade.aplicar_merge_reprocess(
+            novas, anteriores, cols_publicacoes=cols
         )
-
-    idx = {chave(p): p for p in anteriores}
-    # também índice por trecho prefixo
-    idx_trecho = {
-        (p.get("trecho") or "")[:120].strip().casefold(): p for p in anteriores
-    }
-
-    campos_ia = (
-        "resumo_ia",
-        "categoria_ia",
-        "texto_corrigido",
-        "orgao",
-        "tipo",
-        "numero",
-        "data_documento",
-        "assunto",
-        "valor",
-    )
-    out: list[dict] = []
-    for pub in novas:
-        merged = dict(pub)
-        prev = idx.get(chave(pub))
-        if prev is None:
-            prev = idx_trecho.get((pub.get("trecho") or "")[:120].strip().casefold())
-        if prev and not merged.get("resumo_ia") and prev.get("resumo_ia"):
-            for campo in campos_ia:
-                if prev.get(campo) and not merged.get(campo):
-                    merged[campo] = prev[campo]
-            # se a nova não tem órgão mas a antiga tinha (e era Inajá), reaproveita
-            if not merged.get("orgao") and prev.get("orgao"):
-                merged["orgao"] = prev["orgao"]
-        out.append(merged)
-    return out
+    except Exception:
+        logger.debug("merge qualidade falhou; retorna novas", exc_info=True)
+        return novas
 
 
 def processar_edicao_por_id(

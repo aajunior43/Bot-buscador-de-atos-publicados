@@ -38,6 +38,7 @@ _K_CEREBRO = "agente_ultimo_cerebro"
 _K_IA_HORA = "agente_ia_hora"  # "YYYYMMDDHH:count"
 _K_OCR_DIA = "agente_ocr_dia"  # "YYYYMMDD:count"
 _K_RE_IA_DIA = "agente_re_ia_dia"  # "YYYYMMDD:count"
+_K_DIGEST_DIA = "agente_ultimo_digest_dia"  # YYYYMMDD
 _K_ALERTA = "agente_alerta_"  # prefix + key → iso cooldown
 
 
@@ -789,8 +790,65 @@ def run_cerebro(*, force: bool = False) -> CicloResultado:
                 res.add("subdetectado", True, det, "acao")
                 log_acao(ciclo="cerebro", modo=modo, acao="subdetectado", detalhe=det)
         except Exception as exc:
-            res.add("subdetectado", False, str(exc)[:120], "warn")
+            res.add("subdetectado", False, str(exc), "erro")
 
+    # Gaps (PR4): scan leve formiga/cirurgiao; reprocess só se flag + cirurgião
+    if modo in {"formiga", "cirurgiao", "auto"} and bool(
+        getattr(SETTINGS, "quality_gap_detect", True)
+    ):
+        try:
+            import qualidade
+
+            max_gap = int(getattr(SETTINGS, "agente_max_gap_por_ciclo", 1) or 1)
+            gaps = qualidade.listar_gaps_pendentes(max_gap)
+            if gaps and bool(getattr(SETTINGS, "quality_gap_autoreprocess", False)):
+                if modo == "cirurgiao" and not _motivo_pular_ocr_cerebro(force=force):
+                    g0 = gaps[0]
+                    eid = int(g0["id"])
+                    acao = (g0.get("gap_acao") or "redetect_cache").casefold()
+                    if acao == "force_ocr" and _pode_ocr(1):
+                        from pipeline import processar_edicao_por_id
+
+                        processar_edicao_por_id(
+                            eid, force_ocr=True, fast_ocr=True, notificar_se_encontrado=False
+                        )
+                        _inc_ocr_calls(1)
+                        res.add("gap_reprocess", True, f"force_ocr id={eid}", "acao")
+                    else:
+                        from pipeline import reprocessar_deteccao_de_cache
+
+                        reprocessar_deteccao_de_cache(eid, notificar_se_encontrado=False)
+                        res.add("gap_reprocess", True, f"redetect id={eid}", "acao")
+                    with database.connect() as c:
+                        c.execute(
+                            "UPDATE edicoes SET gap_status='processado' WHERE id=?",
+                            (eid,),
+                        )
+            elif gaps:
+                res.add(
+                    "gap_scan",
+                    True,
+                    f"pendentes={len(gaps)} (autoreprocess off)",
+                    "info",
+                )
+        except Exception as exc:
+            res.add("gap", False, str(exc)[:120], "warn")
+
+    # Digest qualidade 1×/dia (formiga/cirurgiao/auto)
+    if modo in {"formiga", "cirurgiao", "auto"} and bool(
+        getattr(SETTINGS, "quality_digest_diario", True)
+    ):
+        hoje = _now().strftime("%Y%m%d")
+        ult = database.get_setting(_K_DIGEST_DIA, "") or ""
+        if ult != hoje:
+            try:
+                import qualidade
+
+                path = qualidade.gravar_digest_qualidade()
+                database.set_setting(_K_DIGEST_DIA, hoje)
+                res.add("digest_qualidade", True, str(path or "ok"), "info")
+            except Exception as exc:
+                res.add("digest_qualidade", False, str(exc)[:80], "warn")
 
     database.set_setting(_K_CEREBRO, _now().isoformat(timespec="seconds"))
     return res

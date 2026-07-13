@@ -4,6 +4,8 @@
 
 Monitors "O Regional Jornal" PDF editions, runs OCR + text analysis to detect official publications from Inajá-PR, and notifies via File/Webhook.
 
+Quality layer (`qualidade.py` / `qualidade_gap.py`): year-OCR fix, confidence score (alta≥85/média≥55/revisar), re-IA queue in agent brain, gap detection (menções×pubs), daily DIGEST-QUALIDADE in `alertas/`.
+
 ## Pipeline (in order)
 
 ```

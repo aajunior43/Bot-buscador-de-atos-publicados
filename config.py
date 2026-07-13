@@ -194,6 +194,22 @@ class Settings:
     quality_re_ia_espelhar: bool = _bool_env("QUALITY_RE_IA_ESPELHAR", False)
     agente_max_re_ia_por_ciclo: int = _int_env("AGENTE_MAX_RE_IA_POR_CICLO", 5)
     agente_max_re_ia_por_dia: int = _int_env("AGENTE_MAX_RE_IA_POR_DIA", 40)
+    # PR4 gaps
+    quality_gap_detect: bool = _bool_env("QUALITY_GAP_DETECT", True)
+    quality_gap_autoreprocess: bool = _bool_env("QUALITY_GAP_AUTOREPROCESS", False)
+    quality_gap_mode: str = (
+        os.getenv("QUALITY_GAP_MODE", "reprocess") or "reprocess"
+    ).strip().casefold()
+    quality_gap_min_hits: int = _int_env("QUALITY_GAP_MIN_HITS", 3)
+    quality_gap_max_pubs: int = _int_env("QUALITY_GAP_MAX_PUBS", 1)
+    quality_reprocess_preserve_feedback: bool = _bool_env(
+        "QUALITY_REPROCESS_PRESERVE_FEEDBACK", True
+    )
+    agente_max_gap_por_ciclo: int = _int_env("AGENTE_MAX_GAP_POR_CICLO", 1)
+    # PR5b digest / webhook
+    quality_digest_diario: bool = _bool_env("QUALITY_DIGEST_DIARIO", True)
+    quality_webhook_digest: bool = _bool_env("QUALITY_WEBHOOK_DIGEST", False)
+    quality_webhook_enrich: bool = _bool_env("QUALITY_WEBHOOK_ENRICH", True)
 
     def __post_init__(self) -> None:
         # Campos de lista lidos do ambiente (default_factory já garante [] se não chamado)
