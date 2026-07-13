@@ -624,3 +624,127 @@ def flags_qualidade_para_db(flags: Any) -> str | None:
         return json.dumps(flags, ensure_ascii=False)
     except (TypeError, ValueError):
         return str(flags)
+
+
+_TIPOS_COM_VALOR = frozenset(
+    {
+        "contrato",
+        "extrato de contrato",
+        "extrato",
+        "dispensa",
+        "homologação/adjudicação",
+        "homologacao/adjudicacao",
+        "termo aditivo",
+        "pregão",
+        "pregao",
+        "inexigibilidade",
+    }
+)
+
+
+def _peso_candidata_re_ia(pub: dict) -> int:
+    peso = 0
+    if not (pub.get("resumo_ia") or "").strip():
+        peso += 20
+    if _tipo_generico(pub.get("tipo")):
+        peso += 15
+    if not (pub.get("orgao") or "").strip():
+        peso += 12
+    tipo_n = _sem_acentos(str(pub.get("tipo") or "")).casefold()
+    if not (pub.get("valor") or "").strip() and any(
+        t in tipo_n for t in ("contrato", "extrato", "dispensa", "homolog", "aditiv", "pregao", "pregão", "inexigib")
+    ):
+        peso += 10
+    if not pub.get("ia_processado"):
+        peso += 8
+    if (pub.get("confianca_nivel") or "").casefold() == "revisar" and not (
+        pub.get("resumo_ia") or ""
+    ).strip():
+        peso += 5
+    return peso
+
+
+def listar_candidatas_re_ia(
+    limit: int = 20,
+    *,
+    max_tentativas: int | None = None,
+    mes: str = "",
+) -> list[dict]:
+    """Lista publicações candidatas a re-IA (cérebro / CLI)."""
+    import database
+
+    if max_tentativas is None:
+        max_tentativas = int(getattr(SETTINGS, "quality_re_ia_max_tentativas", 3) or 3)
+    lim = max(1, min(200, int(limit)))
+
+    with database.connect() as c:
+        cols = {r[1] for r in c.execute("PRAGMA table_info(publicacoes)").fetchall()}
+        has_tent = "ia_tentativas" in cols
+        has_status = "ia_status" in cols
+        has_conf = "confianca_nivel" in cols
+
+        wheres = [
+            "("
+            "p.resumo_ia IS NULL OR trim(p.resumo_ia) = ''"
+            " OR p.orgao IS NULL OR trim(p.orgao) = ''"
+            " OR p.tipo IS NULL OR trim(p.tipo) = ''"
+            " OR COALESCE(p.ia_processado, 0) = 0"
+            + (
+                " OR lower(COALESCE(p.confianca_nivel, '')) = 'revisar'"
+                if has_conf
+                else ""
+            )
+            + ")"
+        ]
+        if has_status:
+            wheres.insert(0, "COALESCE(p.ia_status, '') != 'esgotado'")
+        if has_tent:
+            wheres.insert(0, f"COALESCE(p.ia_tentativas, 0) < {int(max_tentativas)}")
+
+        sql = f"""
+            SELECT p.*, e.data_publicacao
+            FROM publicacoes p
+            JOIN edicoes e ON e.id = p.edicao_id
+            WHERE {" AND ".join(wheres)}
+        """
+        params: list = []
+        if mes.strip():
+            sql += " AND e.data_publicacao LIKE ?"
+            params.append(f"{mes.strip()}%")
+        sql += " ORDER BY e.data_publicacao DESC, p.id DESC LIMIT ?"
+        params.append(max(lim * 6, 40))
+        rows = [dict(r) for r in c.execute(sql, params).fetchall()]
+
+    out: list[dict] = []
+    for r in rows:
+        if has_tent and int(r.get("ia_tentativas") or 0) >= max_tentativas:
+            continue
+        if has_status and (r.get("ia_status") or "").casefold() == "esgotado":
+            continue
+        trecho = (
+            r.get("trecho") or r.get("assunto") or r.get("texto_corrigido") or ""
+        ).strip()
+        if not trecho:
+            continue
+        r = dict(r)
+        r["trecho"] = trecho
+        r["_peso_re_ia"] = _peso_candidata_re_ia(r)
+        out.append(r)
+
+    out.sort(
+        key=lambda p: (
+            -int(p.get("_peso_re_ia") or 0),
+            p.get("data_publicacao") or "",
+        )
+    )
+    return out[:lim]
+
+
+def aplicar_pos_re_ia(pub: dict, *, data_edicao: str | None) -> dict:
+    """Correção de ano + confiança após refine (in-place friendly)."""
+    p = dict(pub)
+    if bool(getattr(SETTINGS, "quality_fix_numero_ano", True)):
+        p = aplicar_correcao_numero_pub(p, data_edicao=data_edicao)
+    if bool(getattr(SETTINGS, "quality_confianca", True)):
+        p = aplicar_confianca_pub(p, data_edicao=data_edicao)
+    return p

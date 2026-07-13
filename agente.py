@@ -37,6 +37,7 @@ _K_PULSE = "agente_ultimo_pulse"
 _K_CEREBRO = "agente_ultimo_cerebro"
 _K_IA_HORA = "agente_ia_hora"  # "YYYYMMDDHH:count"
 _K_OCR_DIA = "agente_ocr_dia"  # "YYYYMMDD:count"
+_K_RE_IA_DIA = "agente_re_ia_dia"  # "YYYYMMDD:count"
 _K_ALERTA = "agente_alerta_"  # prefix + key → iso cooldown
 
 
@@ -261,6 +262,40 @@ def _inc_ia_calls(n: int = 1) -> None:
 
 def _pode_ia(n: int = 1) -> bool:
     return _ia_calls_hora() + n <= SETTINGS.agente_max_ia_por_hora
+
+
+def _re_ia_calls_hoje() -> int:
+    raw = database.get_setting(_K_RE_IA_DIA, "")
+    if not raw or ":" not in raw:
+        return 0
+    bucket, n = raw.split(":", 1)
+    if bucket != _now().strftime("%Y%m%d"):
+        return 0
+    try:
+        return int(n)
+    except ValueError:
+        return 0
+
+
+def _inc_re_ia_dia(n: int = 1) -> None:
+    hoje = _now().strftime("%Y%m%d")
+    cur = _re_ia_calls_hoje()
+    database.set_setting(_K_RE_IA_DIA, f"{hoje}:{cur + n}")
+
+
+def _limite_re_ia_ciclo() -> int:
+    """Orçamento multi-camada: min(ciclo, hora restante, dia restante, AI_MAX batch)."""
+    if not bool(getattr(SETTINGS, "quality_re_ia_auto", True)):
+        return 0
+    max_ciclo = int(getattr(SETTINGS, "agente_max_re_ia_por_ciclo", 5) or 5)
+    max_dia = int(getattr(SETTINGS, "agente_max_re_ia_por_dia", 40) or 40)
+    remaining_hora = max(0, int(SETTINGS.agente_max_ia_por_hora) - _ia_calls_hora())
+    remaining_dia = max(0, max_dia - _re_ia_calls_hoje())
+    batch_cap = max(0, max_ciclo)
+    ai_max = int(getattr(SETTINGS, "ai_max_calls_por_ciclo", 80) or 0)
+    if ai_max > 0:
+        batch_cap = min(batch_cap, ai_max)
+    return min(batch_cap, remaining_hora, remaining_dia)
 
 
 # ---------------------------------------------------------------------------
@@ -680,36 +715,62 @@ def run_cerebro(*, force: bool = False) -> CicloResultado:
                         nivel="erro",
                     )
 
-    # Re-IA (cirurgião / auto / formiga se sobrar orçamento)
+    # Re-IA (cirurgião / formiga / auto) — orçamento multi-camada (PR3)
     if modo in {"cirurgiao", "formiga", "auto"} and _pode_ia(1):
-        fracos = _pubs_fracas(min(5, SETTINGS.agente_max_ia_por_hora - _ia_calls_hora()))
-        if fracos:
+        limit = _limite_re_ia_ciclo()
+        if limit <= 0:
+            res.add(
+                "re_ia",
+                True,
+                f"orçamento re-IA esgotado (hora={_ia_calls_hora()} dia={_re_ia_calls_hoje()})",
+                "info",
+            )
+        else:
             try:
-                from ai_processor import ia_disponivel, refinar_publicacoes, reset_ai_call_counter
+                from ai_processor import (
+                    ia_disponivel,
+                    refinar_publicacoes,
+                    reset_ai_call_counter,
+                )
+                import qualidade
 
                 if ia_disponivel():
-                    pubs = []
-                    for r in fracos:
-                        trecho = (r.get("trecho") or r.get("assunto") or "").strip()
-                        if not trecho:
-                            continue
-                        pubs.append({**r, "trecho": trecho})
-                    if pubs:
-                        reset_ai_call_counter()
-                        refinadas, stats = refinar_publicacoes(pubs[:3])
-                        _inc_ia_calls(len(pubs[:3]))
+                    fracos = qualidade.listar_candidatas_re_ia(limit)
+                    if fracos:
+                        reset_ai_call_counter()  # batch cap; corte real em _pode_chamar_ia
+                        refinadas, stats = refinar_publicacoes(fracos[:limit])
                         n_ok = 0
                         for p in refinadas or []:
                             if not p or not p.get("id"):
                                 continue
                             try:
-                                database.update_publicacao_ia(p)
+                                data_ed = p.get("data_publicacao")
+                                if not data_ed and p.get("edicao_id"):
+                                    with database.connect() as c:
+                                        row = c.execute(
+                                            "SELECT data_publicacao FROM edicoes WHERE id=?",
+                                            (p["edicao_id"],),
+                                        ).fetchone()
+                                        data_ed = row["data_publicacao"] if row else None
+                                p = qualidade.aplicar_pos_re_ia(p, data_edicao=data_ed)
+                                database.update_publicacao_ia(
+                                    p, registrar_tentativa=True
+                                )
+                                _inc_ia_calls(1)
+                                _inc_re_ia_dia(1)
                                 n_ok += 1
                             except Exception:
-                                pass
-                        det = f"re_ia n={n_ok} stats={stats}"
+                                logger.debug(
+                                    "re_ia update falhou id=%s", p.get("id"), exc_info=True
+                                )
+                        det = (
+                            f"re_ia n={n_ok}/{limit} "
+                            f"dia={_re_ia_calls_hoje()} stats={stats}"
+                        )
                         res.add("re_ia", True, det, "acao")
                         log_acao(ciclo="cerebro", modo=modo, acao="re_ia", detalhe=det)
+                    else:
+                        res.add("re_ia", True, "nenhuma candidata", "info")
                 else:
                     res.add("re_ia", False, "IA indisponível", "warn")
             except Exception as exc:

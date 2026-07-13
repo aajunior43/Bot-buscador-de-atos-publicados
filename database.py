@@ -199,6 +199,13 @@ _MIGRATIONS: list[tuple[int, str]] = [
         35,
         "CREATE INDEX IF NOT EXISTS idx_pub_confianca_nivel ON publicacoes(confianca_nivel)",
     ),
+    # Qualidade PR3: re-IA attempts
+    (36, "ALTER TABLE publicacoes ADD COLUMN ia_tentativas INTEGER DEFAULT 0"),
+    (37, "ALTER TABLE publicacoes ADD COLUMN ia_status TEXT"),
+    (
+        38,
+        "CREATE INDEX IF NOT EXISTS idx_pub_ia_status ON publicacoes(ia_status)",
+    ),
 ]
 
 # Colunas esperadas por migração — usadas para marcar versões já aplicadas
@@ -237,6 +244,8 @@ _MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
     32: ("publicacoes", "confianca"),
     33: ("publicacoes", "confianca_nivel"),
     34: ("publicacoes", "confianca_detalhe"),
+    36: ("publicacoes", "ia_tentativas"),
+    37: ("publicacoes", "ia_status"),
 }
 
 
@@ -1684,22 +1693,111 @@ def get_publicacoes_sem_ia(limit: int = 100) -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def update_publicacao_ia(pub: dict) -> None:
-    """Atualiza os campos refinados pela IA em uma publicação existente."""
+def _json_or_none(val: object) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, str):
+        return val if val.strip() else None
+    try:
+        return json.dumps(val, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(val)
+
+
+def update_publicacao_ia(pub: dict, *, registrar_tentativa: bool = False) -> None:
+    """Atualiza campos refinados pela IA + qualidade.
+
+    - COALESCE em campos estruturais: não apaga com NULL da IA.
+    - ``feedback`` / ``feedback_em`` nunca são tocados.
+    - ``ia_tentativas``: só se ``registrar_tentativa=True`` (dono único via SQL +1).
+    """
+    max_tent = 3
+    try:
+        from config import SETTINGS as _S
+
+        max_tent = int(getattr(_S, "quality_re_ia_max_tentativas", 3) or 3)
+    except Exception:
+        pass
+
+    resumo = pub.get("resumo_ia")
+    # ia_processado: 1 se veio resumo ou flag explícita de sucesso
+    ia_ok = bool(resumo) or bool(pub.get("ia_processado"))
+
+    conf_det = _json_or_none(pub.get("confianca_detalhe"))
+    flags_q = _json_or_none(pub.get("flags_qualidade"))
+    partes = _json_or_none(pub.get("partes_ia"))
+    checklist = _json_or_none(pub.get("checklist_ia"))
+    validacao = _json_or_none(pub.get("validacao_ia"))
+    temas = pub.get("temas")
+    if temas is not None and not isinstance(temas, str):
+        temas = _json_or_none(temas)
+
+    notificar = pub.get("notificar_ia")
+    notificar_sql = None
+    if notificar is not None:
+        notificar_sql = (
+            1 if notificar in (True, 1, "1", "true", "True") else 0
+        )
+
+    anomalia = pub.get("anomalia")
+    anomalia_sql = None
+    if anomalia is not None:
+        anomalia_sql = 1 if anomalia in (True, 1, "1", "true") else 0
+
     with connect() as conn:
+        # status após tentativa
+        ia_status = pub.get("ia_status")
+        if registrar_tentativa and not ia_status:
+            # calcula esgotado se ainda fraca após +1
+            row = conn.execute(
+                "SELECT COALESCE(ia_tentativas,0) AS t, resumo_ia FROM publicacoes WHERE id=?",
+                (pub["id"],),
+            ).fetchone()
+            t_prev = int(row["t"] if row else 0)
+            t_new = t_prev + 1
+            still_weak = not (resumo or (row and (row["resumo_ia"] or "").strip()))
+            if t_new >= max_tent and still_weak:
+                ia_status = "esgotado"
+            elif resumo:
+                ia_status = "ok"
+            else:
+                ia_status = "pendente"
+
+        tent_sql = (
+            "ia_tentativas = COALESCE(ia_tentativas, 0) + 1,"
+            if registrar_tentativa
+            else ""
+        )
+
         conn.execute(
-            """
-            UPDATE publicacoes
-            SET orgao           = COALESCE(?, orgao),
-                tipo            = COALESCE(?, tipo),
-                numero          = COALESCE(?, numero),
-                data_documento  = COALESCE(?, data_documento),
-                assunto         = COALESCE(?, assunto),
-                valor           = COALESCE(?, valor),
-                resumo_ia       = ?,
-                categoria_ia    = COALESCE(?, categoria_ia),
-                texto_corrigido = COALESCE(?, texto_corrigido),
-                ia_processado   = 1
+            f"""
+            UPDATE publicacoes SET
+              orgao = COALESCE(?, orgao),
+              tipo = COALESCE(?, tipo),
+              numero = COALESCE(?, numero),
+              data_documento = COALESCE(?, data_documento),
+              assunto = COALESCE(?, assunto),
+              valor = COALESCE(?, valor),
+              resumo_ia = COALESCE(?, resumo_ia),
+              categoria_ia = COALESCE(?, categoria_ia),
+              texto_corrigido = COALESCE(?, texto_corrigido),
+              ia_processado = CASE WHEN ? THEN 1 ELSE ia_processado END,
+              importancia = COALESCE(?, importancia),
+              importancia_motivo = COALESCE(?, importancia_motivo),
+              notificar_ia = COALESCE(?, notificar_ia),
+              explicacao_ia = COALESCE(?, explicacao_ia),
+              partes_ia = COALESCE(?, partes_ia),
+              checklist_ia = COALESCE(?, checklist_ia),
+              temas = COALESCE(?, temas),
+              validacao_ia = COALESCE(?, validacao_ia),
+              anomalia = COALESCE(?, anomalia),
+              anomalia_motivo = COALESCE(?, anomalia_motivo),
+              flags_qualidade = COALESCE(?, flags_qualidade),
+              confianca = COALESCE(?, confianca),
+              confianca_nivel = COALESCE(?, confianca_nivel),
+              confianca_detalhe = COALESCE(?, confianca_detalhe),
+              {tent_sql}
+              ia_status = COALESCE(?, ia_status)
             WHERE id = ?
             """,
             (
@@ -1709,9 +1807,25 @@ def update_publicacao_ia(pub: dict) -> None:
                 pub.get("data_documento"),
                 pub.get("assunto"),
                 pub.get("valor"),
-                pub.get("resumo_ia"),
+                resumo,
                 pub.get("categoria_ia"),
                 pub.get("texto_corrigido"),
+                1 if ia_ok else 0,
+                pub.get("importancia"),
+                pub.get("importancia_motivo"),
+                notificar_sql,
+                pub.get("explicacao_ia"),
+                partes,
+                checklist,
+                temas,
+                validacao,
+                anomalia_sql,
+                pub.get("anomalia_motivo"),
+                flags_q,
+                pub.get("confianca"),
+                pub.get("confianca_nivel"),
+                conf_det,
+                ia_status,
                 pub["id"],
             ),
         )

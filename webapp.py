@@ -2175,8 +2175,13 @@ async def api_eventos(request: Request) -> StreamingResponse:
 @app.post("/edicoes/{edicao_id}/ia")
 def refinar_ia_manual(edicao_id: int, request: Request = None, format: str = Query("redirect")):
     with _conn() as conn:
-        row = _row_or_404(conn, "SELECT texto_extraido_path FROM edicoes WHERE id = ?", (edicao_id,))
+        row = _row_or_404(
+            conn,
+            "SELECT texto_extraido_path, data_publicacao FROM edicoes WHERE id = ?",
+            (edicao_id,),
+        )
         texto_path = row["texto_extraido_path"]
+        data_pub = row["data_publicacao"]
         publicacoes_rows = conn.execute(
             "SELECT * FROM publicacoes WHERE edicao_id = ?", (edicao_id,)
         ).fetchall()
@@ -2195,7 +2200,10 @@ def refinar_ia_manual(edicao_id: int, request: Request = None, format: str = Que
     )
 
     def _refinar():
+        # PR3: UPDATE por id + qualidade — NÃO apaga feedback com insert_publicacoes
         from ai_processor import refinar_publicacoes
+        import qualidade
+
         pubs = [dict(r) for r in publicacoes_rows]
         database.update_job(
             ia_job,
@@ -2206,10 +2214,38 @@ def refinar_ia_manual(edicao_id: int, request: Request = None, format: str = Que
             progress_step="ia",
         )
         refinadas, _stats = refinar_publicacoes(pubs)
-        database.insert_publicacoes(edicao_id, refinadas)
-        if texto_path:
-            database.salvar_arquivos_atos_locais(texto_path, refinadas)
-        database.update_job(ia_job, "concluido", mensagem="Refinamento IA concluído", progress_current=100, progress_total=100, progress_step="ia")
+        n_ok = 0
+        for p in refinadas or []:
+            if not p or not p.get("id"):
+                continue
+            try:
+                p = qualidade.aplicar_pos_re_ia(p, data_edicao=data_pub)
+                database.update_publicacao_ia(p, registrar_tentativa=True)
+                n_ok += 1
+            except Exception:
+                logger.exception("re-IA update falhou id=%s", p.get("id"))
+        if texto_path and n_ok:
+            try:
+                # re-lê pubs atuais para arquivos locais (sem wipe)
+                with _conn() as conn:
+                    atuais = [
+                        dict(r)
+                        for r in conn.execute(
+                            "SELECT * FROM publicacoes WHERE edicao_id = ?",
+                            (edicao_id,),
+                        ).fetchall()
+                    ]
+                database.salvar_arquivos_atos_locais(texto_path, atuais)
+            except Exception:
+                logger.debug("salvar atos locais pós-re-IA falhou", exc_info=True)
+        database.update_job(
+            ia_job,
+            "concluido",
+            mensagem=f"Refinamento IA concluído ({n_ok} pubs)",
+            progress_current=100,
+            progress_total=100,
+            progress_step="ia",
+        )
 
     _task_executor.submit(_refinar)
     if format == "json" or (request and request.headers.get("accept", "").startswith("application/json")):

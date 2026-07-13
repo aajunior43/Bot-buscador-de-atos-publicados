@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Re-roda refinamento IA em publicações fracas (sem resumo / sem valor).
+"""Re-roda refinamento IA em publicações fracas.
 
 Uso:
   python scripts/_re_ia.py
   python scripts/_re_ia.py --mes 2026-07
   python scripts/_re_ia.py --limite 10
+  python scripts/_re_ia.py --so-sem-resumo
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import database
+import qualidade
 from ai_processor import ia_disponivel, refinar_publicacoes, reset_ai_call_counter
 
 logging.basicConfig(
@@ -32,7 +34,7 @@ def main() -> int:
     ap.add_argument(
         "--so-sem-resumo",
         action="store_true",
-        help="Só pubs sem resumo_ia",
+        help="Só pubs sem resumo_ia (filtro extra após listar_candidatas)",
     )
     args = ap.parse_args()
     lim = max(1, min(100, args.limite))
@@ -42,58 +44,18 @@ def main() -> int:
         return 2
 
     database.init_db()
-    sql = """
-        SELECT p.*, e.data_publicacao
-        FROM publicacoes p
-        JOIN edicoes e ON e.id = p.edicao_id
-        WHERE (
-            p.resumo_ia IS NULL OR trim(p.resumo_ia) = ''
-    """
-    if not args.so_sem_resumo:
-        sql += " OR p.valor IS NULL OR trim(p.valor) = ''"
-    sql += ")"
-    params: list = []
-    if args.mes.strip():
-        sql += " AND e.data_publicacao LIKE ?"
-        params.append(f"{args.mes.strip()}%")
-    sql += " ORDER BY e.data_publicacao DESC, p.id DESC LIMIT ?"
-    params.append(lim)
-
-    with database.connect() as c:
-        rows = [dict(r) for r in c.execute(sql, params).fetchall()]
+    rows = qualidade.listar_candidatas_re_ia(lim * 2, mes=args.mes.strip())
+    if args.so_sem_resumo:
+        rows = [r for r in rows if not (r.get("resumo_ia") or "").strip()]
+    rows = rows[:lim]
 
     print(f"\n  Publicações candidatas: {len(rows)}\n")
     if not rows:
         print("  Nada a refinar.\n")
         return 0
 
-    pubs = []
-    for r in rows:
-        trecho = (r.get("trecho") or r.get("assunto") or r.get("texto_corrigido") or "").strip()
-        if not trecho:
-            continue
-        pubs.append(
-            {
-                "id": r["id"],
-                "edicao_id": r["edicao_id"],
-                "tipo": r.get("tipo"),
-                "numero": r.get("numero"),
-                "orgao": r.get("orgao"),
-                "assunto": r.get("assunto"),
-                "valor": r.get("valor"),
-                "resumo_ia": r.get("resumo_ia"),
-                "pagina": r.get("pagina"),
-                "trecho": trecho,
-                "importancia": r.get("importancia"),
-            }
-        )
-
-    if not pubs:
-        print("  Nenhuma com trecho para reenviar à IA.\n")
-        return 0
-
     reset_ai_call_counter()
-    refinadas, stats = refinar_publicacoes(pubs)
+    refinadas, stats = refinar_publicacoes(rows)
     log.info("stats=%s", stats)
 
     updated = 0
@@ -101,32 +63,19 @@ def main() -> int:
         if not p or not p.get("id"):
             continue
         try:
-            database.update_publicacao_ia(p)
+            data_ed = p.get("data_publicacao")
+            if not data_ed and p.get("edicao_id"):
+                with database.connect() as c:
+                    row = c.execute(
+                        "SELECT data_publicacao FROM edicoes WHERE id=?",
+                        (p["edicao_id"],),
+                    ).fetchone()
+                    data_ed = row["data_publicacao"] if row else None
+            p = qualidade.aplicar_pos_re_ia(p, data_edicao=data_ed)
+            database.update_publicacao_ia(p, registrar_tentativa=True)
             updated += 1
         except Exception:
             log.exception("falha update id=%s", p.get("id"))
-            # fallback mínimo
-            with database.connect() as c:
-                c.execute(
-                    """
-                    UPDATE publicacoes SET
-                      resumo_ia = COALESCE(?, resumo_ia),
-                      valor = COALESCE(?, valor),
-                      numero = COALESCE(?, numero),
-                      orgao = COALESCE(?, orgao),
-                      tipo = COALESCE(?, tipo)
-                    WHERE id = ?
-                    """,
-                    (
-                        p.get("resumo_ia"),
-                        p.get("valor"),
-                        p.get("numero"),
-                        p.get("orgao"),
-                        p.get("tipo"),
-                        p["id"],
-                    ),
-                )
-                updated += 1
 
     print(f"  Atualizadas: {updated}  stats={stats}")
     for p in (refinadas or [])[:15]:
@@ -134,7 +83,8 @@ def main() -> int:
             continue
         print(
             f"    · {p.get('tipo') or '?'} {p.get('numero') or ''} | "
-            f"{(p.get('resumo_ia') or '')[:70]}"
+            f"conf={p.get('confianca_nivel') or '—'} | "
+            f"{(p.get('resumo_ia') or '')[:60]}"
         )
     print()
     return 0

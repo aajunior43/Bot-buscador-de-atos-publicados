@@ -188,6 +188,12 @@ class Settings:
     # Thresholds rigorosos (decisão de design rev. 4)
     quality_confianca_alta_min: int = _int_env("QUALITY_CONFIANCA_ALTA_MIN", 85)
     quality_confianca_media_min: int = _int_env("QUALITY_CONFIANCA_MEDIA_MIN", 55)
+    # PR3 re-IA automática
+    quality_re_ia_auto: bool = _bool_env("QUALITY_RE_IA_AUTO", True)
+    quality_re_ia_max_tentativas: int = _int_env("QUALITY_RE_IA_MAX_TENTATIVAS", 3)
+    quality_re_ia_espelhar: bool = _bool_env("QUALITY_RE_IA_ESPELHAR", False)
+    agente_max_re_ia_por_ciclo: int = _int_env("AGENTE_MAX_RE_IA_POR_CICLO", 5)
+    agente_max_re_ia_por_dia: int = _int_env("AGENTE_MAX_RE_IA_POR_DIA", 40)
 
     def __post_init__(self) -> None:
         # Campos de lista lidos do ambiente (default_factory já garante [] se não chamado)
