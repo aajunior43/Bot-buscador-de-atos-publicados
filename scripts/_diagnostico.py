@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Diagnóstico completo do ambiente (PATH, IA, Telegram, banco, lock, disco)."""
+"""Diagnóstico completo do ambiente (PATH, IA, banco, lock, disco)."""
 from __future__ import annotations
 
 import os
@@ -89,21 +89,10 @@ def main() -> int:
     except Exception as exc:
         _ok("IA", False, str(exc))
     _ok("AI_REFINE_PUBLICATIONS", bool(SETTINGS.ai_refine_publications))
-    tg_ok = bool(SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id)
-    if tg_ok:
-        tg_detail = "token+chat ok"
-    elif SETTINGS.telegram_bot_token:
-        tg_detail = "token ok, chat_id vazio"
-    else:
-        tg_detail = "token vazio"
-    _ok("Telegram token+chat", tg_ok, tg_detail)
 
-    smtp = bool(
-        getattr(SETTINGS, "smtp_host", None)
-        or getattr(SETTINGS, "email_smtp_host", None)
-        or os.getenv("SMTP_HOST")
-    )
-    _ok("SMTP e-mail", smtp)
+
+    alert_dir = getattr(SETTINGS, "alert_dir", None)
+    _ok("Pasta alertas/", bool(alert_dir), str(alert_dir or ""))
     _ok(
         "Web auth",
         bool(os.getenv("WEBAPP_USER") and os.getenv("WEBAPP_PASSWORD")),

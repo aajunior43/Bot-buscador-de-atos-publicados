@@ -147,7 +147,7 @@ Campos do JSON de retorno:
 - importancia: inteiro 1 a 5 — relevância para gestão/transparência de Inajá
   (1=rotina menor, 3=relevante, 5=crítico: valores altos, licitação, nomeação, LRF)
 - importancia_motivo: string curta explicando a nota
-- notificar: boolean — true se vale alerta imediato (Telegram); false se pode só arquivar"""
+- notificar: boolean — true se vale alerta imediato; false se pode só arquivar"""
 
 def _prompt_usuario(trecho: str) -> str:
     return f"Texto OCR:\n\n{trecho}\n\nExtraia os dados no JSON conforme solicitado."

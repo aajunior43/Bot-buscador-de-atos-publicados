@@ -304,7 +304,7 @@ def _processar_edicao_unlocked(
         )
 
         if notificar_se_encontrado and resultado.encontrado:
-            console_ui.step("Alerta", "Telegram / e-mail / arquivo…", phase="ALR")
+            console_ui.step("Alerta", "Arquivo / webhook…", phase="ALR")
             notify_job = database.start_job(
                 "notificando",
                 titulo=edicao.titulo,

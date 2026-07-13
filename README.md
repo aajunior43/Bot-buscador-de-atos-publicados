@@ -1,6 +1,6 @@
 # Monitor de Atos — O Regional Jornal (Inajá-PR)
 
-Sistema em Python que monitora as edições do **O Regional Jornal**, baixa PDFs, extrai texto com `pdfplumber`/OCR, detecta menções e atos oficiais de **Inajá (PR)** e notifica via Telegram, e-mail, webhook ou arquivo.
+Sistema em Python que monitora as edições do **O Regional Jornal**, baixa PDFs, extrai texto com `pdfplumber`/OCR, detecta menções e atos oficiais de **Inajá (PR)** e grava alertas em arquivo (e webhook opcional).
 
 Além dos trechos, o detector classifica publicações:
 
@@ -21,7 +21,7 @@ Com `AUTO_PROCESS=true` (padrão), o sistema:
 1. Varre o site em intervalos (`CHECK_INTERVAL_HOURS` / `WEB_SCAN_INTERVAL_HOURS`)
 2. Baixa PDFs novos
 3. Roda OCR + detecção + IA
-4. Notifica (Telegram/e-mail/arquivo)
+4. Notifica (arquivo/webhook)
 5. Processa fila de pendentes (mais recentes primeiro, limite configurável)
 
 Orquestração em `pipeline.py`. Botões na interface são opcionais (forçar agora).
@@ -81,8 +81,6 @@ Principais variáveis (ver `.env.example` completo):
 
 | Variável | Descrição |
 |----------|-----------|
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Alertas Telegram |
-| `SMTP_*` | E-mail de fallback/cópia |
 | `OPENCODE_API_KEY` | Refinamento IA |
 | `AI_REFINE_PUBLICATIONS` | Liga/desliga IA (`true`/`false`) |
 | `WEBAPP_USER` / `WEBAPP_PASSWORD` | HTTP Basic na interface |
@@ -99,15 +97,9 @@ Principais variáveis (ver `.env.example` completo):
 - Com `APP_ENV=production` ou `REQUIRE_WEBAPP_AUTH=true`: o webapp **não sobe** sem credenciais.
 - O `docker-compose.yml` de produção define `APP_ENV=production` e `REQUIRE_WEBAPP_AUTH=true`.
 
-## Bot do Telegram (alertas)
+## Alertas
 
-1. Crie o bot com `@BotFather` e copie o token.
-2. Envie uma mensagem ao bot.
-3. `https://api.telegram.org/botSEU_TOKEN/getUpdates` → use o `chat.id`.
-
-Sem token/chat, alertas vão para `./alertas/YYYY-MM-DD.log`.
-
-Há também `telegram_bot.py`: bot **interativo** separado do notificador.
+Alertas vão para `./alertas/YYYY-MM-DD.log`. Webhooks opcionais na tabela `webhooks` / Admin.
 
 ## Execução
 
@@ -145,7 +137,7 @@ uvicorn webapp:app --host 0.0.0.0 --port 8000
 
 Acesse: **http://localhost:8001** (dev) ou a porta mapeada no Docker.
 
-Páginas: dashboard, edições, detecções, status, exportação, **admin** (IA, SMTP, webhooks, termos).
+Páginas: dashboard, edições, detecções, status, exportação, **admin** (IA, webhooks, termos).
 
 No Windows, `iniciar.bat` sobe **interface web + rastreador** em um único terminal (`iniciar_tudo.py`).
 
@@ -200,7 +192,7 @@ Os testes isolam `SETTINGS` e usam SQLite temporário (`tests/conftest.py`).
 | `ocr_processor.py` | Extração de texto / Tesseract |
 | `ai_processor.py` | Refinamento LLM |
 | `database.py` | SQLite, jobs, métricas, migrations |
-| `notifier.py` | Telegram / e-mail / webhook / arquivo |
+| `notifier.py` | Arquivo / webhook |
 | `scraper.py` / `downloader.py` | Listagem e download de edições |
 
 ## Métricas de qualidade

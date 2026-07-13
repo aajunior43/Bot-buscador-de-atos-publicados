@@ -134,7 +134,7 @@ FUNCOES: dict[str, dict[str, str]] = {
           "detalhe": "Disponibilidade da IA e qualidade dos campos no banco."},
     "Z": {"grupo": "QUALIDADE", "titulo": "Diagnostico",
           "curta": "Tesseract, IA, lock, disco",
-          "detalhe": "Healthcheck: PATH, Poppler, chave IA, Telegram, banco, lock, site."},
+          "detalhe": "Healthcheck: PATH, Poppler, chave IA, banco, lock, site."},
     "Q1": {"grupo": "QUALIDADE", "titulo": "Painel qualidade",
           "curta": "FN, só-menção, quarentena",
           "detalhe": "Falsos negativos, só-menção, quarentena, auditoria e relatório de pubs."},
@@ -142,7 +142,7 @@ FUNCOES: dict[str, dict[str, str]] = {
           "curta": "Pubs sem resumo/valor",
           "detalhe": "Chama a IA só em publicações com campos fracos (barato vs OCR)."},
     "A": {"grupo": "FERRAMENTAS", "titulo": "Teste notificacao",
-          "curta": "Telegram/e-mail/arquivo",
+          "curta": "Arquivo/webhook",
           "detalhe": "Envia alerta de teste pela cadeia configurada."},
     "B": {"grupo": "FERRAMENTAS", "titulo": "Backup do banco",
           "curta": "Cópia em logs/backups",
@@ -168,9 +168,6 @@ FUNCOES: dict[str, dict[str, str]] = {
     "D": {"grupo": "FERRAMENTAS", "titulo": "Espaco em disco",
           "curta": "edicoes/ atos/ logs/",
           "detalhe": "Tamanho das pastas e do banco."},
-    "K": {"grupo": "FERRAMENTAS", "titulo": "Telegram interativo",
-          "curta": "Bot de chat",
-          "detalhe": "Sessão interativa do telegram_bot.py (não é o notificador)."},
     "W": {"grupo": "FERRAMENTAS", "titulo": "Abrir pasta",
           "curta": "Explorer no projeto",
           "detalhe": "Abre a pasta do projeto no Explorer."},
@@ -204,7 +201,7 @@ ORDEM: list[tuple[str, list[str]]] = [
     ("CONSULTA", ["S", "U", "P", "M", "Y", "J", "I"]),
     ("QUALIDADE", ["Z", "Q1", "Q2"]),
     ("AGENTE", ["AG"]),
-    ("FERRAMENTAS", ["A", "B", "R", "E", "T", "L", "Q", "G", "D", "K", "W", "CFG", "HS", "H"]),
+    ("FERRAMENTAS", ["A", "B", "R", "E", "T", "L", "Q", "G", "D", "W", "CFG", "HS", "H"]),
     ("PERIGO", ["C"]),
     ("SAIR", ["0"]),
 ]
@@ -430,7 +427,6 @@ def _status_snapshot() -> dict[str, Any]:
         "lock_on": False,
         "bot_vivo": False,
         "agente": "off",
-        "tg": "off",
         "ok": False,
     }
     try:
@@ -471,18 +467,6 @@ def _status_snapshot() -> dict[str, Any]:
                 snap["agente"] = "off"
         except Exception:
             pass
-        try:
-            from notifier import status_telegram
-
-            tg = status_telegram()
-            if tg.get("pronto"):
-                snap["tg"] = "ok"
-            elif tg.get("token_presente"):
-                snap["tg"] = "sem chat"
-            else:
-                snap["tg"] = "off"
-        except Exception:
-            pass
         snap["ok"] = True
     except Exception:
         pass
@@ -503,9 +487,6 @@ def header_status() -> None:
     c_lock = C4 if snap["lock_on"] else C2
     c_bot = C2 if snap["bot_vivo"] else C3
     c_ag = C2 if str(snap["agente"]).startswith("on") else CD
-    tg = str(snap["tg"])
-    c_tg = C2 if tg == "ok" else (C3 if tg == "sem chat" else CD)
-
     lock_txt = "LOCK" if snap["lock_on"] else "livre"
     bot_txt = "BOT vivo" if snap["bot_vivo"] else "BOT parado"
     print(
@@ -516,7 +497,6 @@ def header_status() -> None:
         f"  {CD}|{C0}  {c_lock}lock={lock_txt}{C0}"
         f"  {CD}|{C0}  {c_bot}{bot_txt}{C0}"
         f"  {CD}|{C0}  {c_ag}AGENTE {snap['agente']}{C0}"
-        f"  {CD}|{C0}  {c_tg}TG {tg}{C0}"
     )
 
 
@@ -538,7 +518,7 @@ def show_search_results(query: str) -> None:
     hits = search_funcoes(query)
     print(f"\n  {C5}{CB}Busca:{C0} {CD}{query!r}{C0}  →  {len(hits)} resultado(s)\n")
     if not hits:
-        print(f"  {CD}Nada encontrado. Tente /ocr  /telegram  /lock  /ia{C0}")
+        print(f"  {CD}Nada encontrado. Tente /ocr  /lock  /ia{C0}")
         return
     for k in hits[:20]:
         info = FUNCOES[k]
@@ -615,7 +595,7 @@ def ajuda(filtro: str | None = None) -> None:
         print()
     print(f"  {C5}{CB}ATALHOS DO PROMPT{C0}")
     print("  Enter     repete última ação")
-    print("  /texto    busca opções (ex: /ocr /telegram /lock)")
+    print("  /texto    busca opções (ex: /ocr /lock /ia)")
     print("  !!        repete última")
     print("  full      menu completo  ·  compact  só favoritos")
     print("  fav S     adiciona/remove [S] dos favoritos")
@@ -883,10 +863,6 @@ def _act_hoje() -> bool:
     run_py("scripts/_espaco_disco.py")
 
     print(f"\n  {C2}{CB}Wizard do dia concluído.{C0}")
-    if snap.get("tg") == "sem chat":
-        print(f"  {C3}Dica: Telegram com token mas sem chat_id — configure no Admin ou CFG.{C0}")
-    elif snap.get("tg") == "off":
-        print(f"  {CD}Telegram off — alertas vão para arquivo/e-mail se configurados.{C0}")
     pause()
     return True
 
@@ -1009,13 +985,6 @@ def _act_d() -> bool:
     return True
 
 
-def _act_k() -> bool:
-    code = run_py("telegram_bot.py")
-    if code:
-        pause()
-    return True
-
-
 def _act_w() -> bool:
     if sys.platform == "win32":
         os.startfile(str(ROOT))  # type: ignore[attr-defined]
@@ -1112,7 +1081,7 @@ ACOES: dict[str, Callable[[], bool]] = {
     "J": _act_j, "I": _act_i,
     "Z": _act_z, "Q1": _act_q1, "Q2": _act_q2,
     "A": _act_a, "B": _act_b, "R": _act_r, "E": _act_e, "T": _act_t,
-    "L": _act_l, "Q": _act_q, "G": _act_g, "D": _act_d, "K": _act_k,
+    "L": _act_l, "Q": _act_q, "G": _act_g, "D": _act_d,
     "W": _act_w, "CFG": _act_cfg, "HS": _act_hs, "H": _act_h, "AG": _act_ag, "C": _act_c,
 }
 
@@ -1329,7 +1298,7 @@ def main(argv: list[str] | None = None) -> int:
             if q:
                 show_search_results(q)
             else:
-                print(f"  {CD}Uso: /ocr  /telegram  /lock  /pendente{C0}")
+                print(f"  {CD}Uso: /ocr  /lock  /ia  /pendente{C0}")
             pause()
             continue
 

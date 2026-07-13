@@ -214,7 +214,7 @@ def main() -> int:
 
     py = sys.executable
     # (label, args, required, restart_on_fail)
-    # Sem bot Telegram interativo — alertas opcionais ficam só no notifier (arquivo/e-mail).
+    # Alertas ficam no notifier (arquivo/webhook).
     servicos: list[tuple[str, list[str], bool, bool]] = [
         ("WEB", [py, "run_interface.py"], True, True),
         ("BOT", [py, "main.py"], True, True),

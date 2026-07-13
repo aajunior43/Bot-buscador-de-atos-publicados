@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Processa edições de 2026-07 a partir do cache OCR + IA (sem Telegram)."""
+"""Processa edições de 2026-07 a partir do cache OCR + IA."""
 from __future__ import annotations
 
 import logging

@@ -24,9 +24,6 @@ KEYS_INTERESSE = [
     "opencode_api_key",
     "openrouter_api_key",
     "ai_refine_publications",
-    "telegram_bot_token",
-    "telegram_chat_id",
-    "smtp_host",
     "termos_extra",
     "detection_terms",
 ]
@@ -45,7 +42,6 @@ def main() -> int:
     print(f"  Intervalo BOT: {SETTINGS.check_interval_hours}h")
     print(f"  Auto process:  {SETTINGS.auto_process}")
     print(f"  Limit lote:    {SETTINGS.auto_process_limit}")
-    print(f"  Telegram:      {bool(SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id)}")
     print(f"  DB:            {SETTINGS.db_path}")
 
     print("\n  === Settings (tabela settings) ===")

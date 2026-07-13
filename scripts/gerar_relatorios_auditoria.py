@@ -179,7 +179,7 @@ def main() -> None:
         "- `falso_negativo` / `falso_negativo_provavel`: reprocessar com "
         "`python scripts/reprocessar_cache_ocr.py --falsos-negativos`",
         "- `menção_legitima`: manter (matéria/ruído); não é bug do detector",
-        "- Telegram: definir `TELEGRAM_CHAT_ID` no `.env` (token existe, chat não)",
+        "- Alertas: gravados em `./alertas/` (+ webhooks opcionais)",
         "",
     ]
 

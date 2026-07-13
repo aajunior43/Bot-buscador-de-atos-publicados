@@ -1,11 +1,10 @@
 """
 Testes unitários para notifier.py
-Cobre montagem de mensagem Telegram e detecção de publicações oficiais.
+Cobre montagem de mensagem e gravação em arquivo.
 """
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-import pytest
 from detector import DetectionResult
 from scraper import Edicao
 
@@ -66,7 +65,7 @@ class TestMontarMensagem:
         ]
         resultado = _make_resultado(publicacoes=pubs)
         msg = montar_mensagem(resultado, _make_edicao())
-        assert "omitida" in msg  # limita em 5 e mostra "omitidas"
+        assert "omitida" in msg
 
     def test_mensagem_trechos_truncados(self):
         from notifier import montar_mensagem
@@ -104,7 +103,6 @@ class TestNotificar:
         import database
         database.init_db()
         resultado = _make_resultado(encontrado=False)
-        # Não deve lançar exceção nem gravar notificação
         notificar(resultado, _make_edicao())
         notifs = database.get_notificacoes()
         assert len(notifs) == 0
@@ -114,10 +112,10 @@ class TestNotificar:
         import database
         database.init_db()
         resultado = _make_resultado(encontrado=True)
-        # Sem Telegram configurado, deve salvar em arquivo
         notificar(resultado, _make_edicao())
         notifs = database.get_notificacoes()
         assert len(notifs) >= 1
+        assert notifs[0]["canal"] == "arquivo"
 
     def test_envia_webhook(self, db):
         from notifier import notificar
@@ -128,38 +126,12 @@ class TestNotificar:
         with patch("notifier.requests.post") as mock_post:
             mock_post.return_value = MagicMock(status_code=200, raise_for_status=lambda: None)
             notificar(resultado, _make_edicao())
-            # O webhook é disparado em thread separada — aguardar brevemente
             import time
             time.sleep(0.2)
-            # Verifica se foi chamado
             mock_post.assert_called()
 
 
-class TestTelegramStatusETeste:
-    def test_status_telegram_sem_creds(self, db, mock_settings):
-        from notifier import status_telegram
-
-        with patch("notifier.SETTINGS", mock_settings):
-            st = status_telegram()
-        assert st["token_presente"] is False
-        assert st["chat_id_presente"] is False
-        assert st["pronto"] is False
-        assert st["chat_id"] == ""
-
-    def test_status_telegram_db_override(self, db, mock_settings):
-        import database
-        from notifier import status_telegram
-
-        database.set_setting("telegram_bot_token", "123456:ABCDEFtoken")
-        database.set_setting("telegram_chat_id", "-100999")
-        with patch("notifier.SETTINGS", mock_settings):
-            st = status_telegram()
-        assert st["token_presente"] is True
-        assert st["chat_id_presente"] is True
-        assert st["pronto"] is True
-        assert st["chat_id"] == "-100999"
-        assert st["token_masked"].startswith("…") or st["token_masked"] == "***"
-
+class TestEnviarTeste:
     def test_enviar_teste_retorna_dict_arquivo(self, db, mock_settings):
         from notifier import enviar_teste
 
@@ -168,29 +140,7 @@ class TestTelegramStatusETeste:
             info = enviar_teste()
         assert info["ok"] is True
         assert info["canal"] == "arquivo"
-        assert "token_presente" in info
-
-
-class TestEscapeMarkdownV2:
-    def test_escapa_caracteres_especiais(self):
-        from notifier import _escape_mdv2
-        entrada = "Lei_1.000-A [teste] (x)!"
-        saida = _escape_mdv2(entrada)
-        # Cada caractere especial deve estar precedido de barra invertida
-        for ch in ["_", ".", "-", "[", "]", "(", ")", "!"]:
-            assert "\\" + ch in saida
-
-    def test_mensagem_com_titulo_especial_escapada(self):
-        from notifier import montar_mensagem
-        resultado = _make_resultado()
-        edicao = Edicao(
-            url="https://example.com/ed.pdf",
-            titulo="Edicao_25.06-2026 [oficial]",
-            data_publicacao="2026-06-25",
-        )
-        msg = montar_mensagem(resultado, edicao)
-        # Titulo deve aparecer escapado, sem sublinhado/ponto crus do titulo
-        assert r"Edicao\_25\.06\-2026" in msg
+        assert "detalhe" in info
 
 
 class TestAnomaliaMensagem:
@@ -198,8 +148,6 @@ class TestAnomaliaMensagem:
         import notifier
 
         object.__setattr__(mock_settings, "ai_importancia", False)
-        object.__setattr__(mock_settings, "telegram_bot_token", "")
-        object.__setattr__(mock_settings, "telegram_chat_id", "")
         pubs = [
             {
                 "tipo": "Dispensa",
@@ -213,10 +161,8 @@ class TestAnomaliaMensagem:
         ]
         resultado = _make_resultado(publicacoes=pubs)
         with patch("notifier.SETTINGS", mock_settings), \
-             patch("notifier._disparar_webhooks"), \
-             patch("notifier._enviar_email", return_value=False):
+             patch("notifier._disparar_webhooks"):
             notifier.notificar(resultado, _make_edicao())
-        # mensagem montada deve incluir anomalia — confere via arquivo salvo
         import database
         notifs = database.get_notificacoes()
         assert notifs
@@ -254,41 +200,7 @@ class TestFiltroImportancia:
 
         object.__setattr__(mock_settings, "ai_importancia", True)
         object.__setattr__(mock_settings, "ai_importancia_min_notificar", 3)
-        # sem importancia/notificar_ia → trata como limiar (entra)
         pubs = [{"tipo": "Portaria"}]
         resultado = _make_resultado(publicacoes=pubs)
         with patch("notifier.SETTINGS", mock_settings):
             assert len(_publicacoes_para_alerta(resultado)) == 1
-
-
-class TestFallbackNotificacao:
-    def test_fallback_para_email_quando_telegram_falha(self, db, mock_settings):
-        import database
-        import notifier
-        database.init_db()
-        object.__setattr__(mock_settings, "telegram_bot_token", "token")
-        object.__setattr__(mock_settings, "telegram_chat_id", "123")
-        resultado = _make_resultado(encontrado=True)
-        with patch("notifier.SETTINGS", mock_settings), \
-             patch("notifier._enviar_telegram_com_retry", side_effect=RuntimeError("falha tg")), \
-             patch("notifier._enviar_email", return_value=True) as mock_email, \
-             patch("notifier._disparar_webhooks"):
-            notifier.notificar(resultado, _make_edicao())
-        mock_email.assert_called_once()
-        notifs = database.get_notificacoes()
-        assert notifs[0]["canal"] == "email"
-
-    def test_fallback_para_arquivo_quando_tudo_falha(self, db, mock_settings):
-        import database
-        import notifier
-        database.init_db()
-        object.__setattr__(mock_settings, "telegram_bot_token", "token")
-        object.__setattr__(mock_settings, "telegram_chat_id", "123")
-        resultado = _make_resultado(encontrado=True)
-        with patch("notifier.SETTINGS", mock_settings), \
-             patch("notifier._enviar_telegram_com_retry", side_effect=RuntimeError("falha tg")), \
-             patch("notifier._enviar_email", return_value=False), \
-             patch("notifier._disparar_webhooks"):
-            notifier.notificar(resultado, _make_edicao())
-        notifs = database.get_notificacoes()
-        assert notifs[0]["canal"] == "arquivo"

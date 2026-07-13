@@ -47,8 +47,9 @@ def test_admin_login_ok_and_api(db, mock_settings, monkeypatch):
     r2 = client.get("/admin")
     assert r2.status_code == 200
     assert "Agente de vigilância" in r2.text or "Agente" in r2.text
-    assert 'name="smtp_from"' in r2.text
     assert 'name="absence_alert_days"' in r2.text
+    assert "btn-notify-test" in r2.text
+    assert "smtp_host" not in r2.text
 
     r3 = client.get("/admin/api/agente/status")
     assert r3.status_code == 200
@@ -86,32 +87,31 @@ def test_admin_form_post_redirects_when_locked(db, mock_settings, monkeypatch):
     assert r.headers.get("location", "").startswith("/admin")
 
 
-def test_admin_api_telegram_testar_requer_login(db, mock_settings, monkeypatch):
+def test_admin_api_notificar_testar_requer_login(db, mock_settings, monkeypatch):
     client = _client(db, mock_settings, monkeypatch)
-    r = client.post("/admin/api/telegram/testar")
+    r = client.post("/admin/api/notificar/testar")
     assert r.status_code == 401
 
 
-def test_admin_api_telegram_testar_logado(db, mock_settings, monkeypatch):
+def test_admin_api_notificar_testar_logado(db, mock_settings, monkeypatch):
     client = _client(db, mock_settings, monkeypatch)
     _login(client)
-    r = client.post("/admin/api/telegram/testar")
+    r = client.post("/admin/api/notificar/testar")
     assert r.status_code == 200
     data = r.json()
     assert data.get("ok") is True
     assert "canal" in data
-    assert "status" in data
-    assert "token_presente" in data["status"]
 
 
-def test_admin_login_mostra_campos_telegram(db, mock_settings, monkeypatch):
+def test_admin_login_mostra_alertas_arquivo(db, mock_settings, monkeypatch):
     client = _client(db, mock_settings, monkeypatch)
     _login(client)
     r = client.get("/admin")
     assert r.status_code == 200
-    assert "telegram_bot_token" in r.text
-    assert "telegram_chat_id" in r.text
-    assert "btn-tg-test" in r.text
+    assert "btn-notify-test" in r.text
+    assert "Alertas em arquivo" in r.text or "alertas/" in r.text
+    assert "smtp_host" not in r.text
+    assert "telegram_bot_token" not in r.text
 
 
 def test_admin_api_agent_controls_require_gate(db, mock_settings, monkeypatch):

@@ -15,7 +15,7 @@ iniciar.bat
 | Script | Uso |
 |--------|-----|
 | `_menu_cli.py` | Menu completo (compacto + busca + wizard HOJE) |
-| `_diagnostico.py` | Healthcheck PATH / IA / Telegram / lock |
+| `_diagnostico.py` | Healthcheck PATH / IA / lock |
 | `_status_fila.py` | Pendentes, pubs, automação |
 | `_header_status.py` | Uma linha de status (fallback) |
 | `_processar_pendentes.py` | OCR real da fila |
@@ -59,4 +59,4 @@ python main.py --process-all
 ## Observações
 
 - Com `OPENCODE_API_KEY` inválida (401), o reprocessamento mantém publicações heurísticas e tenta **preservar** `resumo_ia` já gravado.
-- Configure `TELEGRAM_CHAT_ID` no `.env` ou no Admin (token sem chat → alertas em `./alertas/`).
+- Alertas vão para `./alertas/` (e webhooks, se configurados no Admin).

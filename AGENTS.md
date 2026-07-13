@@ -2,7 +2,7 @@
 
 ## What it does
 
-Monitors "O Regional Jornal" PDF editions, runs OCR + text analysis to detect official publications from Inajá-PR, and notifies via Telegram/Email/Webhook/File.
+Monitors "O Regional Jornal" PDF editions, runs OCR + text analysis to detect official publications from Inajá-PR, and notifies via File/Webhook.
 
 ## Pipeline (in order)
 
@@ -22,7 +22,6 @@ Orchestration lives in **`pipeline.py`** (`processar_edicao` / `executar_ciclo`)
 | `pipeline.py` | Shared orchestrator used by CLI and webapp |
 | `webapp.py` | FastAPI dashboard (Jinja2 templates). Port 8000 internal, 8001 external via docker-compose |
 | `run_interface.py` | Dev launcher for webapp on port 8001 with hot-reload. Uses a filtered logging formatter ignoring noise like `/api/atividade` |
-| `telegram_bot.py` | Optional interactive Telegram bot (not started by `iniciar.bat`; separate from notifier alerts) |
 
 ## Dev commands
 
@@ -43,8 +42,6 @@ python main.py --once
 # Run web UI for development
 python run_interface.py
 
-# Run interactive Telegram bot
-python telegram_bot.py
 ```
 
 Tooling: `pyproject.toml` (project metadata + pytest + ruff). Use `ruff check .` and `ruff format .`. No pre-commit hooks.
@@ -95,18 +92,14 @@ Key filtering logic: the AI can discard publications that belong to neighboring 
 
 ### Notifications (notifier.py)
 
-Fallback chain: **Telegram → Email → File** (writes to `./alertas/YYYY-MM-DD.log`).
-
-Telegram uses **MarkdownV2** escaping (special chars in `_MDV2_SPECIAL`). Messages are truncated at 4096 chars. Retries up to 2 times with 3s delay.
-
-Webhooks are stored in the `webhooks` DB table (configurable via `/admin` UI). Dispatched asynchronously in daemon threads.
+Alerts go to **File** (`./alertas/YYYY-MM-DD.log`). Optional webhooks in the `webhooks` DB table (Admin UI), dispatched asynchronously.
 
 ### Database (database.py)
 
 - SQLite with **WAL mode** (`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;`).
 - Tables: `edicoes`, `mencoes`, `publicacoes`, `jobs`, `notificacoes`, `webhooks`, `settings`, `schema_migrations`, `deteccao_metricas`.
 - Versioned migrations in `_MIGRATIONS`. On init, already-present columns are **synced** into `schema_migrations` (idempotent for older DBs).
-- The `settings` table doubles as runtime config storage (overrides `.env` values for AI key, SMTP, webhooks, terms).
+- The `settings` table doubles as runtime config storage (overrides `.env` values for AI key, webhooks, terms).
 
 ### Web interface (webapp.py)
 
@@ -114,7 +107,7 @@ Webhooks are stored in the `webhooks` DB table (configurable via `/admin` UI). D
 - HTTP Basic Auth (optional in development) — enabled when `WEBAPP_USER` and `WEBAPP_PASSWORD` are set. Skips auth for `/static/` paths.
 - With `APP_ENV=production` or `REQUIRE_WEBAPP_AUTH=true`, startup **fails** if credentials are missing.
 - Server-Sent Events at `/api/eventos` for real-time dashboard refresh.
-- Admin page at `/admin` for managing AI settings, SMTP, webhooks, detection terms.
+- Admin page at `/admin` for managing AI settings, webhooks, detection terms, file-alert test.
 - Dashboard shows quality metrics from `deteccao_metricas` (IA retention, neighbor discards, weak OCR pages).
 - On startup, reprocesses any editions with stuck "rodando" jobs (from previous crash).
 
@@ -128,7 +121,7 @@ Uses the `schedule` library (not cron). Default: runs every 6 hours (`CHECK_INTE
 - The fixture re-imports `database` with a reload to pick up the mocked SETTINGS.
 - Tests that use the DB need the `db` fixture (which calls `database.init_db()`).
 - Tests for `detector.detectar()` need the `db` fixture too.
-- No integration tests requiring external services (site, Telegram, etc.).
+- No integration tests requiring external services (site, etc.).
 
 ## Configuration
 
@@ -145,7 +138,6 @@ Everything comes from `.env` via `config.py` → `Settings` frozen dataclass. Ke
 | `REQUIRE_WEBAPP_AUTH` | `false` | Fail startup without web credentials |
 | `POPPLER_PATH` / `TESSERACT_PATH` | `""` | Required on Windows |
 | `MAX_EDICOES_POR_CICLO` | `10` | Limit first-run batch size |
-| `NOTIFY_EMAIL_ALWAYS` | `false` | Send email even if Telegram succeeds |
 
 ## Docker
 

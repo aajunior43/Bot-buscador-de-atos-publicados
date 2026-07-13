@@ -214,31 +214,12 @@ def _notificar(titulo: str, corpo: str) -> None:
     if not SETTINGS.agente_notificar:
         return
     try:
-        from notifier import enviar_teste  # type: ignore
-
-        # Preferir arquivo/telegram genérico
-        texto = f"🤖 AGENTE: {titulo}\n{corpo}"
-        # usar canal de alerta de arquivo direto
+        texto = f"AGENTE: {titulo}\n{corpo}"
         alert_dir = SETTINGS.alert_dir
         alert_dir.mkdir(parents=True, exist_ok=True)
         path = alert_dir / f"{date.today().isoformat()}.log"
         with path.open("a", encoding="utf-8") as f:
             f.write(f"\n--- {datetime.now().isoformat(timespec='seconds')} ---\n{texto}\n")
-        # Telegram se configurado
-        if SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id:
-            try:
-                import requests
-
-                requests.post(
-                    f"https://api.telegram.org/bot{SETTINGS.telegram_bot_token}/sendMessage",
-                    json={
-                        "chat_id": SETTINGS.telegram_chat_id,
-                        "text": texto[:4000],
-                    },
-                    timeout=15,
-                )
-            except Exception:
-                logger.debug("telegram agente falhou", exc_info=True)
     except Exception:
         logger.debug("notificar agente falhou", exc_info=True)
 

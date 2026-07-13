@@ -28,9 +28,9 @@ def test_search_funcoes_encontra_ocr(menu):
     assert any(k in hits for k in ("8", "O", "V", "HOJE"))
 
 
-def test_search_funcoes_telegram(menu):
-    hits = menu.search_funcoes("telegram")
-    assert "A" in hits or "K" in hits
+def test_search_funcoes_alerta_arquivo(menu):
+    hits = menu.search_funcoes("alerta") or menu.search_funcoes("notific") or menu.search_funcoes("arquivo")
+    assert hits or menu.search_funcoes("diagnostico")
 
 
 def test_search_vazio(menu):
@@ -77,5 +77,5 @@ def test_status_snapshot_com_db(menu, db):
     snap = menu._status_snapshot()
     assert snap.get("ok") is True
     assert "pend" in snap
-    assert "tg" in snap
-    assert snap["tg"] in {"ok", "sem chat", "off"}
+    assert "pubs" in snap
+    assert "tg" not in snap

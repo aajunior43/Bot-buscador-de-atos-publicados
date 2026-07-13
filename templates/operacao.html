@@ -382,9 +382,9 @@
   <section class="panel">
     <div class="panel-head"><h2>Saúde do sistema</h2></div>
     <ul class="health-list">
-      <li class="health-item {% if saude.telegram_ok %}ok{% else %}warn{% endif %}">
-        <strong>Telegram</strong>
-        <span>{% if saude.telegram_ok %}Configurado{% else %}Token ou chat ausente{% endif %}</span>
+      <li class="health-item neutral">
+        <strong>Alertas</strong>
+        <span>Arquivo / webhook</span>
       </li>
       <li class="health-item {% if saude.ai_disponivel %}ok{% elif saude.ai_key and not saude.ai_auth_ok %}warn{% elif not saude.ai_key %}warn{% else %}warn{% endif %}">
         <strong>API de IA</strong>

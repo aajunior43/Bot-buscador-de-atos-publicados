@@ -331,9 +331,7 @@ def _saude_sistema() -> dict:
     key = _api_key()
     auto = database.get_status_automacao()
     return {
-        "telegram_ok": bool(
-            SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id
-        ),
+        "telegram_ok": False,
         "ai_key": bool(key),
         "ai_refine": bool(SETTINGS.ai_refine_publications),
         "ai_auth_ok": bool(key) and not _auth_bloqueada,
@@ -1380,21 +1378,6 @@ def _admin_bool_setting(chave: str, fallback: bool) -> bool:
     return raw in {"1", "true", "yes", "on", "sim"}
 
 
-def _telegram_status_admin() -> dict:
-    try:
-        from notifier import status_telegram
-
-        return status_telegram()
-    except Exception:
-        return {
-            "token_presente": bool(SETTINGS.telegram_bot_token),
-            "chat_id_presente": bool(SETTINGS.telegram_chat_id),
-            "pronto": bool(SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id),
-            "token_masked": "",
-            "chat_id": SETTINGS.telegram_chat_id or "",
-        }
-
-
 def _admin_ctx(msg: str = "", teste_resultado: str | None = None) -> dict:
     api_key = database.get_setting("opencode_api_key", "") or SETTINGS.opencode_api_key
     model = database.get_setting("opencode_model", "") or SETTINGS.opencode_model
@@ -1413,8 +1396,6 @@ def _admin_ctx(msg: str = "", teste_resultado: str | None = None) -> dict:
         agente_st = status_agente()
     except Exception:
         agente_st = {}
-    smtp_user = database.get_setting("smtp_user", "") or SETTINGS.smtp_user
-    smtp_from = database.get_setting("smtp_from", "") or SETTINGS.smtp_from or smtp_user
     return {
         "api_key_configured": bool(api_key),
         "api_key_masked": api_key_masked,
@@ -1426,17 +1407,11 @@ def _admin_ctx(msg: str = "", teste_resultado: str | None = None) -> dict:
         "ignore_terms": database.get_setting("ignore_terms", "")
         or ",".join(SETTINGS.ignore_context_terms),
         "absence_alert_days": absence_days,
-        "smtp_host": database.get_setting("smtp_host", "") or SETTINGS.smtp_host,
-        "smtp_port": database.get_setting("smtp_port", "") or str(SETTINGS.smtp_port),
-        "smtp_user": smtp_user,
-        "smtp_from": smtp_from,
-        "smtp_to": database.get_setting("smtp_to", "") or SETTINGS.smtp_to,
         "webhook_url": database.get_setting("webhook_url", "") or SETTINGS.webhook_url,
         "webhooks": database.get_webhooks(),
         "msg": msg,
         "teste_resultado": teste_resultado,
         "agente": agente_st,
-        "telegram": _telegram_status_admin(),
         "agente_env": {
             "pulse_s": SETTINGS.agente_pulse_segundos,
             "cerebro_min": SETTINGS.agente_cerebro_minutos,
@@ -1555,31 +1530,12 @@ async def admin_salvar(request: Request) -> RedirectResponse:
         "opencode_model": str(form.get("opencode_model", "")),
         "extra_terms": str(form.get("extra_terms", "")),
         "ignore_terms": str(form.get("ignore_terms", "")),
-        "smtp_host": str(form.get("smtp_host", "")),
-        "smtp_port": str(form.get("smtp_port", "")),
-        "smtp_user": str(form.get("smtp_user", "")),
-        "smtp_pass": str(form.get("smtp_pass", "")),
-        "smtp_to": str(form.get("smtp_to", "")),
-        "smtp_from": str(form.get("smtp_from", "")),
         "webhook_url": str(form.get("webhook_url", "")),
         "absence_alert_days": str(form.get("absence_alert_days", "30")),
-        "telegram_bot_token": str(form.get("telegram_bot_token", "")),
-        "telegram_chat_id": str(form.get("telegram_chat_id", "")),
     }
     for chave, valor in fields.items():
         if valor.strip():
             database.set_setting(chave, valor.strip())
-            # Reflete em memória para notifier/BOT sem reiniciar
-            if chave == "telegram_bot_token":
-                try:
-                    object.__setattr__(SETTINGS, "telegram_bot_token", valor.strip())
-                except Exception:
-                    pass
-            if chave == "telegram_chat_id":
-                try:
-                    object.__setattr__(SETTINGS, "telegram_chat_id", valor.strip())
-                except Exception:
-                    pass
     # Toggle AI refine (hidden false + checkbox true)
     try:
         vals = [str(v).strip().lower() for v in form.getlist("ai_refine_publications")]
@@ -1921,20 +1877,19 @@ def admin_api_qualidade(request: Request, modo: str = "tudo") -> JSONResponse:
     return JSONResponse({"ok": True, "texto": buf.getvalue()})
 
 
-@app.post("/admin/api/telegram/testar")
-def admin_api_telegram_testar(request: Request) -> JSONResponse:
-    """Envia notificação de teste e devolve canal usado."""
+@app.post("/admin/api/notificar/testar")
+def admin_api_notificar_testar(request: Request) -> JSONResponse:
+    """Grava notificação de teste em arquivo e devolve canal usado."""
     _admin_require(request)
-    from notifier import enviar_teste, status_telegram
+    from notifier import enviar_teste
 
     try:
         info = enviar_teste()
-    except Exception as exc:
+    except Exception as exp:
         return JSONResponse(
-            {"ok": False, "erro": str(exc)[:200], "status": status_telegram()},
+            {"ok": False, "erro": str(exp)[:200]},
             status_code=500,
         )
-    info["status"] = status_telegram()
     return JSONResponse(info)
 
 

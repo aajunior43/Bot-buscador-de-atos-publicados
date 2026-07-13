@@ -45,8 +45,6 @@ class Settings:
         "USER_AGENT",
         "Mozilla/5.0 (compatible; JornalMonitor/1.0; +https://www.oregionaljornal.com.br/)",
     )
-    telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     check_interval_hours: int = _int_env("CHECK_INTERVAL_HOURS", 6)
     ocr_language: str = os.getenv("OCR_LANGUAGE", "por").strip() or "por"
     extra_terms: list[str] = field(default_factory=list)
@@ -105,14 +103,6 @@ class Settings:
     ai_similares: bool = _bool_env("AI_SIMILARES", True)
     ai_timeline: bool = _bool_env("AI_TIMELINE", True)
     ai_max_calls_por_ciclo: int = _int_env("AI_MAX_CALLS_POR_CICLO", 80)
-    # SMTP / E-mail
-    smtp_host: str = os.getenv("SMTP_HOST", "").strip()
-    smtp_port: int = _int_env("SMTP_PORT", 587)
-    smtp_user: str = os.getenv("SMTP_USER", "").strip()
-    smtp_pass: str = os.getenv("SMTP_PASS", "").strip()
-    smtp_to: str = os.getenv("SMTP_TO", "").strip()
-    smtp_from: str = os.getenv("SMTP_FROM", "").strip()
-    notify_email_always: bool = _bool_env("NOTIFY_EMAIL_ALWAYS", False)
     # Alerta de ausência
     absence_alert_days: int = _int_env("ABSENCE_ALERT_DAYS", 30)
     # Webhook genérico
@@ -185,7 +175,7 @@ class Settings:
     agente_lock_max_minutos: int = _int_env("AGENTE_LOCK_MAX_MINUTOS", 45)
     # Jobs rodando há mais de N minutos = travados
     agente_job_max_minutos: int = _int_env("AGENTE_JOB_MAX_MINUTOS", 30)
-    # Notificar alertas do agente (Telegram/arquivo)
+    # Notificar alertas do agente (arquivo)
     agente_notificar: bool = _bool_env("AGENTE_NOTIFICAR", True)
     # Integrar no idle do main.py (BOT)
     agente_no_bot: bool = _bool_env("AGENTE_NO_BOT", True)

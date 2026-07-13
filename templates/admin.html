@@ -33,7 +33,7 @@
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
     <div>
       <h1>Administração</h1>
-      <p class="hero-copy">IA, agente, Telegram, e-mail, webhooks e manutenção.</p>
+      <p class="hero-copy">IA, agente, alertas em arquivo, webhooks e manutenção.</p>
     </div>
     <form method="post" action="/admin/logout" style="margin:0;">
       <button type="submit" class="btn btn-secondary" style="font-size:.8rem;">Sair do Admin</button>
@@ -55,7 +55,7 @@
   <nav class="tabs-nav" id="admin-tabs" role="tablist">
     <button type="button" class="tab-btn active" data-tab="agente" role="tab">🤖 Agente</button>
     <button type="button" class="tab-btn" data-tab="ia-busca" role="tab">IA e busca</button>
-    <button type="button" class="tab-btn" data-tab="smtp" role="tab">Notificações</button>
+    <button type="button" class="tab-btn" data-tab="alertas" role="tab">Alertas</button>
     <button type="button" class="tab-btn" data-tab="webhooks" role="tab">Webhooks</button>
     <button type="button" class="tab-btn" data-tab="manutencao" role="tab">Manutenção</button>
   </nav>
@@ -212,76 +212,23 @@
     </div>
   </div>
 
-  <!-- ========== Notificações ========== -->
-  <div class="tab-panel" data-panel="smtp">
+  <!-- ========== Alertas (arquivo) ========== -->
+  <div class="tab-panel" data-panel="alertas">
     <div class="panel fade-in" style="margin-bottom:1.5rem;">
-      <div class="panel-head">
-        <h2>📱 Telegram</h2>
-        <span class="pill">{% if telegram and telegram.pronto %}pronto{% elif telegram and telegram.token_presente %}falta chat_id{% else %}off{% endif %}</span>
-      </div>
+      <div class="panel-head"><h2>📁 Alertas em arquivo</h2></div>
       <div class="admin-form">
         <p style="font-size:.85rem;color:var(--text-2);margin-bottom:1rem;">
-          BotFather → token. Envie uma msg ao bot e pegue o chat.id em
-          <code>getUpdates</code>. Salve abaixo ou no <code>.env</code>.
+          Cada detecção relevante grava em <code>alertas/AAAA-MM-DD.log</code>.
+          Webhooks opcionais na aba Webhooks. Não há e-mail nem Telegram.
         </p>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
-          <div class="field">
-            <label for="telegram_bot_token">Bot token</label>
-            <input type="password" id="telegram_bot_token" name="telegram_bot_token"
-              placeholder="{% if telegram and telegram.token_masked %}{{ telegram.token_masked }} — vazio mantém{% else %}123456:ABC…{% endif %}">
-            {% if telegram and telegram.token_presente %}
-            <small>Configurado: <code>{{ telegram.token_masked }}</code></small>
-            {% endif %}
-          </div>
-          <div class="field">
-            <label for="telegram_chat_id">Chat ID</label>
-            <input type="text" id="telegram_chat_id" name="telegram_chat_id"
-              value="{{ telegram.chat_id if telegram else '' }}" placeholder="-100… ou id numérico">
-            {% if telegram and telegram.token_presente and not telegram.chat_id_presente %}
-            <small style="color:var(--amber,#fbbf24);">Token ok, chat_id vazio → alertas em arquivo.</small>
-            {% endif %}
-          </div>
-        </div>
-        <button type="button" class="btn btn-secondary" id="btn-tg-test" style="margin-top:.75rem;">Enviar mensagem de teste</button>
-        <pre id="tg-out" class="admin-pre" style="margin-top:.75rem;">—</pre>
-      </div>
-    </div>
-
-    <div class="panel fade-in" style="margin-bottom:1.5rem;">
-      <div class="panel-head"><h2>📧 E-mail (SMTP)</h2></div>
-      <div class="admin-form">
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
-          <div class="field">
-            <label for="smtp_host">Servidor SMTP</label>
-            <input type="text" id="smtp_host" name="smtp_host" value="{{ smtp_host }}" placeholder="smtp.gmail.com">
-          </div>
-          <div class="field">
-            <label for="smtp_port">Porta</label>
-            <input type="number" id="smtp_port" name="smtp_port" value="{{ smtp_port or 587 }}" style="max-width:100px;">
-          </div>
-          <div class="field">
-            <label for="smtp_user">Usuário</label>
-            <input type="email" id="smtp_user" name="smtp_user" value="{{ smtp_user }}">
-          </div>
-          <div class="field">
-            <label for="smtp_pass">Senha / App Password</label>
-            <input type="password" id="smtp_pass" name="smtp_pass" placeholder="••••••••">
-          </div>
-          <div class="field">
-            <label for="smtp_to">Destinatário(s)</label>
-            <input type="text" id="smtp_to" name="smtp_to" value="{{ smtp_to }}">
-          </div>
-          <div class="field">
-            <label for="smtp_from">Remetente</label>
-            <input type="text" id="smtp_from" name="smtp_from" value="{{ smtp_from }}">
-          </div>
-        </div>
+        <button type="button" class="btn btn-secondary" id="btn-notify-test">Gravar alerta de teste</button>
+        <pre id="notify-out" class="admin-pre" style="margin-top:.75rem;">—</pre>
       </div>
     </div>
   </div>
 
   <div class="save-bar" id="save-bar" style="display:none;">
-    <button type="submit" class="btn">💾 Salvar configurações (IA, Telegram, SMTP)</button>
+    <button type="submit" class="btn">💾 Salvar configurações (IA e busca)</button>
   </div>
 
   <!-- ========== WEBHOOKS ========== -->
@@ -388,7 +335,7 @@
             <tr><td>API Key</td><td>{{ "Sim" if api_key_configured else "Não" }}</td></tr>
             <tr><td>Refine IA</td><td>{{ "Ligado" if ai_refine else "Desligado" }}</td></tr>
             <tr><td>Agente</td><td>{{ 'ON / ' + (agente.modo_efetivo or '—') if agente.ativo else 'OFF' }}</td></tr>
-            <tr><td>SMTP</td><td>{{ "Sim" if smtp_host else "Não" }}</td></tr>
+            <tr><td>Alertas</td><td>Arquivo (<code>alertas/</code>)</td></tr>
           </table>
         </div>
       </div>
@@ -410,7 +357,7 @@
   function activateTab(name) {
     tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     panels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
-    if (saveBar) saveBar.style.display = (name === 'ia-busca' || name === 'smtp') ? '' : 'none';
+    if (saveBar) saveBar.style.display = (name === 'ia-busca') ? '' : 'none';
     try { localStorage.setItem(STORAGE_KEY, name); } catch (e) {}
   }
 
@@ -626,16 +573,15 @@
     });
   });
 
-  document.getElementById('btn-tg-test')?.addEventListener('click', async () => {
-    const el = document.getElementById('tg-out');
+  document.getElementById('btn-notify-test')?.addEventListener('click', async () => {
+    const el = document.getElementById('notify-out');
     el.textContent = 'Enviando teste…';
     try {
-      const j = await api('/admin/api/telegram/testar', { method: 'POST' });
+      const j = await api('/admin/api/notificar/testar', { method: 'POST' });
       el.textContent =
         (j.ok ? 'OK' : 'FALHA') +
         ' · canal=' + (j.canal || '?') +
-        '\n' + (j.detalhe || '') +
-        '\n' + JSON.stringify(j.status || {}, null, 2);
+        '\n' + (j.detalhe || '');
     } catch (e) { el.textContent = e.message; }
   });
 

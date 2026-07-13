@@ -53,12 +53,3 @@ print(f"  Publicacoes:    {total_p}")
 print(f"  Com resumo_ia:  {com_resumo}")
 print(f"  Com valor:      {com_valor}")
 print()
-print(
-    "  Telegram:       ",
-    bool(SETTINGS.telegram_bot_token and SETTINGS.telegram_chat_id),
-)
-print(
-    "  Email SMTP:     ",
-    bool(getattr(SETTINGS, "smtp_host", None) or getattr(SETTINGS, "email_smtp_host", None)),
-)
-print()

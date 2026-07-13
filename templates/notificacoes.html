@@ -4,7 +4,7 @@
 <section class="detail-hero fade-in">
   <a class="backlink" href="/operacao">← Operação</a>
   <h1>Histórico de Alertas</h1>
-  <p>Todas as notificações enviadas pelo sistema — Telegram, e-mail, arquivo e webhook.</p>
+  <p>Todas as notificações do sistema — arquivo e webhook (canais antigos podem aparecer no histórico).</p>
 </section>
 
 <section class="panel fade-in">
@@ -18,7 +18,7 @@
     {% for notif in notificacoes %}
     <div class="notification-item">
       <span class="notif-canal canal-{{ notif.canal.split('_')[0] }}">
-        {% if 'telegram' in notif.canal %}📱 Telegram
+        {% if 'telegram' in (notif.canal or '') %}📱 Telegram (legado)
         {% elif 'email' in notif.canal %}📧 E-mail
         {% elif 'arquivo' in notif.canal %}📁 Arquivo
         {% elif 'webhook' in notif.canal %}🔗 Webhook
