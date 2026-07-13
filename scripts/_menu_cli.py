@@ -127,8 +127,8 @@ FUNCOES: dict[str, dict[str, str]] = {
           "curta": "Tabela por mês",
           "detalhe": "Edições, OK, pendentes, Inajá, pubs e menções por mês."},
     "J": {"grupo": "CONSULTA", "titulo": "Status do mes atual",
-          "curta": "Detalhe AAAA-MM",
-          "detalhe": "Relatório do mês civil atual (legado: scripts/_status_julho.py se jul/2026)."},
+          "curta": "Últimas pubs do mês",
+          "detalhe": "Lista publicações do mês civil atual (atalho de consulta)."},
     "I": {"grupo": "CONSULTA", "titulo": "Status da IA",
           "curta": "Chave, modelo, contagens",
           "detalhe": "Disponibilidade da IA e qualidade dos campos no banco."},
@@ -690,7 +690,6 @@ def _act_7() -> bool:
     print("  [2] Ultimos 7 dias (cache)")
     print("  [3] Ultimos 30 dias (cache)")
     print("  [4] Mes atual com OCR real")
-    print("  [5] Julho/2026 (atalho legado)")
     op = ask("Opcao", "1")
     if op == "1":
         run_py("scripts/_processar_mes.py", "--mes-atual")
@@ -700,8 +699,6 @@ def _act_7() -> bool:
         run_py("scripts/_processar_mes.py", "--dias", "30")
     elif op == "4":
         run_py("scripts/_processar_mes.py", "--mes-atual", "--ocr-real")
-    elif op == "5":
-        run_py("scripts/_processar_mes.py", "2026-07")
     else:
         print("  Cancelado.")
     pause()
@@ -848,11 +845,7 @@ def _act_y() -> bool:
 
 def _act_j() -> bool:
     mes = date.today().strftime("%Y-%m")
-    if mes == "2026-07":
-        run_py("scripts/_status_julho.py")
-    else:
-        # resumo + últimas pubs do mês atual
-        run_py("scripts/_ultimas_publicacoes.py", "-n", "20", "--mes", mes)
+    run_py("scripts/_ultimas_publicacoes.py", "-n", "20", "--mes", mes)
     pause()
     return True
 

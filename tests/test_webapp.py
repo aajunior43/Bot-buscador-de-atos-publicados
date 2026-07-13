@@ -17,10 +17,12 @@ def test_dashboard_vazio(db):
     response = client.get("/")
     assert response.status_code == 200
     assert "Atos de Inajá" in response.text
-    assert "Leitura" in response.text
+    assert "Buscar" in response.text or 'name="q"' in response.text
+    # Nav enxuta: Atos + Operação + Mais; sem health-strip na home
     assert "Operação" in response.text
-    assert "health-strip" in response.text or "Auth" in response.text
-    assert "BOT" in response.text
+    assert 'id="nav-more"' in response.text or "Mais" in response.text
+    assert "health-strip" not in response.text
+    assert "Operação rápida" not in response.text
 
 
 def test_inteligencia_page(db):

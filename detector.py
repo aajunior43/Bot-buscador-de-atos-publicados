@@ -74,7 +74,8 @@ _TIPOS_COMPOSTOS = (
     r"CONTRATO\s+ADMINISTRATIVO|"
     r"TERMO\s+(?:DE\s+)?ADITIVO(?:\s+DE\s+CONTRATO)?|"
     r"TERMO\s+ADITIVO|"
-    r"TERMO\s+DE\s+HOMOLOGA[CÇ][AÃ]O|"
+    r"TERMO\s+DE\s+HOMOLOGA[CÇ][AÃ]O(?:\s+E\s+ADJUDICA[CÇ][AÃ]O)?|"
+    r"HOMOLOGA[CÇ][AÃ]O\s+E\s+ADJUDICA[CÇ][AÃ]O|"
     r"DISPENSA\s+(?:DE\s+)?LICITA[CÇ][AÃ]O|"
     r"PREG[AÃ]O\s+ELETR[OÔ]NICO"
 )
@@ -791,9 +792,13 @@ def _extrair_numero_preferencial(texto: str, tipo: str | None = None) -> str | N
         r"CONTRATO\s+(?:ADMINISTRATIVO\s+)?N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
         r"TERMO\s+ADITIVO[^\n]{0,40}N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
         r"DECRETO\s+(?:MUNICIPAL\s+)?N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
-        r"PORTARIA\s+N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+        r"PORTARIA\s+N?[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
         r"DISPENSA[^\n]{0,30}N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
         r"PREG[AÃ]O\s+ELETR[OÔ]NICO\s+N[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+        # Homologação / adjudicação (OCR costuma omitir "Nº" ou quebrar o título)
+        r"TERMO\s+DE\s+HOMOLOGA[CÇ][AÃ]O[^\n]{0,40}N?[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+        r"HOMOLOGA[CÇ][AÃ]O(?:\s+E\s+ADJUDICA[CÇ][AÃ]O)?[^\n]{0,40}N?[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
+        r"ADJUDICA[CÇ][AÃ]O[^\n]{0,30}N?[º°O.]?\s*(\d{1,6}\s*[/\-]\s*\d{2,4})",
     ]
     # Prioriza padrões do tipo
     if "extrato" in tipo_n:

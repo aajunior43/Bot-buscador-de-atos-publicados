@@ -155,7 +155,8 @@ Everything comes from `.env` via `config.py` → `Settings` frozen dataclass. Ke
 
 ## Utility scripts
 
-`scripts/` directory contains one-off analysis/reprocessing scripts (not needed for normal operation). `analise_db.py` clears PDFs/TXTs from processed editions to free disk space.
+`scripts/` — maintenance tools used by `iniciar.bat` / `_menu_cli.py`. See `scripts/README.md`.  
+Disk cleanup: `scripts/_limpeza_disco.py` (prefer dry-run first).
 
 ## Git conventions
 
@@ -166,6 +167,6 @@ Everything comes from `.env` via `config.py` → `Settings` frozen dataclass. Ke
 ## What NOT to do
 
 - Do NOT commit `.env` files (`.gitignore` already blocks it).
-- Do NOT modify `analise_db.py` or scripts in `scripts/` unless specifically asked — they are one-off tools.
 - Do NOT edit `.ocr.json` cache files directly — delete them to force re-OCR.
-- Do NOT change the `__pycache__/` or `edicoes/` generated content — they are in `.gitignore`.
+- Do NOT commit generated content (`edicoes/`, `logs/`, `*.db`, `__pycache__/`, `terminals/`, `agent-tools/`).
+- Prefer generic tools (`_processar_mes.py`, `_qualidade.py`) over one-off dated scripts.

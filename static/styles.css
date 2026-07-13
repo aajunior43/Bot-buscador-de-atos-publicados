@@ -107,24 +107,29 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: .75rem;
   flex-wrap: wrap;
-  padding: .9rem 1.5rem;
+  padding: .65rem 1.25rem;
   background: rgba(13,15,20,.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
 }
 
-/* Nav: Consultar | Operar | Sistema */
+/* Nav enxuta: Atos · Chat · Operação · Mais · Admin */
 .main-nav {
   display: flex;
   align-items: center;
-  gap: .35rem .85rem;
+  gap: .2rem .35rem;
   flex-wrap: wrap;
   flex: 1;
   justify-content: flex-end;
   min-width: 0;
+}
+
+/* Mobile-only links (itens do “Mais” em lista plana) */
+.nav-mobile-only {
+  display: none !important;
 }
 
 .nav-group {
@@ -709,6 +714,17 @@ main {
   flex-wrap: wrap;
 }
 
+.dash-header-compact {
+  align-items: center;
+  padding: .85rem 0 1rem;
+  gap: 1rem;
+}
+
+.dash-header-compact .dash-header-text h1 {
+  font-size: clamp(1.25rem, 2.4vw, 1.65rem);
+  font-weight: 700;
+}
+
 .dash-header-text .eyebrow { margin-bottom: .4rem; }
 
 .dash-header-text h1 {
@@ -719,6 +735,26 @@ main {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+/* Stats discretos na home */
+.stats-grid-quiet {
+  margin: 0 0 1rem;
+  gap: .65rem;
+}
+.stats-grid-quiet article {
+  padding: .65rem .85rem;
+  background: transparent;
+  border-color: var(--border);
+  box-shadow: none;
+}
+.stats-grid-quiet article strong {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.stats-grid-quiet article span {
+  font-size: .72rem;
+  color: var(--text-3);
 }
 
 .dash-search {
@@ -2543,7 +2579,7 @@ details[open] summary::before { transform: rotate(90deg); }
     width: 100%;
     flex-direction: column;
     align-items: stretch;
-    gap: .75rem;
+    gap: .2rem;
     padding: .5rem 0 .25rem;
     justify-content: flex-start;
   }
@@ -2553,10 +2589,12 @@ details[open] summary::before { transform: rotate(90deg); }
   .nav-group-label { margin: .35rem 0 .15rem; }
   .nav-divider { display: none; }
   .main-nav a { display: block; }
-  .nav-live-chips { margin: .35rem 0 0; flex-wrap: wrap; }
   .nav-more { display: none !important; }
+  .nav-mobile-only { display: block !important; }
   .nav-show-narrow { display: block !important; }
   .nav-hide-md { display: block !important; }
+  .dash-header-compact { flex-direction: column; align-items: stretch; }
+  .dash-header-compact .dash-search { flex: 1 1 auto; max-width: none; }
 }
 
 /* Dropdown "Mais" — desktop / tablet landscape (≥901px) */
@@ -2624,22 +2662,21 @@ details[open] summary::before { transform: rotate(90deg); }
 }
 
 /*
- * Desktop / tablet (≥901px): secondary items live in "Mais".
- * Previously 901–1180 hid both Mais and nav-hide-md, leaving Chat IA /
- * Alertas / Revisão unreachable (only Análises + Exportar via nav-show-narrow).
+ * Desktop / tablet (≥901px): secundários no dropdown "Mais".
+ * Mobile: lista plana via .nav-mobile-only.
  */
 @media (min-width: 901px) {
   .nav-more { display: inline-flex; }
+  .nav-mobile-only { display: none !important; }
   .nav-show-narrow { display: none !important; }
   .nav-hide-md { display: none !important; }
 }
 
-/* Medium widths: hide zone labels to save horizontal space */
 @media (min-width: 901px) and (max-width: 1180px) {
   .nav-group-label { display: none; }
-  .main-nav { gap: .25rem .45rem; }
+  .main-nav { gap: .15rem .3rem; }
   .topbar nav a,
-  .main-nav a { padding: .4rem .65rem; }
+  .main-nav a { padding: .35rem .55rem; font-size: .8rem; }
 }
 
 /* Atalhos: dica flutuante */

@@ -18,6 +18,10 @@ ciclo
 polling
 terminals/
 agent-tools/
+.omo/
 *.ocr.json
 _tmp_*.py
 relatorios/
+# lixo acidental / sessão de ferramentas
+.DS_Store
+Thumbs.db

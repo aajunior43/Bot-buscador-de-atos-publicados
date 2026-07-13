@@ -2,17 +2,13 @@
 {% block title %}Atos de Inajá - Monitor{% endblock %}
 {% block content %}
 
-<section class="dash-header fade-in">
+<section class="dash-header dash-header-compact fade-in">
   <div class="dash-header-text">
-    <p class="eyebrow">Leitura · Publicações oficiais</p>
     <h1>Atos de Inajá</h1>
-    <p class="hero-copy">
-      Decretos, portarias e extratos do O Regional — o bot detecta e processa sozinho.
-    </p>
   </div>
   <form class="dash-search" method="get" action="/">
     <div class="search-row">
-      <input id="q" name="q" value="{{ q }}" placeholder="Buscar por tipo, órgão, número, data…" aria-label="Buscar atos">
+      <input id="q" name="q" value="{{ q }}" placeholder="Buscar tipo, órgão, número, data…" aria-label="Buscar atos">
       <select name="mes" aria-label="Filtrar por mês" class="mes-select">
         <option value="">Todos os meses</option>
         {% for m in meses or [] %}
@@ -21,94 +17,12 @@
       </select>
       <label class="search-smart" title="Ranking inteligente por relevância">
         <input type="checkbox" name="modo" value="semantico" {% if modo == 'semantico' %}checked{% endif %}>
-        busca smart
+        smart
       </label>
       {% if tipo %}<input type="hidden" name="tipo" value="{{ tipo }}">{% endif %}
       <button type="submit">Buscar</button>
     </div>
   </form>
-</section>
-
-{% if resumo_diario and resumo_diario.texto %}
-<section class="panel fade-in resumo-diario-panel">
-  <div class="panel-head">
-    <h2>Resumo diário</h2>
-    <span>{{ resumo_diario.data or "—" }}</span>
-  </div>
-  <pre class="resumo-diario-texto">{{ resumo_diario.texto }}</pre>
-</section>
-{% endif %}
-
-<ul class="health-strip fade-in" aria-label="Saúde do sistema">
-  <li class="{% if saude and saude.bot_vivo %}ok{% else %}warn{% endif %}" title="Heartbeat do rastreador (main.py)">
-    BOT {% if saude and saude.bot_vivo %}online{% else %}offline{% endif %}
-    {% if saude and saude.bot_vivo and saude.bot_heartbeat_rel %}
-      <small>· {{ saude.bot_heartbeat_rel }}</small>
-    {% endif %}
-  </li>
-  <li class="{% if agente_home and agente_home.ativo %}ok{% else %}neutral{% endif %}" title="Agente de vigilância">
-    AG {% if agente_home and agente_home.ativo %}{{ agente_home.modo_efetivo or 'on' }}{% else %}off{% endif %}
-    {% if agente_home and agente_home.ocr_hoje is defined %}
-      <small>· OCR {{ agente_home.ocr_hoje }}/{{ agente_home.max_ocr_dia or '∞' }}</small>
-    {% endif %}
-  </li>
-  <li class="{% if saude and saude.pendentes_ocr %}warn{% else %}ok{% endif %}">
-    {% if saude and saude.pendentes_ocr %}
-      <a href="/operacao">{{ saude.pendentes_ocr }} pend. OCR</a>
-      {% if saude.fila_proximo_ciclo %}
-        <small>· fila {{ saude.fila_proximo_ciclo }}</small>
-      {% endif %}
-    {% else %}
-      Fila OCR zerada
-    {% endif %}
-  </li>
-  <li class="{% if saude and saude.ai_disponivel %}ok{% else %}warn{% endif %}">
-    IA {% if saude and saude.ai_disponivel %}ok{% elif saude and saude.ai_key %}chave/rede{% else %}off{% endif %}
-  </li>
-  <li class="{% if saude and saude.web_auth %}ok{% else %}warn{% endif %}">
-    Auth {% if saude and saude.web_auth %}on{% else %}off{% endif %}
-  </li>
-  <li class="{% if saude and saude.telegram_ok %}ok{% else %}neutral{% endif %}">
-    Telegram {% if saude and saude.telegram_ok %}alertas{% else %}arquivo{% endif %}
-  </li>
-  {% if saude and saude.so_mencao_pendentes %}
-  <li class="warn">
-    <a href="/revisao/so-mencao">{{ saude.so_mencao_pendentes }} só-menção</a>
-  </li>
-  {% endif %}
-  <li class="neutral"><a href="/operacao">Operação →</a></li>
-</ul>
-
-<section class="panel fade-in ops-cta-panel" style="margin-bottom:1.25rem;">
-  <div class="panel-head">
-    <h2>Operação rápida</h2>
-    <span>atalhos · <kbd>?</kbd> no teclado</span>
-  </div>
-  <div class="admin-form" style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;">
-    <a class="btn" href="/operacao">Painel / fila</a>
-    <a class="btn btn-secondary" href="/admin">Admin / Agente</a>
-    <a class="btn btn-secondary" href="/status">Jobs ao vivo</a>
-    <a class="btn btn-secondary" href="/edicoes-detectadas">Edições</a>
-    {% if saude and saude.pendentes_ocr %}
-    <span style="font-size:.85rem;color:var(--text-3);">
-      {{ saude.pendentes_ocr }} pendentes — use Admin → «Processar 5 pendentes» ou deixe o BOT/agente rodar.
-    </span>
-    {% endif %}
-  </div>
-  {% if agente_log %}
-  <div style="padding:0 1.5rem 1.25rem;">
-    <strong style="font-size:.8rem;color:var(--text-3);">Últimas ações do agente</strong>
-    <ul style="margin:.4rem 0 0;padding-left:1.1rem;font-size:.82rem;color:var(--text-2);">
-      {% for r in agente_log %}
-      <li>
-        <code>{{ r.criado_em }}</code>
-        {{ r.ciclo }}/{{ r.modo }} · <strong>{{ r.acao }}</strong>
-        {% if r.detalhe %}<span style="opacity:.8;">— {{ r.detalhe[:90] }}</span>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}
 </section>
 
 {% if atividade and atividade.tem_atividade %}
@@ -118,19 +32,19 @@
 </p>
 {% elif saude and not saude.bot_vivo %}
 <p class="ops-banner ops-banner-warn fade-in">
-  Rastreador (BOT) sem sinal — OCR automático pausado até rodar <code>iniciar.bat</code> ou <code>main.py</code>.
+  Rastreador offline — OCR automático pausado.
   <a href="/operacao">Ver operação →</a>
 </p>
 {% endif %}
 
-<section class="stats-grid stats-grid-compact fade-in">
+<section class="stats-grid stats-grid-compact stats-grid-quiet fade-in">
   <article>
     <strong>{{ stats.total_publicacoes or 0 }}</strong>
     <span>Publicações</span>
   </article>
   <article>
     <strong>{{ stats.edicoes_inaja or 0 }}</strong>
-    <span>Edições com Inajá</span>
+    <span>Edições Inajá</span>
   </article>
   <article title="Soma deduplicada (órgão+número), sem matérias jornalísticas — indicador, não contabilidade">
     <strong>{{ stats.total_valor_licitado or "R$ 0,00" }}</strong>
