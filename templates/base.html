@@ -1,11 +1,21 @@
 <!doctype html>
-<html lang="pt-BR" data-theme="">
+<html lang="pt-BR">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0d0f14" data-theme-meta>
     <title>{% block title %}Monitor Inajá{% endblock %}</title>
     <meta name="description" content="Monitor de publicacoes oficiais de Inaja-PR no jornal O Regional.">
+    <script>
+    (function(){
+      var t = '';
+      try { t = localStorage.getItem('theme') || ''; } catch(e) {}
+      if (!t && window.matchMedia('(prefers-color-scheme:light)').matches) t = 'light';
+      document.documentElement.setAttribute('data-theme', t);
+      var m = document.querySelector('[data-theme-meta]');
+      if (m) m.setAttribute('content', t === 'light' ? '#f5f6fa' : '#0d0f14');
+    })();
+    </script>
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -76,24 +86,20 @@
     <div id="global-toast" class="global-toast"></div>
 
     <script>
-    (function(){
-      var theme = localStorage.getItem('theme') || '';
-      if (!theme) { theme = window.matchMedia('(prefers-color-scheme:light)').matches ? 'light' : ''; }
-      document.documentElement.setAttribute('data-theme', theme);
-      document.addEventListener('DOMContentLoaded', function(){
-        var btn = document.getElementById('theme-toggle');
-        var icon = document.getElementById('theme-icon');
-        if (!btn) return;
-        var cur = document.documentElement.getAttribute('data-theme');
-        icon.textContent = cur === 'light' ? '☀️' : '🌙';
-        btn.addEventListener('click', function(){
-          var next = document.documentElement.getAttribute('data-theme') === 'light' ? '' : 'light';
-          document.documentElement.setAttribute('data-theme', next);
-          icon.textContent = next === 'light' ? '☀️' : '🌙';
-          try { localStorage.setItem('theme', next); } catch(e){}
-          var meta = document.querySelector('[data-theme-meta]');
-          if (meta) meta.setAttribute('content', next === 'light' ? '#f5f6fa' : '#0d0f14');
-        });
+    document.addEventListener('DOMContentLoaded', function(){
+      var btn = document.getElementById('theme-toggle');
+      var icon = document.getElementById('theme-icon');
+      if (!btn) return;
+      var cur = document.documentElement.getAttribute('data-theme');
+      icon.textContent = cur === 'light' ? '☀️' : '🌙';
+      btn.addEventListener('click', function(){
+        var next = document.documentElement.getAttribute('data-theme') === 'light' ? '' : 'light';
+        document.documentElement.setAttribute('data-theme', next);
+        icon.textContent = next === 'light' ? '☀️' : '🌙';
+        try { localStorage.setItem('theme', next); } catch(e){}
+        var meta = document.querySelector('[data-theme-meta]');
+        if (meta) meta.setAttribute('content', next === 'light' ? '#f5f6fa' : '#0d0f14');
+      });
       });
     })();
     </script>
