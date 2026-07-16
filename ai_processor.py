@@ -327,7 +327,7 @@ def _triar_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
         ),
         _prompt_triagem(trecho_limpo),
         timeout=min(timeout, 45),
-        max_tokens=max(2000, min(3000, SETTINGS.ai_max_tokens)),
+        max_tokens=max(5000, SETTINGS.ai_max_tokens),
         temperature=0.0,
     )
 
