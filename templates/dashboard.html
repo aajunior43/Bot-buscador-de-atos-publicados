@@ -47,15 +47,23 @@
 <section class="stats-grid stats-grid-compact stats-grid-quiet fade-in">
   <article>
     <strong>{{ stats.total_publicacoes or 0 }}</strong>
-    <span>Publicações</span>
+    <span>Publicacoes</span>
   </article>
   <article>
     <strong>{{ stats.edicoes_inaja or 0 }}</strong>
-    <span>Edições Inajá</span>
+    <span>Edicoes Inaja</span>
   </article>
-  <article title="Soma deduplicada (órgão+número), sem matérias jornalísticas — indicador, não contabilidade">
+  <article title="Soma deduplicada (orgao+numero), sem materias jornalisticas">
     <strong>{{ stats.total_valor_licitado or "R$ 0,00" }}</strong>
     <span>Valores (atos)</span>
+  </article>
+  <article style="grid-column:span 2;display:flex;flex-direction:column;gap:.25rem">
+    <span style="font-size:.72rem;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em">Pubs por mes</span>
+    <div class="sparkline" style="flex:1;display:flex;align-items:flex-end;gap:2px;height:36px;padding-top:.35rem" title="{% for m in sparkline_meses %}{{ m }}: {{ sparkline_valores[loop.index0] }}{% if not loop.last %} | {% endif %}{% endfor %}">
+      {% for v in sparkline_valores %}
+      <div class="sparkline-bar" style="height:{{ (v / sparkline_max * 100)|int if sparkline_max > 0 else 2 }}%"></div>
+      {% endfor %}
+    </div>
   </article>
   <article>
     <strong>{{ stats.ultima_deteccao or "—" }}</strong>

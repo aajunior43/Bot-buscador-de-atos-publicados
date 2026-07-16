@@ -1,22 +1,23 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#0d0f14">
+    <meta name="theme-color" content="#0d0f14" data-theme-meta>
     <title>{% block title %}Monitor Inajá{% endblock %}</title>
-    <meta name="description" content="Monitor de publicações oficiais de Inajá-PR no jornal O Regional.">
+    <meta name="description" content="Monitor de publicacoes oficiais de Inaja-PR no jornal O Regional.">
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   </head>
   <body>
+    <a href="#main-content" id="skip-nav">Ir para conteudo</a>
     <div class="page-shell">
       <header class="topbar">
         <a class="brand" href="/">
           <span class="brand-mark">OR</span>
           <span>
-            <strong>Monitor Inajá</strong>
+            <strong>Monitor Inaja</strong>
             <small>O Regional Jornal</small>
           </span>
         </a>
@@ -26,48 +27,79 @@
         </button>
 
         {% set p = request.url.path %}
-        {% set mais_active = p == '/inteligencia' or p == '/exportar' or p.startswith('/edicoes') or p == '/status' or p.startswith('/revisao') or p == '/notificacoes' or (p == '/operacao' and request.query_params.get('tab') == 'fila') %}
+        {% set query_tab = request.query_params.get('tab', '') %}
+        {% set mais_active = p in ('/inteligencia', '/exportar') or p.startswith('/edicoes') or p == '/status' or p.startswith('/revisao') or p == '/notificacoes' or (p == '/operacao' and query_tab == 'fila') %}
 
         <nav class="main-nav" id="main-nav" aria-label="Principal">
           <a href="/" {% if p == '/' or p == '/atos' %}class="active"{% endif %} title="Atos (g a)">Atos</a>
           <a href="/perguntar" {% if p == '/perguntar' %}class="active"{% endif %} title="Chat IA (g c)">Chat</a>
-          <a href="/operacao" {% if p == '/operacao' and request.query_params.get('tab') != 'fila' %}class="active"{% endif %} title="Operação (g p)">Operação</a>
+          <a href="/operacao" {% if p == '/operacao' and query_tab != 'fila' %}class="active"{% endif %} title="Operacao (g p)">Operacao</a>
 
           <div class="nav-more{% if mais_active %} is-current{% endif %}" id="nav-more">
-            <button type="button" class="nav-more-btn" id="nav-more-btn" aria-expanded="false" aria-haspopup="menu" aria-controls="nav-more-menu" title="Mais páginas">
+            <button type="button" class="nav-more-btn" id="nav-more-btn" aria-expanded="false" aria-haspopup="menu" aria-controls="nav-more-menu" title="Mais paginas">
               Mais ▾
             </button>
             <div class="nav-more-menu" id="nav-more-menu" role="menu" hidden>
-              <a href="/inteligencia" role="menuitem" {% if p == '/inteligencia' %}class="active"{% endif %}>Análises</a>
+              <a href="/inteligencia" role="menuitem" {% if p == '/inteligencia' %}class="active"{% endif %}>Analises</a>
               <a href="/exportar" role="menuitem" {% if p == '/exportar' %}class="active"{% endif %}>Exportar</a>
-              <a href="/edicoes-detectadas" role="menuitem" {% if p.startswith('/edicoes') %}class="active"{% endif %}>Edições</a>
-              <a href="/operacao?tab=fila" role="menuitem" {% if p == '/status' or (p == '/operacao' and request.query_params.get('tab') == 'fila') %}class="active"{% endif %}>Fila</a>
-              <a href="/revisao/so-mencao" role="menuitem" {% if p.startswith('/revisao') %}class="active"{% endif %}>Revisão</a>
+              <a href="/edicoes-detectadas" role="menuitem" {% if p.startswith('/edicoes') %}class="active"{% endif %}>Edicoes</a>
+              <a href="/operacao?tab=fila" role="menuitem" {% if p == '/status' or (p == '/operacao' and query_tab == 'fila') %}class="active"{% endif %}>Fila</a>
+              <a href="/revisao/so-mencao" role="menuitem" {% if p.startswith('/revisao') %}class="active"{% endif %}>Revisao</a>
               <a href="/notificacoes" role="menuitem" {% if p == '/notificacoes' %}class="active"{% endif %}>Alertas</a>
             </div>
           </div>
 
-          {# Mobile: itens do “Mais” em lista plana (sem dropdown) #}
-          <a href="/inteligencia" class="nav-mobile-only{% if p == '/inteligencia' %} active{% endif %}" title="Análises (g n)">Análises</a>
-          <a href="/exportar" class="nav-mobile-only{% if p == '/exportar' %} active{% endif %}" title="Exportar (g e)">Exportar</a>
-          <a href="/edicoes-detectadas" class="nav-mobile-only{% if p.startswith('/edicoes') %} active{% endif %}" title="Edições (g d)">Edições</a>
-          <a href="/operacao?tab=fila" class="nav-mobile-only{% if p == '/status' or (p == '/operacao' and request.query_params.get('tab') == 'fila') %} active{% endif %}" title="Fila (g f)">Fila</a>
-          <a href="/revisao/so-mencao" class="nav-mobile-only{% if p.startswith('/revisao') %} active{% endif %}" title="Revisão (g r)">Revisão</a>
-          <a href="/notificacoes" class="nav-mobile-only{% if p == '/notificacoes' %} active{% endif %}" title="Alertas (g l)">Alertas</a>
+          <a href="/inteligencia" class="nav-mobile-only{% if p == '/inteligencia' %} active{% endif %}">Analises</a>
+          <a href="/exportar" class="nav-mobile-only{% if p == '/exportar' %} active{% endif %}">Exportar</a>
+          <a href="/edicoes-detectadas" class="nav-mobile-only{% if p.startswith('/edicoes') %} active{% endif %}">Edicoes</a>
+          <a href="/operacao?tab=fila" class="nav-mobile-only{% if p == '/status' or (p == '/operacao' and query_tab == 'fila') %} active{% endif %}">Fila</a>
+          <a href="/revisao/so-mencao" class="nav-mobile-only{% if p.startswith('/revisao') %} active{% endif %}">Revisao</a>
+          <a href="/notificacoes" class="nav-mobile-only{% if p == '/notificacoes' %} active{% endif %}">Alertas</a>
 
           <a href="/admin" class="nav-admin{% if p.startswith('/admin') %} active{% endif %}" title="Admin (g m)">Admin</a>
-          <a href="/status" id="global-processing" class="global-processing" style="display:none;" title="Há jobs em execução">
+          <a href="/status" id="global-processing" class="global-processing" style="display:none;" title="Ha jobs em execucao">
             <span class="processing-dot"></span>Processando
           </a>
+          <button type="button" id="theme-toggle" class="nav-chip" title="Alternar tema claro/escuro" aria-label="Alternar tema">
+            <span id="theme-icon">🌙</span>
+          </button>
         </nav>
       </header>
 
-      <main>
+      <main id="main-content">
+        {% block breadcrumbs %}{% endblock %}
         {% block content %}{% endblock %}
       </main>
     </div>
 
+    <div id="global-toast" class="global-toast"></div>
+
+    <script>
+    (function(){
+      var theme = localStorage.getItem('theme') || '';
+      if (!theme) { theme = window.matchMedia('(prefers-color-scheme:light)').matches ? 'light' : ''; }
+      document.documentElement.setAttribute('data-theme', theme);
+      document.addEventListener('DOMContentLoaded', function(){
+        var btn = document.getElementById('theme-toggle');
+        var icon = document.getElementById('theme-icon');
+        if (!btn) return;
+        var cur = document.documentElement.getAttribute('data-theme');
+        icon.textContent = cur === 'light' ? '☀️' : '🌙';
+        btn.addEventListener('click', function(){
+          var next = document.documentElement.getAttribute('data-theme') === 'light' ? '' : 'light';
+          document.documentElement.setAttribute('data-theme', next);
+          icon.textContent = next === 'light' ? '☀️' : '🌙';
+          try { localStorage.setItem('theme', next); } catch(e){}
+          var meta = document.querySelector('[data-theme-meta]');
+          if (meta) meta.setAttribute('content', next === 'light' ? '#f5f6fa' : '#0d0f14');
+        });
+      });
+    })();
+    </script>
+
     <script src="/static/app.js"></script>
+    <script src="/static/markdown.js"></script>
+    <script src="/static/busca.js"></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

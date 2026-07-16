@@ -448,6 +448,24 @@ def dashboard(
             """
         ).fetchone()[0]
 
+    # Dados para sparkline (pubs por mes nos ultimos 12 meses)
+    sparkline_data = {}
+    for r in conn.execute(
+        """
+        SELECT substr(e.data_publicacao, 1, 7) AS mes, COUNT(*) AS n
+        FROM publicacoes p
+        JOIN edicoes e ON e.id = p.edicao_id
+        WHERE e.data_publicacao IS NOT NULL AND e.data_publicacao != ''
+        GROUP BY mes
+        ORDER BY mes DESC
+        LIMIT 12
+        """
+    ).fetchall():
+        sparkline_data[str(r["mes"])] = int(r["n"])
+    sparkline_meses = sorted(sparkline_data.keys())
+    sparkline_valores = [sparkline_data[m] for m in sparkline_meses]
+    max_spark = max(sparkline_valores) if sparkline_valores else 1
+
     saude = _saude_sistema()
     saude["so_mencao_pendentes"] = so_mencao_pend
     try:
@@ -477,6 +495,9 @@ def dashboard(
             "resumo_diario": database.get_resumo_diario(),
             "agente_home": agente_home,
             "agente_log": agente_log,
+            "sparkline_meses": sparkline_meses,
+            "sparkline_valores": sparkline_valores,
+            "sparkline_max": max_spark,
         },
     )
 
@@ -2124,6 +2145,44 @@ def api_buscar(
     if not q.strip():
         return base[:limit]
     return rankear_publicacoes(q.strip(), base, limit=limit)
+
+
+@app.get("/api/busca")
+def api_busca_global(
+    q: str = Query("", description="Consulta"),
+) -> dict:
+    """Busca global: retorna edicoes + publicacoes (para overlay Ctrl+K)."""
+    database.init_db()
+    resultado: dict[str, list] = {"edicoes": [], "publicacoes": []}
+    termo = (q or "").strip()
+    if len(termo) < 2:
+        return resultado
+    with database.connect() as conn:
+        # Edicoes por titulo
+        ed_rows = conn.execute(
+            """
+            SELECT id, titulo, data_publicacao FROM edicoes
+            WHERE (titulo LIKE ? OR data_publicacao LIKE ?)
+            AND ocr_processado = 1
+            ORDER BY data_publicacao DESC
+            LIMIT 5
+            """,
+            (f"%{termo}%", f"%{termo}%"),
+        ).fetchall()
+        resultado["edicoes"] = [dict(r) for r in ed_rows]
+        # Publicacoes por tipo/orgao/assunto
+        pub_rows = conn.execute(
+            """
+            SELECT id, edicao_id, tipo, numero, assunto
+            FROM publicacoes
+            WHERE tipo LIKE ? OR orgao LIKE ? OR assunto LIKE ? OR numero LIKE ?
+            ORDER BY id DESC
+            LIMIT 10
+            """,
+            (f"%{termo}%", f"%{termo}%", f"%{termo}%", f"%{termo}%"),
+        ).fetchall()
+        resultado["publicacoes"] = [dict(r) for r in pub_rows]
+    return resultado
 
 
 @app.get("/api/resumo-diario")

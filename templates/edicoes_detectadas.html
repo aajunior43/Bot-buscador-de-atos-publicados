@@ -1,9 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Edições Detectadas - Monitor Inajá{% endblock %}
+{% block breadcrumbs %}
+<nav class="breadcrumbs">
+  <a href="/operacao">Operacao</a>
+  <span>›</span>
+  <span>Edicoes</span>
+</nav>
+{% endblock %}
 {% block content %}
 <section class="detail-hero fade-in">
-  <a class="backlink" href="/operacao">← Operação</a>
-  <p class="eyebrow">Operação · Varredura</p>
+  <p class="eyebrow">Operacao · Varredura</p>
   <h1>Edições do jornal</h1>
   <p class="hero-copy">
     A <strong>WEB</strong> cadastra edições periodicamente; o <strong>BOT</strong> processa OCR e alertas sozinho.

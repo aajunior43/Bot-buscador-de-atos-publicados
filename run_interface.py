@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import webbrowser
 
 
 class FiltroRuido(logging.Filter):
@@ -67,6 +68,13 @@ def main() -> None:
     print("  Acesse: http://localhost:8001")
     print("=" * 60)
     print()
+
+    # Abre o navegador automaticamente (desativar com ABRIR_NAVEGADOR=0)
+    if os.getenv("ABRIR_NAVEGADOR", "1").strip() in {"1", "true", "sim", "yes", "on"}:
+        try:
+            webbrowser.open("http://localhost:8001", new=2, autoraise=True)
+        except Exception:
+            pass
 
     import uvicorn
 
