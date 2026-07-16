@@ -278,7 +278,6 @@ def _chamar_ia_json(
                 ],
                 "max_tokens": max_tokens or SETTINGS.ai_max_tokens,
                 "temperature": temperature,
-                "response_format": {"type": "json_object"},
             },
             timeout=timeout,
         )
@@ -298,6 +297,13 @@ def _chamar_ia_json(
         data = resp.json()
         content = data["choices"][0]["message"].get("content") or ""
         if not content.strip():
+            finish = data["choices"][0].get("finish_reason", "?")
+            usage = data.get("usage", {})
+            logger.warning(
+                "IA retornou conteudo vazio (finish_reason=%s, usage=%s, modelo=%s). "
+                "Pode ser limite de tokens ou formato incompativel.",
+                finish, usage, SETTINGS.opencode_model,
+            )
             return None
         try:
             return json.loads(content)
@@ -369,7 +375,6 @@ def _extrair_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
                 ],
                 "max_tokens": SETTINGS.ai_max_tokens,
                 "temperature": 0.1,
-                "response_format": {"type": "json_object"},
             },
             timeout=timeout,
         )
