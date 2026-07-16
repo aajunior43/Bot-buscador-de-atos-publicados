@@ -48,6 +48,7 @@ def _pode_chamar_ia() -> bool:
 
 
 def _registrar_call_ia() -> None:
+    global _calls_no_ciclo
     with _ia_lock:
         _calls_no_ciclo += 1
 
@@ -326,7 +327,7 @@ def _triar_publicacao(trecho: str, timeout: int) -> dict[str, Any] | None:
         ),
         _prompt_triagem(trecho_limpo),
         timeout=min(timeout, 45),
-        max_tokens=min(400, SETTINGS.ai_max_tokens),
+        max_tokens=max(2000, min(3000, SETTINGS.ai_max_tokens)),
         temperature=0.0,
     )
 
@@ -1038,7 +1039,7 @@ def gerar_explicacao_leiga(pub: dict) -> str | None:
         f"Resumo: {pub.get('resumo_ia') or pub.get('assunto')}\n\n"
         f"Trecho OCR:\n{trecho}"
     )
-    data = _chamar_ia_json(system, user, timeout=max(20, SETTINGS.ai_timeout_seconds), max_tokens=600)
+    data = _chamar_ia_json(system, user, timeout=max(20, SETTINGS.ai_timeout_seconds), max_tokens=max(800, SETTINGS.ai_max_tokens))
     if not data:
         return None
     exp = (data.get("explicacao") or "").strip()
@@ -1112,7 +1113,7 @@ def auditar_so_mencao(trechos: list[dict], *, titulo: str = "") -> dict | None:
     )
     user = f"Edição: {titulo}\n\nTrechos:\n" + "\n---\n".join(blocos)
     data = _chamar_ia_json(
-        system, user, timeout=max(25, SETTINGS.ai_timeout_seconds), max_tokens=500
+        system, user, timeout=max(25, SETTINGS.ai_timeout_seconds), max_tokens=max(800, SETTINGS.ai_max_tokens)
     )
     if not data:
         return None
