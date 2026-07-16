@@ -106,6 +106,10 @@ REFERENCIA_LEGAL_RE = re.compile(
     r"\b(lei\s+(federal|estadual|org[aâ]nica)|art\.?\s*\d+|inciso|par[aá]grafo|loa)\b",
     re.IGNORECASE,
 )
+_TITULO_ATO_MID_RE = re.compile(
+    rf"(?im)^(?=.{{0,20}}(?:{_ORDINAL_ATO})(?:(?:{_TIPOS_COMPOSTOS})|(?:{_TIPOS_SIMPLES}))\b"
+    r".{{0,40}}N[º°O.]?\s*\d)",
+)
 SINAIS_OFICIAIS = [
     "prefeitura municipal",
     "camara municipal",
@@ -386,16 +390,11 @@ def _dividir_segmento_multi_atos(segmento: TextBlock) -> list[TextBlock]:
     if len(texto) < 900:
         return [segmento]
 
-    # Pontos de corte: cabeçalho Inajá ou título de ato com N°
     cortes: list[int] = []
     for m in _CABECALHO_INAJA_RE.finditer(texto):
         if m.start() > 40:
             cortes.append(m.start())
-    titulo_mid = re.compile(
-        rf"(?im)^(?=.{{0,20}}(?:{_ORDINAL_ATO})(?:(?:{_TIPOS_COMPOSTOS})|(?:{_TIPOS_SIMPLES}))\b"
-        r".{{0,40}}N[º°O.]?\s*\d)",
-    )
-    for m in titulo_mid.finditer(texto):
+    for m in _TITULO_ATO_MID_RE.finditer(texto):
         if m.start() > 80:
             cortes.append(m.start())
 

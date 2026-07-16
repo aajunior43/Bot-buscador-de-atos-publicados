@@ -1,16 +1,9 @@
-"""
-Tesseract OCR engine integration + structured block extraction.
-
-Key features:
-- Multiple PSM strategies + preprocessing fallbacks
-- Automatic column-aware extraction
-- Robust grouping of words into paragraphs/blocks
-- Graceful degradation on OCR failures
-"""
-
 from __future__ import annotations
 
 import logging
+import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 
 import pytesseract
@@ -32,9 +25,44 @@ logger = logging.getLogger(__name__)
 
 _TESSERACT_OEM = "--oem 1"
 
+# Lock compartilhado para operacoes thread-safe na lista avisos
+_avisos_lock = threading.Lock()
+
+
+def _avisos_append(avisos: list[str] | None, msg: str) -> None:
+    if avisos is not None:
+        with _avisos_lock:
+            avisos.append(msg)
+
 
 def _tesseract_config(psm: int) -> str:
     return f"{_TESSERACT_OEM} --psm {psm}"
+
+
+def _executar_pytesseract(fn, fn_args, timeout: int) -> object | None:
+    """Wrapper que garante timeout real no Windows.
+
+    No Windows o ``timeout`` do pytesseract nao funciona (usa signal.SIGALRM,
+    que nao existe no Windows). Este wrapper usa ThreadPoolExecutor para impor
+    timeout real em qualquer plataforma.
+    """
+    if sys.platform != "win32":
+        try:
+            return fn(*fn_args)
+        except Exception as exc:
+            logger.warning("OCR falhou: %s", exc)
+            return None
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        fut = pool.submit(fn, *fn_args)
+        try:
+            return fut.result(timeout=timeout)
+        except TimeoutError:
+            logger.warning("OCR excedeu timeout de %ss", timeout)
+            return None
+        except Exception as exc:
+            logger.warning("OCR falhou: %s", exc)
+            return None
 
 
 def _tentar_image_to_data(
@@ -44,8 +72,7 @@ def _tentar_image_to_data(
     timeout: int,
     psm: int,
 ) -> dict | None:
-    """Tenta executar image_to_data; retorna None se falhar."""
-    try:
+    def _call():
         return pytesseract.image_to_data(
             imagem,
             lang=SETTINGS.ocr_language,
@@ -53,13 +80,13 @@ def _tentar_image_to_data(
             output_type=pytesseract.Output.DICT,
             timeout=timeout,
         )
+    try:
+        result = _executar_pytesseract(lambda: _call(), (), timeout)
+        return result if isinstance(result, dict) else None
     except Exception as exc:
         logger.warning(
-            "OCR estruturado falhou (página %s coluna %s psm=%s): %s",
-            pagina,
-            coluna + 1,
-            psm,
-            exc,
+            "OCR estruturado falhou (pagina %s coluna %s psm=%s): %s",
+            pagina, coluna + 1, psm, exc,
         )
         return None
 
@@ -71,17 +98,21 @@ def _tentar_image_to_string(
     psm: int,
     timeout: int,
 ) -> str | None:
-    try:
+    def _call():
         texto = pytesseract.image_to_string(
             imagem,
             lang=SETTINGS.ocr_language,
             config=_tesseract_config(psm),
             timeout=timeout,
         )
-        texto = (texto or "").strip()
-        return texto or None
+        return (texto or "").strip()
+    try:
+        texto = _executar_pytesseract(lambda: _call(), (), timeout)
+        if isinstance(texto, str) and texto.strip():
+            return texto.strip()
+        return None
     except Exception as exc:
-        logger.warning("OCR rápido falhou na página %s (%s): %s", pagina, estrategia, exc)
+        logger.warning("OCR rapido falhou na pagina %s (%s): %s", pagina, estrategia, exc)
         return None
 
 
@@ -116,25 +147,25 @@ def _agrupar_data_tesseract(
             chave,
             {"words": [], "left": [], "top": [], "right": [], "bottom": []},
         )
-        item["words"].append(palavra)  # type: ignore[index, union-attr]
-        item["left"].append(left + x_offset)  # type: ignore[index, union-attr]
-        item["top"].append(top)  # type: ignore[index, union-attr]
-        item["right"].append(left + x_offset + width)  # type: ignore[index, union-attr]
-        item["bottom"].append(top + height)  # type: ignore[index, union-attr]
+        item["words"].append(palavra)
+        item["left"].append(left + x_offset)
+        item["top"].append(top)
+        item["right"].append(left + x_offset + width)
+        item["bottom"].append(top + height)
 
     blocos_por_numero: dict[
         tuple[int, int], list[tuple[int, str, tuple[int, int, int, int]]]
     ] = {}
     for (coluna, block_num, _par_num, line_num), item in agrupado.items():
-        words = item["words"]  # type: ignore[index]
+        words = item["words"]
         if not words:
             continue
-        linha = " ".join(words)  # type: ignore[arg-type]
+        linha = " ".join(words)
         bbox = (
-            min(item["left"]),  # type: ignore[arg-type, index]
-            min(item["top"]),  # type: ignore[arg-type, index]
-            max(item["right"]),  # type: ignore[arg-type, index]
-            max(item["bottom"]),  # type: ignore[arg-type, index]
+            min(item["left"]),
+            min(item["top"]),
+            max(item["right"]),
+            max(item["bottom"]),
         )
         blocos_por_numero.setdefault((coluna, block_num), []).append(
             (line_num, linha, bbox)
@@ -188,9 +219,9 @@ def _extrair_blocos_tesseract_imagem(
         ("psm 4", limitada, 4),
         ("psm 6", limitada, 6),
         ("psm 11 texto esparso", limitada, 11),
-        ("binarização + psm 6", _binarizar(limitada, 140), 6),
-        ("binarização 120 + psm 6", _binarizar(limitada, 120), 6),
-        ("pré-processamento forte + psm 6", ampliada, 6),
+        ("binarizacao + psm 6", _binarizar(limitada, 140), 6),
+        ("binarizacao 120 + psm 6", _binarizar(limitada, 120), 6),
+        ("pre-processamento forte + psm 6", ampliada, 6),
     ]
 
     reduzida = limitada.resize(
@@ -199,9 +230,9 @@ def _extrair_blocos_tesseract_imagem(
     )
     tentativas.extend(
         [
-            ("resolução reduzida + psm 6", reduzida, 6),
-            ("binarização reduzida + psm 6", _binarizar(reduzida), 6),
-            ("psm 3 automático", limitada, 3),
+            ("resolucao reduzida + psm 6", reduzida, 6),
+            ("binarizacao reduzida + psm 6", _binarizar(reduzida), 6),
+            ("psm 3 automatico", limitada, 3),
         ]
     )
 
@@ -219,22 +250,16 @@ def _extrair_blocos_tesseract_imagem(
             if blocos:
                 if estrategia != "psm 4":
                     logger.debug(
-                        "OCR na página %s coluna %s recuperado (%s)",
-                        pagina,
-                        coluna + 1,
-                        estrategia,
+                        "OCR na pagina %s coluna %s recuperado (%s)",
+                        pagina, coluna + 1, estrategia,
                     )
                 return blocos
 
-    # Página em branco, foto/anúncio ou coluna sem texto legível — comum no
-    # jornal; não poluir o terminal com WARNING (exceção real já loga acima).
     logger.debug(
-        "OCR sem texto na página %s coluna %s após todas as estratégias",
-        pagina,
-        coluna + 1,
+        "OCR sem texto na pagina %s coluna %s apos todas as estrategias",
+        pagina, coluna + 1,
     )
-    if avisos is not None:
-        avisos.append(f"Falha de OCR na página {pagina}, coluna {coluna + 1}")
+    _avisos_append(avisos, f"Falha de OCR na pagina {pagina}, coluna {coluna + 1}")
     return []
 
 
@@ -272,9 +297,8 @@ def _extrair_blocos_tesseract_por_coluna(
             )
             if resultado:
                 logger.debug(
-                    "OCR na página %s coluna %s recuperado (ampliação 2x)",
-                    pagina,
-                    coluna + 1,
+                    "OCR na pagina %s coluna %s recuperado (ampliacao 2x)",
+                    pagina, coluna + 1,
                 )
         blocos.extend(resultado)
 
@@ -296,7 +320,7 @@ def _extrair_blocos_tesseract(
 ) -> list[TextBlock]:
     faixas = _detectar_faixas_colunas(imagem)
     if faixas:
-        logger.debug("Página %s: %s coluna(s) detectada(s)", pagina, len(faixas))
+        logger.debug("Pagina %s: %s coluna(s) detectada(s)", pagina, len(faixas))
         return _extrair_blocos_tesseract_por_coluna(imagem, pagina, faixas, avisos)
 
     return _extrair_blocos_tesseract_imagem(
@@ -333,7 +357,7 @@ def _ocr_completo_pagina(
     melhor = max(candidatos, key=lambda pagina: len(pagina.texto))
     if alta_qualidade and not _ocr_rapido_texto_valido(melhor.texto):
         ampliada = _preprocessar_forte(_ampliar_imagem(imagem, 2.0))
-        texto = _tentar_image_to_string(ampliada, idx, "ampliação 2x + psm 6", 6, SETTINGS.ocr_timeout_seconds)
+        texto = _tentar_image_to_string(ampliada, idx, "ampliacao 2x + psm 6", 6, SETTINGS.ocr_timeout_seconds)
         if texto and len(texto) > len(melhor.texto):
             melhor = PageText(
                 pagina=idx,

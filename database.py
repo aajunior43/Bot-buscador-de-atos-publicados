@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,18 @@ from typing import Iterator
 from config import SETTINGS
 
 logger = logging.getLogger(__name__)
+
+_db_lock = threading.Lock()
+_edicao_locks: dict[int, threading.Lock] = {}
+_edicao_locks_mutex = threading.Lock()
+
+
+def _get_edicao_lock(edicao_id: int) -> threading.Lock:
+    """Lock por edicao_id para proteger DELETE+INSERT atomicos."""
+    with _edicao_locks_mutex:
+        if edicao_id not in _edicao_locks:
+            _edicao_locks[edicao_id] = threading.Lock()
+        return _edicao_locks[edicao_id]
 
 
 SCHEMA = """
@@ -272,10 +285,11 @@ _MIGRATION_MARKERS: dict[int, tuple[str, str]] = {
 
 @contextmanager
 def connect(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
-    conn = sqlite3.connect(db_path or SETTINGS.db_path)
+    conn = sqlite3.connect(db_path or SETTINGS.db_path, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout = 5000;")
     try:
         yield conn
         conn.commit()
@@ -699,7 +713,8 @@ def _hash_trecho(pagina: int, trecho: str, termo: str = "") -> str:
 
 def insert_mencoes(edicao_id: int, mencoes: list[dict]) -> None:
     """Insere menções usando deduplicação por hash — preserva histórico de notificações."""
-    with connect() as conn:
+    ed_lock = _get_edicao_lock(edicao_id)
+    with ed_lock, connect() as conn:
         # Remove apenas menções deste processo que nunca foram notificadas
         conn.execute(
             "DELETE FROM mencoes WHERE edicao_id = ? AND notificado = 0",
@@ -725,7 +740,8 @@ def insert_mencoes(edicao_id: int, mencoes: list[dict]) -> None:
 
 
 def insert_publicacoes(edicao_id: int, publicacoes: list[dict]) -> None:
-    with connect() as conn:
+    ed_lock = _get_edicao_lock(edicao_id)
+    with ed_lock, connect() as conn:
         conn.execute("DELETE FROM publicacoes WHERE edicao_id = ?", (edicao_id,))
         conn.executemany(
             """
@@ -1863,10 +1879,11 @@ def salvar_metricas_deteccao(
 ) -> None:
     """Persiste métricas de uma execução de detecção (substitui a da edição)."""
     if hasattr(metricas, "as_dict"):
-        data = metricas.as_dict()  # type: ignore[union-attr]
+        data = metricas.as_dict()
     else:
-        data = dict(metricas)  # type: ignore[arg-type]
-    with connect() as conn:
+        data = dict(metricas)
+    ed_lock = _get_edicao_lock(edicao_id)
+    with ed_lock, connect() as conn:
         conn.execute("DELETE FROM deteccao_metricas WHERE edicao_id = ?", (edicao_id,))
         conn.execute(
             """

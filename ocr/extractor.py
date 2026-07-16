@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from pathlib import Path
 
 import pdfplumber
@@ -34,13 +35,47 @@ from ocr.preprocessing import (
     _preprocessar_forte,
 )
 from ocr.tesseract import (
+    _avisos_append,
     _extrair_blocos_tesseract,
     _ocr_completo_pagina,
     _tentar_image_to_string,
 )
 
+_BATCH_SIZE = 10
+_progress_lock = threading.Lock()
+
 logger = logging.getLogger(__name__)
 
+
+
+def _progress_safe(on_progress, msg) -> None:
+    """Chama on_progress com lock para evitar race condition no DB."""
+    if on_progress:
+        with _progress_lock:
+            on_progress(msg)
+
+
+def _carregar_paginas_em_lotes(
+    pdf_path: Path, paginas: list[int], dpi: int,
+) -> list[tuple[int, Image.Image]]:
+    """Carrega paginas em lotes de _BATCH_SIZE para evitar estouro de memoria."""
+    if not paginas:
+        return []
+    resultado: list[tuple[int, Image.Image]] = []
+    paginas_ord = sorted(set(paginas))
+    for i in range(0, len(paginas_ord), _BATCH_SIZE):
+        lote = paginas_ord[i:i + _BATCH_SIZE]
+        imagens = convert_from_path(
+            str(pdf_path),
+            dpi=dpi,
+            first_page=lote[0],
+            last_page=lote[-1],
+            poppler_path=SETTINGS.poppler_path or None,
+            thread_count=min(2, os.cpu_count() or 1),
+        )
+        for offset, img in enumerate(imagens):
+            resultado.append((lote[0] + offset, img))
+    return resultado
 
 
 def _texto_pdfplumber(pdf_path: Path, on_progress=None) -> list[PageText]:
@@ -78,52 +113,35 @@ def _texto_ocr_paginas(
     if not paginas:
         return {}
 
-    primeira = min(paginas)
-    ultima = max(paginas)
-    imagens = convert_from_path(
-        str(pdf_path),
-        dpi=SETTINGS.ocr_dpi,
-        first_page=primeira,
-        last_page=ultima,
-        poppler_path=SETTINGS.poppler_path or None,
-        thread_count=min(4, os.cpu_count() or 1),
-    )
-    paginas_set = set(paginas)
-    imagens_filtradas: list[tuple[int, Image.Image]] = []
-    numero_pagina = primeira
-    for imagem in imagens:
-        if numero_pagina in paginas_set:
-            imagens_filtradas.append((numero_pagina, imagem))
-        numero_pagina += 1
+    avisos_ref = avisos or []
+    imagens_filtradas = _carregar_paginas_em_lotes(pdf_path, paginas, SETTINGS.ocr_dpi)
 
     total = len(imagens_filtradas)
-    avisos_ref = avisos or []
 
-    # Marca t0 da barra antes do 1º término (evita taxa milagrosa no 1/N)
-    if on_progress and total > 0:
-        on_progress(
-            {
-                "step": "ocr_structured",
-                "current": 0,
-                "total": total,
-                "msg": f"[ocr-estruturado] Iniciando {total} página(s)",
-            }
-        )
+    _progress_safe(
+        on_progress,
+        {
+            "step": "ocr_structured",
+            "current": 0,
+            "total": total,
+            "msg": f"[ocr-estruturado] Iniciando {total} pagina(s)",
+        },
+    )
 
     def _job(pair: tuple[int, Image.Image]) -> PageText:
         num, img = pair
         return _ocr_completo_pagina(num, img, avisos_ref)
 
     def _done(done: int, tot: int) -> None:
-        if on_progress:
-            on_progress(
-                {
-                    "step": "ocr_structured",
-                    "current": done,
-                    "total": tot,
-                    "msg": f"[ocr-estruturado] Página {done}/{tot} processada",
-                }
-            )
+        _progress_safe(
+            on_progress,
+            {
+                "step": "ocr_structured",
+                "current": done,
+                "total": tot,
+                "msg": f"[ocr-estruturado] Pagina {done}/{tot} processada",
+            },
+        )
 
     indexed = map_parallel_indexed(
         imagens_filtradas,
@@ -135,14 +153,20 @@ def _texto_ocr_paginas(
 
 
 def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None, on_progress=None) -> list[PageText]:
-    imagens = convert_from_path(
-        str(pdf_path),
-        dpi=SETTINGS.ocr_dpi,
-        poppler_path=SETTINGS.poppler_path or None,
-        thread_count=min(4, os.cpu_count() or 1),
-    )
     avisos = avisos if avisos is not None else []
-    paginas: list[PageText | None] = [None] * len(imagens)
+    total_paginas = 0
+    try:
+        with pdfplumber.open(str(pdf_path)) as pdf:
+            total_paginas = len(pdf.pages)
+    except Exception:
+        pass
+    if total_paginas == 0:
+        total_paginas = 1
+
+    imagens = _carregar_paginas_em_lotes(
+        pdf_path, list(range(1, total_paginas + 1)), SETTINGS.ocr_dpi
+    )
+    paginas: list[PageText | None] = [None] * total_paginas
     total = len(imagens)
     itens = list(enumerate(imagens, start=1))
 
@@ -151,15 +175,15 @@ def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None, on_prog
         return idx, _ocr_completo_pagina(idx, imagem, avisos)
 
     def _done(done: int, tot: int) -> None:
-        if on_progress:
-            on_progress(
-                {
-                    "step": "ocr_completo",
-                    "current": done,
-                    "total": tot,
-                    "msg": f"[ocr-completo] Página {done}/{tot} processada",
-                }
-            )
+        _progress_safe(
+            on_progress,
+            {
+                "step": "ocr_completo",
+                "current": done,
+                "total": tot,
+                "msg": f"[ocr-completo] Pagina {done}/{tot} processada",
+            },
+        )
 
     indexed = map_parallel_indexed(
         itens,
@@ -178,27 +202,22 @@ def _texto_ocr_completo(pdf_path: Path, avisos: list[str] | None = None, on_prog
         ]
         if fracas:
             logger.info(
-                "Reprocessando %s página(s) em alta resolução (%s DPI): %s",
-                len(fracas),
-                SETTINGS.ocr_retry_dpi,
-                fracas,
+                "Reprocessando %s pagina(s) em alta resolucao (%s DPI): %s",
+                len(fracas), SETTINGS.ocr_retry_dpi, fracas,
             )
-            if on_progress:
-                on_progress(
-                    f"[ocr-alta-res] Alta resolução ({SETTINGS.ocr_retry_dpi} DPI) em {len(fracas)} página(s)"
-                )
-            for num in fracas:
-                imagem_hq = _carregar_pagina_pdf(pdf_path, num, SETTINGS.ocr_retry_dpi)
-                if imagem_hq is None:
-                    continue
+            _progress_safe(
+                on_progress,
+                f"[ocr-alta-res] Alta resolucao ({SETTINGS.ocr_retry_dpi} DPI) em {len(fracas)} pagina(s)",
+            )
+            # Carrega paginas fracas em lote para evitar chamadas individuais
+            fracas_imagens = _carregar_paginas_em_lotes(pdf_path, fracas, SETTINGS.ocr_retry_dpi)
+            for num, imagem_hq in fracas_imagens:
                 anterior = paginas[num - 1]
                 nova = _ocr_completo_pagina(num, imagem_hq, avisos, alta_qualidade=True)
                 if len(nova.texto) > len(anterior.texto if anterior else ""):
                     logger.info(
-                        "Página %s melhorada com OCR alta resolução (%s -> %s chars)",
-                        num,
-                        len(anterior.texto if anterior else ""),
-                        len(nova.texto),
+                        "Pagina %s melhorada com OCR alta resolucao (%s -> %s chars)",
+                        num, len(anterior.texto if anterior else ""), len(nova.texto),
                     )
                     paginas[num - 1] = nova
 
@@ -247,14 +266,10 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
     if texto and estrategia_ok != "psm 6":
         logger.info("OCR rápido na página %s recuperado (%s)", idx, estrategia_ok)
     elif not texto:
-        # Já há algum texto curto (ex.: 100–130 chars de ruído/foto): não vale
-        # gastar OCR estruturado multi-coluna se for claramente sem corpo legível.
-        # Só escala se quase não saiu nada (possível texto fino/ilegível no DPI baixo).
         if len(melhor_curto) >= 80:
             logger.info(
-                "OCR rápido na página %s ficou curto (%s chars); mantém resultado sem estruturado",
-                idx,
-                len(melhor_curto),
+                "OCR rapido na pagina %s ficou curto (%s chars); mantem resultado sem estruturado",
+                idx, len(melhor_curto),
             )
             return PageText(
                 pagina=idx,
@@ -262,7 +277,7 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
                 metodo="ocr-rapido",
                 blocks=[TextBlock(pagina=idx, bloco=1, texto=melhor_curto)],
             )
-        logger.info("OCR rápido insuficiente na página %s; aplicando OCR estruturado", idx)
+        logger.info("OCR rapido insuficiente na pagina %s; aplicando OCR estruturado", idx)
         pagina = _ocr_completo_pagina(idx, imagem, avisos, alta_qualidade=True)
         if _ocr_rapido_texto_valido(pagina.texto):
             return pagina
@@ -270,7 +285,7 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
         texto_hq = _tentar_image_to_string(
             ampliada,
             idx,
-            "fallback ampliação 2x + psm 6",
+            "fallback ampliacao 2x + psm 6",
             6,
             max(SETTINGS.ocr_timeout_seconds, SETTINGS.ocr_fast_timeout_seconds * 2),
         )
@@ -283,9 +298,10 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
             )
         if _ocr_rapido_texto_valido(pagina.texto):
             return pagina
-        avisos.append(
-            f"OCR insuficiente na página {idx} após {len(tentativas)} tentativas rápidas "
-            f"e OCR estruturado ({len(pagina.texto)} caracteres)"
+        _avisos_append(
+            avisos,
+            f"OCR insuficiente na pagina {idx} apos {len(tentativas)} tentativas rapidas "
+            f"e OCR estruturado ({len(pagina.texto)} caracteres)",
         )
         return pagina
 
@@ -298,13 +314,19 @@ def _ocr_rapido_pagina(idx: int, imagem: Image.Image, avisos: list[str]) -> Page
 
 
 def _texto_ocr_rapido_pdf(pdf_path: Path, avisos: list[str], on_progress=None) -> list[PageText]:
-    imagens = convert_from_path(
-        str(pdf_path),
-        dpi=SETTINGS.ocr_fast_dpi,
-        poppler_path=SETTINGS.poppler_path or None,
-        thread_count=min(4, os.cpu_count() or 1),
+    total_paginas = 0
+    try:
+        with pdfplumber.open(str(pdf_path)) as pdf:
+            total_paginas = len(pdf.pages)
+    except Exception:
+        pass
+    if total_paginas == 0:
+        total_paginas = 1
+
+    imagens = _carregar_paginas_em_lotes(
+        pdf_path, list(range(1, total_paginas + 1)), SETTINGS.ocr_fast_dpi
     )
-    paginas: list[PageText | None] = [None] * len(imagens)
+    paginas: list[PageText | None] = [None] * total_paginas
     total = len(imagens)
     itens = list(enumerate(imagens, start=1))
 
@@ -313,15 +335,15 @@ def _texto_ocr_rapido_pdf(pdf_path: Path, avisos: list[str], on_progress=None) -
         return idx, _ocr_rapido_pagina(idx, imagem, avisos)
 
     def _done(done: int, tot: int) -> None:
-        if on_progress:
-            on_progress(
-                {
-                    "step": "ocr_fast",
-                    "current": done,
-                    "total": tot,
-                    "msg": f"[ocr-rapido] Página {done}/{tot} processada",
-                }
-            )
+        _progress_safe(
+            on_progress,
+            {
+                "step": "ocr_fast",
+                "current": done,
+                "total": tot,
+                "msg": f"[ocr-rapido] Pagina {done}/{tot} processada",
+            },
+        )
 
     indexed = map_parallel_indexed(
         itens,
@@ -363,32 +385,41 @@ def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path, on_progress=N
         logger.info("OCR recuperado do cache com sucesso para %s", pdf_path)
         return cache
 
-    logger.info("Executando OCR rápido com estruturação só em páginas candidatas: %s", pdf_path)
+    logger.info("Executando OCR rapido com estruturacao so em paginas candidatas: %s", pdf_path)
     avisos: list[str] = []
 
-    # Reaproveita cache parcial se existir
     paginas_prontas = {}
     if cache:
         paginas_prontas = {p.pagina: p for p in cache.paginas if p.texto.strip()}
 
-    imagens = convert_from_path(
-        str(pdf_path),
-        dpi=SETTINGS.ocr_fast_dpi,
-        poppler_path=SETTINGS.poppler_path or None,
-        thread_count=min(4, os.cpu_count() or 1),
-    )
+    total_paginas = 0
+    try:
+        with pdfplumber.open(str(pdf_path)) as pdf:
+            total_paginas = len(pdf.pages)
+    except Exception:
+        pass
+    if total_paginas == 0:
+        total_paginas = 1
 
-    paginas: list[PageText | None] = [None] * len(imagens)
-    total = len(imagens)
+    paginas_ids = list(range(1, total_paginas + 1))
+    paginas_set = set(paginas_ids)
+    paginas: list[PageText | None] = [None] * total_paginas
     processadas = 0
 
+    # Carrega so as paginas que nao estao no cache
+    ids_para_carregar = [i for i in paginas_ids if i not in paginas_prontas]
+    imagens = _carregar_paginas_em_lotes(pdf_path, ids_para_carregar, SETTINGS.ocr_fast_dpi)
+
+    # Mapa: idx -> imagem
+    mapa_imagens = dict(imagens)
+
     candidatas_ocr = []
-    for idx, imagem in enumerate(imagens, start=1):
+    for idx in paginas_ids:
         if idx in paginas_prontas:
             paginas[idx - 1] = paginas_prontas[idx]
             processadas += 1
-        else:
-            candidatas_ocr.append((idx, imagem))
+        elif idx in mapa_imagens:
+            candidatas_ocr.append((idx, mapa_imagens[idx]))
 
     if candidatas_ocr:
         escolher_workers(
@@ -404,16 +435,16 @@ def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path, on_progress=N
         base_cache = processadas
 
         def _done(done: int, tot: int) -> None:
-            if on_progress:
-                cur = base_cache + done
-                on_progress(
-                    {
-                        "step": "ocr_fast",
-                        "current": min(cur, total),
-                        "total": total,
-                        "msg": f"OCR rápido: Página {min(cur, total)}/{total} processada",
-                    }
-                )
+            cur = base_cache + done
+            _progress_safe(
+                on_progress,
+                {
+                    "step": "ocr_fast",
+                    "current": min(cur, total),
+                    "total": total,
+                    "msg": f"OCR rapido: Pagina {min(cur, total)}/{total} processada",
+                },
+            )
 
         indexed = map_parallel_indexed(
             candidatas_ocr,
@@ -436,9 +467,11 @@ def extrair_texto_rapido_com_estruturado_candidato(pdf_path: Path, on_progress=N
     ]
 
     if paginas_candidatas:
-        logger.info("Páginas candidatas para OCR estruturado: %s", paginas_candidatas)
-        if on_progress:
-            on_progress(f"Encontradas {len(paginas_candidatas)} páginas candidatas a OCR estruturado")
+        logger.info("Paginas candidatas para OCR estruturado: %s", paginas_candidatas)
+        _progress_safe(
+            on_progress,
+            f"Encontradas {len(paginas_candidatas)} paginas candidatas a OCR estruturado",
+        )
         estruturadas = _texto_ocr_paginas(pdf_path, paginas_candidatas, avisos, on_progress=on_progress)
         paginas = [estruturadas.get(pagina.pagina, pagina) if pagina is not None else None for pagina in paginas]
 

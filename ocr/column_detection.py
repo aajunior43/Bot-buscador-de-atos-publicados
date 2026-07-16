@@ -1,10 +1,3 @@
-"""
-Automatic column detection for multi-column newspaper layouts.
-
-Uses vertical projection analysis (with numpy fallback) to find gutters
-between columns. This allows better block extraction with Tesseract.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -13,13 +6,24 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+# numpy e uma dependencia do pdf2image, entao deve estar sempre disponivel.
+# O import encapsulado evita crash em ambientes sem numpy.
+try:
+    import numpy as np
+    _TEM_NUMPY = True
+except ImportError:
+    _TEM_NUMPY = False
+
 
 def _detectar_faixas_colunas(imagem: Image.Image) -> list[tuple[int, int]]:
-    """Detecta colunas reais na página usando análise de projeção vertical.
+    """Detecta colunas reais na pagina usando analise de projecao vertical.
 
     Retorna lista de tuplas (x0, x1) em coordenadas da imagem original,
-    ou lista vazia se não conseguir detectar (fallback para página inteira).
+    ou lista vazia se nao conseguir detectar (fallback para pagina inteira).
     """
+    if not _TEM_NUMPY:
+        logger.debug("numpy nao disponivel; pulando deteccao de colunas")
+        return []
     try:
         largura_original = imagem.width
         altura_original = imagem.height
@@ -28,24 +32,12 @@ def _detectar_faixas_colunas(imagem: Image.Image) -> list[tuple[int, int]]:
         img_analise = imagem.convert("L").resize((800, max(200, int(altura_original * escala))))
         largura, altura = img_analise.size
 
-        try:
-            import numpy as np
-            arr = np.array(img_analise)          # shape: (altura, largura)
-            profile = arr.mean(axis=0)           # média por coluna
+        arr = np.array(img_analise)
+        profile = arr.mean(axis=0)
 
-            # Convolução 1D simples para suavização rápida
-            kernel = np.ones(7) / 7
-            # padding para manter o mesmo tamanho
-            suave_arr = np.convolve(profile, kernel, mode='same')
-            suave = suave_arr.tolist()
-        except ImportError:
-            profile = [sum(img_analise.getpixel((x, y)) for y in range(altura)) / altura for x in range(largura)]
-            janela = 3
-            suave = []
-            for i in range(largura):
-                start = max(0, i - janela)
-                end = min(largura, i + janela + 1)
-                suave.append(sum(profile[start:end]) / (end - start))
+        kernel = np.ones(7) / 7
+        suave_arr = np.convolve(profile, kernel, mode='same')
+        suave = suave_arr.tolist()
 
         threshold_branco = 220
         largura_min_gutter = max(4, largura // 50)
@@ -78,6 +70,5 @@ def _detectar_faixas_colunas(imagem: Image.Image) -> list[tuple[int, int]]:
         fator = largura_original / largura
         return [(round(x0 * fator), round(x1 * fator)) for x0, x1 in faixas_escaladas]
     except Exception:
-        # Qualquer falha na detecção de colunas → fallback para página inteira
-        logger.debug("Falha na detecção de colunas, usando página inteira")
+        logger.debug("Falha na deteccao de colunas, usando pagina inteira")
         return []

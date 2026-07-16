@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -14,38 +15,41 @@ import database as db
 
 logger = logging.getLogger(__name__)
 
-# Circuit breaker: após 401/AuthError, não dispara dezenas de requisições no mesmo processo.
+# Circuit breaker: apos 401/AuthError, nao dispara dezenas de requisicoes no mesmo processo.
 _auth_bloqueada: bool = False
 _auth_aviso_emitido: bool = False
-# Contador de calls no processo (ciclo / web)
 _calls_no_ciclo: int = 0
+_ia_lock = threading.Lock()
 
 
 def reset_ai_call_counter() -> None:
     global _calls_no_ciclo
-    _calls_no_ciclo = 0
+    with _ia_lock:
+        _calls_no_ciclo = 0
 
 
 def ai_calls_no_ciclo() -> int:
-    return _calls_no_ciclo
+    with _ia_lock:
+        return _calls_no_ciclo
 
 
 def _pode_chamar_ia() -> bool:
     lim = int(getattr(SETTINGS, "ai_max_calls_por_ciclo", 50) or 50)
     if lim <= 0:
         return True
-    if _calls_no_ciclo >= lim:
-        logger.warning(
-            "Limite AI_MAX_CALLS_POR_CICLO=%s atingido — novas calls de IA neste ciclo ignoradas.",
-            lim,
-        )
-        return False
-    return True
+    with _ia_lock:
+        if _calls_no_ciclo >= lim:
+            logger.warning(
+                "Limite AI_MAX_CALLS_POR_CICLO=%s atingido - novas calls de IA neste ciclo ignoradas.",
+                lim,
+            )
+            return False
+        return True
 
 
 def _registrar_call_ia() -> None:
-    global _calls_no_ciclo
-    _calls_no_ciclo += 1
+    with _ia_lock:
+        _calls_no_ciclo += 1
 
 
 def _api_key() -> str:
@@ -66,15 +70,16 @@ def _headers() -> dict[str, str]:
 
 
 def _marcar_auth_invalida(detalhe: str = "") -> None:
-    """Bloqueia novas chamadas de IA neste processo após chave inválida."""
+    """Bloqueia novas chamadas de IA neste processo apos chave invalida."""
     global _auth_bloqueada, _auth_aviso_emitido
-    _auth_bloqueada = True
-    if _auth_aviso_emitido:
-        return
-    _auth_aviso_emitido = True
+    with _ia_lock:
+        _auth_bloqueada = True
+        if _auth_aviso_emitido:
+            return
+        _auth_aviso_emitido = True
     logger.error(
-        "IA desativada neste processo: API key inválida/expirada (401). "
-        "Renove OPENCODE_API_KEY no .env ou em /admin e reinicie o serviço. "
+        "IA desativada neste processo: API key invalida/expirada (401). "
+        "Renove OPENCODE_API_KEY no .env ou em /admin e reinicie o servico. "
         "Detalhe: %s | URL=%s modelo=%s",
         detalhe or "Unauthorized",
         SETTINGS.opencode_api_url,
@@ -83,18 +88,21 @@ def _marcar_auth_invalida(detalhe: str = "") -> None:
 
 
 def reset_auth_circuit() -> None:
-    """Permite nova tentativa após o usuário atualizar a chave (ex.: admin)."""
+    """Permite nova tentativa apos o usuario atualizar a chave (ex.: admin)."""
     global _auth_bloqueada, _auth_aviso_emitido
-    _auth_bloqueada = False
-    _auth_aviso_emitido = False
+    with _ia_lock:
+        _auth_bloqueada = False
+        _auth_aviso_emitido = False
 
 
 def ia_disponivel() -> bool:
-    """True se refine está ligado, há chave e o circuit breaker não disparou."""
+    """True se refine esta ligado, ha chave e o circuit breaker nao disparou."""
+    with _ia_lock:
+        bloqueada = _auth_bloqueada
     return bool(
         SETTINGS.ai_refine_publications
         and _api_key()
-        and not _auth_bloqueada
+        and not bloqueada
     )
 
 
@@ -176,15 +184,39 @@ def _prompt_triagem(trecho: str) -> str:
 
 
 def _tentar_recuperar_json(content: str) -> dict | None:
-    """Tenta recuperar JSON truncado (string não terminada) fechando o objeto."""
+    """Tenta recuperar JSON truncado fechando o objeto de forma segura.
+
+    Estrategias:
+    1. Tenta o conteudo original
+    2. Fecha string aberta + objeto
+    3. Fecha string aberta, array e objeto
+    4. Remove ultimo campo truncado + fecha
+    5. Fecha qualquer chave/array/objeto abertos
+    """
     tentativas = [
         content,
-        content.rstrip() + '"}',
-        content.rstrip() + '"}' + "}",
-        content.rstrip().rsplit(",", 1)[0] + "}",
-        re.sub(r'[^}]*$', '}', content.rstrip()),  # close any open
     ]
+    rstrip = content.rstrip()
+    # Fecha string aberta (termina com aspas nao fechadas)
+    if rstrip.count('"') % 2:
+        tentativas.append(rstrip + '"')
+    # Fecha objeto
+    abertos = rstrip.count("{") - rstrip.count("}")
+    if abertos > 0:
+        tentativas.append(rstrip + "}" * abertos)
+    if rstrip.endswith(","):
+        tentativas.append(rstrip.rstrip(",") + "}")
+    if rstrip.endswith('"') or rstrip.endswith("}"):
+        tentativas.append(rstrip + "}")
+    if "," in rstrip:
+        tentativas.append(rstrip.rsplit(",", 1)[0] + "}")
+    # Fallback: remove tudo apos a ultima chave valida
+    ultima_chave = content.rfind('"}')
+    if ultima_chave > 0:
+        tentativas.append(content[:ultima_chave + 2] + "}")
     for tentativa in tentativas:
+        if not tentativa:
+            continue
         try:
             return json.loads(tentativa)
         except json.JSONDecodeError:
@@ -227,8 +259,9 @@ def _chamar_ia_json(
     max_tokens: int | None = None,
     temperature: float = 0.1,
 ) -> dict[str, Any] | None:
-    if _auth_bloqueada:
-        return None
+    with _ia_lock:
+        if _auth_bloqueada:
+            return None
     if not _pode_chamar_ia():
         return None
     content = ""
